@@ -1,0 +1,8 @@
+node_modules/
+.env
+storage/
+database/*.db
+*.pem
+*.p12
+*.crt
+*.key
