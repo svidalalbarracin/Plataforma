@@ -2,6 +2,8 @@ node_modules/
 .env
 storage/
 database/*.db
+database/*.db-shm
+database/*.db-wal
 *.pem
 *.p12
 *.crt
