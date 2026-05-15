@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — Facturación</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="js/theme.js"></script>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -15,6 +17,7 @@
     <a href="facturas.html">Facturas</a>
     <a href="clientes.html">Clientes</a>
   </div>
+  <button class="btn-theme" id="btn-theme">☾</button>
 </nav>
 
 <div class="container">
