@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detalle de Factura — Facturación</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="js/theme.js"></script>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">Facturación</a>
+  <div class="navbar-links">
+    <a href="index.html">Dashboard</a>
+    <a href="facturas.html" class="active">Facturas</a>
+    <a href="clientes.html">Clientes</a>
+  </div>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <div class="flex items-center gap-2">
+      <a href="facturas.html" class="btn btn-ghost btn-sm">← Volver</a>
+      <h1 class="page-title" id="titulo-factura">Factura</h1>
+    </div>
+    <div class="flex gap-2" id="acciones-header"></div>
+  </div>
+
+  <!-- Datos de la factura -->
+  <div class="card" id="card-factura">
+    <div class="card-title">Datos de la factura</div>
+    <dl class="detail-grid" id="detalle-factura">
+      <div class="detail-item"><dt>Cargando…</dt><dd></dd></div>
+    </dl>
+  </div>
+
+  <!-- Pagos registrados -->
+  <div class="card">
+    <div class="card-title">Pagos registrados</div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th class="text-right">Monto</th>
+            <th>Nota</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="pagos-body">
+          <tr><td colspan="4" class="empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Agregar pago -->
+  <div class="card" id="card-nuevo-pago">
+    <div class="card-title">Registrar nuevo pago</div>
+    <form id="form-pago" class="form-grid" style="max-width: 600px">
+      <div class="form-group">
+        <label for="pago-fecha">Fecha</label>
+        <input type="date" id="pago-fecha" required>
+      </div>
+      <div class="form-group">
+        <label for="pago-monto">Monto</label>
+        <input type="number" id="pago-monto" min="0.01" step="0.01" placeholder="0.00" required>
+      </div>
+      <div class="form-group" style="grid-column: 1 / -1">
+        <label for="pago-nota">Nota (opcional)</label>
+        <textarea id="pago-nota" placeholder="Transferencia, efectivo, nro. comprobante…"></textarea>
+      </div>
+      <div style="grid-column: 1 / -1">
+        <button type="submit" class="btn btn-success" id="btn-guardar-pago">Registrar pago</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const fmt     = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+  const params  = new URLSearchParams(location.search);
+  const factId  = params.get('id');
+
+  let facturaActual = null;
+
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  function estadoBadge(estado) {
+    return estado === 'pagada'
+      ? '<span class="badge badge-success">Pagada</span>'
+      : '<span class="badge badge-danger">Impaga</span>';
+  }
+
+  function renderFactura(f) {
+    facturaActual = f;
+    document.getElementById('titulo-factura').textContent = `Factura ${f.numero}`;
+
+    document.getElementById('detalle-factura').innerHTML = `
+      <div class="detail-item"><dt>Número</dt><dd class="font-mono">${f.numero}</dd></div>
+      <div class="detail-item"><dt>Cliente</dt><dd>${f.cliente_nombre}</dd></div>
+      <div class="detail-item"><dt>Fecha</dt><dd>${f.fecha}</dd></div>
+      <div class="detail-item"><dt>Estado</dt><dd>${estadoBadge(f.estado)}</dd></div>
+      <div class="detail-item"><dt>Monto neto</dt><dd class="font-mono">${fmt.format(f.monto)}</dd></div>
+      <div class="detail-item"><dt>IVA</dt><dd class="font-mono">${fmt.format(f.iva)}</dd></div>
+      <div class="detail-item"><dt>Total</dt><dd class="font-mono large">${fmt.format(f.monto_total)}</dd></div>
+    `;
+
+    const acciones = document.getElementById('acciones-header');
+    const nuevoEstado = f.estado === 'pagada' ? 'impaga' : 'pagada';
+    const btnLabel   = f.estado === 'pagada' ? 'Marcar como impaga' : 'Marcar como pagada';
+    const btnClass   = f.estado === 'pagada' ? 'btn-ghost' : 'btn-success';
+
+    acciones.innerHTML = `
+      ${f.pdf_path ? `<a href="${f.pdf_path}" target="_blank" class="btn btn-ghost">Abrir PDF</a>` : ''}
+      <button class="btn ${btnClass}" id="btn-cambiar-estado">${btnLabel}</button>
+    `;
+
+    document.getElementById('btn-cambiar-estado').addEventListener('click', async () => {
+      try {
+        await API.facturas.estado(factId, nuevoEstado);
+        toast(`Factura marcada como ${nuevoEstado}`);
+        cargarFactura();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  }
+
+  function renderPagos(pagos) {
+    const tbody = document.getElementById('pagos-body');
+    if (pagos.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">Sin pagos registrados</td></tr>';
+      return;
+    }
+    tbody.innerHTML = pagos.map(p => `
+      <tr>
+        <td>${p.fecha}</td>
+        <td class="text-right font-mono">${fmt.format(p.monto)}</td>
+        <td class="text-muted">${p.nota || '—'}</td>
+        <td>
+          <button class="btn btn-danger btn-sm btn-icon" data-id="${p.id}" title="Eliminar">✕</button>
+        </td>
+      </tr>
+    `).join('');
+
+    tbody.querySelectorAll('[data-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar este pago?')) return;
+        try {
+          await API.pagos.delete(btn.dataset.id);
+          toast('Pago eliminado');
+          cargarPagos();
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
+  }
+
+  async function cargarFactura() {
+    const f = await API.facturas.get(factId);
+    renderFactura(f);
+  }
+
+  async function cargarPagos() {
+    const pagos = await API.pagos.list({ factura_id: factId });
+    renderPagos(pagos);
+  }
+
+  async function init() {
+    if (!factId) {
+      document.querySelector('.container').innerHTML =
+        '<p class="empty">No se especificó una factura. <a href="facturas.html">Volver al listado</a></p>';
+      return;
+    }
+
+    try {
+      await Promise.all([cargarFactura(), cargarPagos()]);
+
+      // Precargar fecha de hoy
+      document.getElementById('pago-fecha').valueAsDate = new Date();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  document.getElementById('form-pago').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-guardar-pago');
+    btn.disabled = true;
+    try {
+      await API.pagos.create({
+        factura_id: Number(factId),
+        fecha:  document.getElementById('pago-fecha').value,
+        monto:  Number(document.getElementById('pago-monto').value),
+        nota:   document.getElementById('pago-nota').value || null,
+      });
+      toast('Pago registrado correctamente');
+      e.target.reset();
+      document.getElementById('pago-fecha').valueAsDate = new Date();
+      cargarPagos();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  init();
+</script>
+</body>
+</html>

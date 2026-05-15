@@ -38,9 +38,15 @@ router.put('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const { changes } = db.prepare('DELETE FROM clientes WHERE id = ?').run(req.params.id);
-  if (!changes) return res.status(404).json({ error: 'Cliente no encontrado' });
-  res.status(204).send();
+  try {
+    const { changes } = db.prepare('DELETE FROM clientes WHERE id = ?').run(req.params.id);
+    if (!changes) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.status(204).send();
+  } catch (e) {
+    if (e.code === 'SQLITE_CONSTRAINT_FOREIGNKEY')
+      return res.status(409).json({ error: 'No se puede eliminar: el cliente tiene facturas asociadas' });
+    throw e;
+  }
 });
 
 module.exports = router;

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facturas — Facturación</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="js/theme.js"></script>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">Facturación</a>
+  <div class="navbar-links">
+    <a href="index.html">Dashboard</a>
+    <a href="facturas.html" class="active">Facturas</a>
+    <a href="clientes.html">Clientes</a>
+  </div>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <h1 class="page-title">Facturas</h1>
+
+  <div class="card">
+    <div class="filters">
+      <div class="filter-group">
+        <label for="f-cliente">Cliente</label>
+        <select id="f-cliente" style="min-width:160px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="f-mes">Mes</label>
+        <select id="f-mes">
+          <option value="">Todos</option>
+          <option value="1">Enero</option>
+          <option value="2">Febrero</option>
+          <option value="3">Marzo</option>
+          <option value="4">Abril</option>
+          <option value="5">Mayo</option>
+          <option value="6">Junio</option>
+          <option value="7">Julio</option>
+          <option value="8">Agosto</option>
+          <option value="9">Septiembre</option>
+          <option value="10">Octubre</option>
+          <option value="11">Noviembre</option>
+          <option value="12">Diciembre</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="f-anio">Año</label>
+        <select id="f-anio" style="min-width:100px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="f-estado">Estado</label>
+        <select id="f-estado">
+          <option value="">Todos</option>
+          <option value="pagada">Pagada</option>
+          <option value="impaga">Impaga</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-filtrar">Filtrar</button>
+      <button class="btn btn-ghost" id="btn-limpiar">Limpiar</button>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Número</th>
+            <th>Cliente</th>
+            <th>Fecha</th>
+            <th class="text-right">Monto</th>
+            <th class="text-right">IVA</th>
+            <th class="text-right">Total</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="facturas-body">
+          <tr><td colspan="8" class="empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const fmt = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  let todasLasFacturas = [];
+
+  function estadoBadge(estado) {
+    return estado === 'pagada'
+      ? '<span class="badge badge-success">Pagada</span>'
+      : '<span class="badge badge-danger">Impaga</span>';
+  }
+
+  function renderTabla(facturas) {
+    const tbody = document.getElementById('facturas-body');
+    if (facturas.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay facturas que coincidan con los filtros</td></tr>';
+      return;
+    }
+    tbody.innerHTML = facturas.map(f => `
+      <tr>
+        <td class="font-mono">${f.numero}</td>
+        <td>${f.cliente_nombre}</td>
+        <td>${f.fecha}</td>
+        <td class="text-right font-mono">${fmt.format(f.monto)}</td>
+        <td class="text-right font-mono">${fmt.format(f.iva)}</td>
+        <td class="text-right font-mono fw-bold">${fmt.format(f.monto_total)}</td>
+        <td>${estadoBadge(f.estado)}</td>
+        <td>
+          <div class="flex gap-1">
+            <a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a>
+            <button class="btn btn-danger btn-sm" data-action="eliminar" data-id="${f.id}">Eliminar</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+
+    tbody.querySelectorAll('[data-action="eliminar"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar esta factura? Se eliminarán también todos sus pagos registrados.')) return;
+        try {
+          await API.facturas.delete(btn.dataset.id);
+          todasLasFacturas = todasLasFacturas.filter(f => String(f.id) !== btn.dataset.id);
+          toast('Factura eliminada');
+          aplicarFiltros();
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
+  }
+
+  function aplicarFiltros() {
+    const clienteId = document.getElementById('f-cliente').value;
+    const mes       = document.getElementById('f-mes').value;
+    const anio      = document.getElementById('f-anio').value;
+    const estado    = document.getElementById('f-estado').value;
+
+    let resultado = todasLasFacturas;
+
+    if (clienteId) resultado = resultado.filter(f => String(f.cliente_id) === clienteId);
+    if (estado)    resultado = resultado.filter(f => f.estado === estado);
+    if (anio)      resultado = resultado.filter(f => f.fecha.startsWith(anio));
+    if (mes) {
+      const m = mes.padStart(2, '0');
+      resultado = resultado.filter(f => f.fecha.slice(5, 7) === m);
+    }
+
+    renderTabla(resultado);
+  }
+
+  async function init() {
+    try {
+      const [clientes, facturas] = await Promise.all([
+        API.clientes.list(),
+        API.facturas.list(),
+      ]);
+
+      todasLasFacturas = facturas;
+
+      // Populate cliente filter
+      const selCliente = document.getElementById('f-cliente');
+      clientes.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.id; o.textContent = c.nombre;
+        selCliente.appendChild(o);
+      });
+
+      // Populate año filter
+      const anios = [...new Set(facturas.map(f => f.fecha.slice(0, 4)))].sort().reverse();
+      const selAnio = document.getElementById('f-anio');
+      anios.forEach(a => {
+        const o = document.createElement('option');
+        o.value = a; o.textContent = a;
+        selAnio.appendChild(o);
+      });
+
+      renderTabla(facturas);
+
+    } catch (e) {
+      document.getElementById('facturas-body').innerHTML =
+        `<tr><td colspan="8" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
+    }
+  }
+
+  document.getElementById('btn-filtrar').addEventListener('click', aplicarFiltros);
+
+  document.getElementById('btn-limpiar').addEventListener('click', () => {
+    ['f-cliente','f-mes','f-anio','f-estado'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    renderTabla(todasLasFacturas);
+  });
+
+  init();
+</script>
+</body>
+</html>
