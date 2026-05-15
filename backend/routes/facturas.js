@@ -60,6 +60,7 @@ router.patch('/:id/estado', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  db.prepare('DELETE FROM pagos WHERE factura_id = ?').run(req.params.id);
   const { changes } = db.prepare('DELETE FROM facturas WHERE id = ?').run(req.params.id);
   if (!changes) return res.status(404).json({ error: 'Factura no encontrada' });
   res.status(204).send();

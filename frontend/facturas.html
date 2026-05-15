@@ -90,6 +90,14 @@
 <script>
   const fmt = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
 
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
   let todasLasFacturas = [];
 
   function estadoBadge(estado) {
@@ -113,9 +121,26 @@
         <td class="text-right font-mono">${fmt.format(f.iva)}</td>
         <td class="text-right font-mono fw-bold">${fmt.format(f.monto_total)}</td>
         <td>${estadoBadge(f.estado)}</td>
-        <td><a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a></td>
+        <td>
+          <div class="flex gap-1">
+            <a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a>
+            <button class="btn btn-danger btn-sm" data-action="eliminar" data-id="${f.id}">Eliminar</button>
+          </div>
+        </td>
       </tr>
     `).join('');
+
+    tbody.querySelectorAll('[data-action="eliminar"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar esta factura? Se eliminarán también todos sus pagos registrados.')) return;
+        try {
+          await API.facturas.delete(btn.dataset.id);
+          todasLasFacturas = todasLasFacturas.filter(f => String(f.id) !== btn.dataset.id);
+          toast('Factura eliminada');
+          aplicarFiltros();
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
   }
 
   function aplicarFiltros() {
