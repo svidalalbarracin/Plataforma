@@ -5,7 +5,8 @@ async function _req(method, endpoint, body) {
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch(API_BASE + endpoint, opts);
   if (res.status === 204) return null;
-  const data = await res.json();
+  let data;
+  try { data = await res.json(); } catch { throw new Error(`Error ${res.status}`); }
   if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
   return data;
 }
