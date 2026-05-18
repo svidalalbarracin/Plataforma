@@ -1,9 +1,6 @@
 require('dotenv').config();
-const Database  = require('better-sqlite3');
-const path      = require('path');
+const db = require('../database');
 const { consultarUltimoComprobante, consultarComprobante } = require('./wsfev1');
-
-const db = new Database(path.join(__dirname, '../../database/facturacion.db'));
 
 // Formato: PPPP-TTT-NNNNNNNN  (punto de venta, tipo, número)
 function formatNumero(puntoVenta, tipo, numero) {
@@ -36,18 +33,26 @@ async function importarPorTipo(pv, tc) {
 
   if (ultimo === 0) {
     console.log('Sin comprobantes para este tipo.');
-    return { importadas: 0, omitidas: 0, errores: 0 };
+    return { importadas: 0, errores: 0 };
   }
 
-  let importadas = 0, omitidas = 0, errores = 0;
+  // Arrancar desde el siguiente al último ya importado para este PV+tipo
+  const prefijo = `${String(pv).padStart(4, '0')}-${String(tc).padStart(3, '0')}-`;
+  const row = db.prepare(
+    `SELECT MAX(CAST(SUBSTR(numero, 10) AS INTEGER)) AS ultimo FROM facturas WHERE numero LIKE ?`
+  ).get(prefijo + '%');
+  const desde = (row?.ultimo ?? 0) + 1;
 
-  for (let nro = 1; nro <= ultimo; nro++) {
+  if (desde > ultimo) {
+    console.log(`Ya actualizado (último local: ${desde - 1}, último en ARCA: ${ultimo}).`);
+    return { importadas: 0, errores: 0 };
+  }
+
+  console.log(`Importando del ${desde} al ${ultimo} (${ultimo - desde + 1} nuevos).`);
+  let importadas = 0, errores = 0;
+
+  for (let nro = desde; nro <= ultimo; nro++) {
     const numero = formatNumero(pv, tc, nro);
-
-    if (db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero)) {
-      omitidas++;
-      continue;
-    }
 
     try {
       const comp      = await consultarComprobante(pv, tc, nro);
@@ -65,45 +70,50 @@ async function importarPorTipo(pv, tc) {
       console.log(`  [OK] ${numero}  ${fecha}  $${total}`);
       importadas++;
     } catch (e) {
-      console.error(`  [ERR] ${formatNumero(pv, tc, nro)}: ${e.message}`);
+      console.error(`  [ERR] ${numero}: ${e.message}`);
       errores++;
     }
   }
 
-  console.log(`Resultado: ${importadas} importadas · ${omitidas} ya existían · ${errores} errores`);
-  return { importadas, omitidas, errores };
+  console.log(`Resultado: ${importadas} importadas · ${errores} errores`);
+  return { importadas, errores };
 }
 
-async function importarFacturas(puntoVenta, tiposComprobante) {
-  const pv = puntoVenta ?? Number(process.env.PUNTO_VENTA);
+async function importarFacturas(puntosVenta, tiposComprobante) {
+  // Acepta número/array o lee PUNTOS_VENTA del .env
+  let pvs;
+  if (puntosVenta != null) {
+    pvs = Array.isArray(puntosVenta) ? puntosVenta : [puntosVenta];
+  } else {
+    pvs = (process.env.PUNTOS_VENTA || '').split(',').map(s => Number(s.trim())).filter(Boolean);
+  }
 
-  // Acepta un número, un array, o la variable de entorno separada por comas
   let tipos;
   if (tiposComprobante != null) {
     tipos = Array.isArray(tiposComprobante) ? tiposComprobante : [tiposComprobante];
   } else {
-    const raw = process.env.TIPO_COMPROBANTE || '';
-    tipos = raw.split(',').map(s => Number(s.trim())).filter(Boolean);
+    tipos = (process.env.TIPO_COMPROBANTE || '').split(',').map(s => Number(s.trim())).filter(Boolean);
   }
 
-  if (!pv || tipos.length === 0) {
-    throw new Error('Se requieren PUNTO_VENTA y al menos un TIPO_COMPROBANTE en .env');
+  if (pvs.length === 0 || tipos.length === 0) {
+    throw new Error('Se requieren PUNTOS_VENTA y al menos un TIPO_COMPROBANTE en .env');
   }
 
-  console.log(`\nImportando desde ARCA — Punto de venta: ${pv}`);
+  console.log(`\nImportando desde ARCA — Puntos de venta: ${pvs.join(', ')}`);
   console.log(`Tipos de comprobante: ${tipos.join(', ')}\n`);
 
-  const totales = { importadas: 0, omitidas: 0, errores: 0 };
+  const totales = { importadas: 0, errores: 0 };
 
-  for (const tc of tipos) {
-    const res = await importarPorTipo(pv, tc);
-    totales.importadas += res.importadas;
-    totales.omitidas   += res.omitidas;
-    totales.errores    += res.errores;
+  for (const pv of pvs) {
+    for (const tc of tipos) {
+      const res = await importarPorTipo(pv, tc);
+      totales.importadas += res.importadas;
+      totales.errores    += res.errores;
+    }
   }
 
   console.log(`\n══ Total ═══════════════════════════════════`);
-  console.log(`${totales.importadas} importadas · ${totales.omitidas} ya existían · ${totales.errores} errores\n`);
+  console.log(`${totales.importadas} importadas · ${totales.errores} errores\n`);
   return totales;
 }
 

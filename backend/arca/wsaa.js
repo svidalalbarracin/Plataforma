@@ -7,21 +7,28 @@ const path  = require('path');
 const WSAA_WSDL  = 'https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl';
 const CERT_PATH  = path.join(__dirname, '../../certs/certificado.crt');
 const KEY_PATH   = path.join(__dirname, '../../certs/privada.key');
-const SERVICIO   = 'wsfev1';
+const SERVICIO   = 'wsfe';
 
 let ticketCache = null;
 
 function generarLoginTicketRequest() {
-  const ahora   = new Date();
-  const expira  = new Date(ahora.getTime() + 12 * 60 * 60 * 1000); // 12 horas
+  const ahora  = new Date();
+  // generationTime: unos minutos en el pasado para tolerar desfase de reloj
+  // expirationTime: solo minutos después (la validez del TA la fija ARCA internamente)
+  const gen    = new Date(ahora.getTime() - 10 * 60 * 1000);
+  const expira = new Date(ahora.getTime() + 10 * 60 * 1000);
 
-  const toISOAR = d => d.toISOString().replace('Z', '-00:00');
+  // ARCA espera la hora local de Argentina (UTC-3) sin milisegundos
+  const toISOAR = d => {
+    const ar = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+    return ar.toISOString().replace(/\.\d{3}Z$/, '-03:00');
+  };
 
   return `<?xml version="1.0" encoding="UTF-8"?>\
 <loginTicketRequest version="1.0">\
 <header>\
 <uniqueId>${Math.floor(ahora.getTime() / 1000)}</uniqueId>\
-<generationTime>${toISOAR(ahora)}</generationTime>\
+<generationTime>${toISOAR(gen)}</generationTime>\
 <expirationTime>${toISOAR(expira)}</expirationTime>\
 </header>\
 <service>${SERVICIO}</service>\
