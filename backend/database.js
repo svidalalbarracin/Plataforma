@@ -80,7 +80,30 @@ if (!facturasCols.includes('monto_neto')) {
   `);
 }
 
-// Migración: agregar retencion a pagos
+// Fix: la migración de IVA nulo renombró facturas → _facturas_old y SQLite
+// actualizó automáticamente la FK de pagos, dejándola apuntando a _facturas_old.
+// Si la tabla pagos tiene esa FK rota, se recrea con la referencia correcta.
+const pagosSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='pagos'").get();
+if (pagosSchema?.sql?.includes('_facturas_old')) {
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    ALTER TABLE pagos RENAME TO _pagos_old;
+    CREATE TABLE pagos (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      factura_id  INTEGER NOT NULL,
+      fecha       TEXT    NOT NULL,
+      monto       REAL    NOT NULL,
+      nota        TEXT,
+      retencion   REAL,
+      FOREIGN KEY (factura_id) REFERENCES facturas(id)
+    );
+    INSERT INTO pagos SELECT * FROM _pagos_old;
+    DROP TABLE _pagos_old;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
+// Migración: agregar retencion a pagos (para DBs que no pasaron por el fix anterior)
 const pagosCols = db.prepare('PRAGMA table_info(pagos)').all().map(c => c.name);
 if (!pagosCols.includes('retencion')) {
   db.exec('ALTER TABLE pagos ADD COLUMN retencion REAL');

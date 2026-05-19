@@ -40,21 +40,7 @@
   <!-- Pagos registrados -->
   <div class="card">
     <div class="card-title">Cobros registrados</div>
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th class="text-right">Monto recibido</th>
-            <th class="text-right">Retención Ganancias</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="pagos-body">
-          <tr><td colspan="4" class="empty">Cargando…</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <ul id="pagos-body" style="list-style:none;padding:0;margin:0"></ul>
     <div id="saldo-container" style="display:none;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:14px"></div>
   </div>
 
@@ -150,25 +136,24 @@
   }
 
   function renderPagos(pagos) {
-    const tbody = document.getElementById('pagos-body');
+    const lista = document.getElementById('pagos-body');
+
     if (pagos.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty">Sin cobros registrados</td></tr>';
+      lista.innerHTML = '<li style="padding:1.5rem 0;text-align:center;color:var(--text-muted)">Sin cobros registrados</li>';
       document.getElementById('saldo-container').style.display = 'none';
       return;
     }
 
-    tbody.innerHTML = pagos.map(p => `
-      <tr>
-        <td>${p.fecha}</td>
-        <td class="text-right font-mono">${fmt.format(p.monto)}</td>
-        <td class="text-right font-mono">${p.retencion != null ? fmt.format(p.retencion) : '—'}</td>
-        <td>
-          <button class="btn btn-danger btn-sm btn-icon" data-id="${p.id}" title="Eliminar">✕</button>
-        </td>
-      </tr>
+    lista.innerHTML = pagos.map(p => `
+      <li data-id="${p.id}" style="display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--border);gap:.5rem;font-size:.875rem">
+        <span style="font-family:ui-monospace,monospace;flex:1">
+          ${p.fecha} — ${fmt.format(p.monto)}${p.retencion != null ? ` — Retención: ${fmt.format(p.retencion)}` : ''}
+        </span>
+        <button class="btn btn-danger btn-sm btn-icon" data-id="${p.id}" title="Eliminar">✕</button>
+      </li>
     `).join('');
 
-    tbody.querySelectorAll('[data-id]').forEach(btn => {
+    lista.querySelectorAll('[data-id] button, button[data-id]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('¿Eliminar este cobro?')) return;
         try {

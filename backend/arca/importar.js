@@ -18,7 +18,7 @@ function obtenerOCrearCliente(cuit) {
   if (!cliente) {
     const { lastInsertRowid } = db.prepare(
       'INSERT INTO clientes (nombre, cuit) VALUES (?, ?)'
-    ).run(`Cliente CUIT ${cuitStr}`, cuitStr);
+    ).run(cuitStr, cuitStr);
     cliente = { id: lastInsertRowid };
     console.log(`  Nuevo cliente creado para CUIT ${cuitStr}`);
   }

@@ -34,11 +34,10 @@ function obtenerOCrearCliente(nroDoc, tipoDoc) {
   let cliente = db.prepare('SELECT id FROM clientes WHERE cuit = ?').get(String(nroDoc));
   if (cliente) return cliente.id;
 
-  // Crear cliente mínimo; el abogado puede completar el nombre después
-  const nombre = `${tipoDoc} ${nroDoc}`;
+  // Crear cliente mínimo con el CUIT como nombre; completar nombre real desde la app
   const res = db.prepare(
     'INSERT INTO clientes (nombre, cuit) VALUES (?, ?)'
-  ).run(nombre, String(nroDoc));
+  ).run(String(nroDoc), String(nroDoc));
   return res.lastInsertRowid;
 }
 
