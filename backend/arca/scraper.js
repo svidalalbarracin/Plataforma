@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../.env') }
 const { chromium } = require('playwright');
 const path = require('path');
 const fs   = require('fs');
+const pdfParse = require('pdf-parse');
 const db   = require('../database');
 
 const PDF_DIR = path.join(__dirname, '../../storage/facturas');
@@ -27,17 +28,47 @@ async function esperarNuevaPestana(context, timeout = 15000) {
   });
 }
 
+// ── Extracción de nombre desde PDF ───────────────────────────────────────────
+
+async function extraerNombreDesedePDF(pdfPath) {
+  try {
+    const buf = fs.readFileSync(pdfPath);
+    const { text } = await pdfParse(buf);
+    const idx = text.indexOf('Apellido y Nombre');
+    if (idx === -1) return null;
+    const sector = text.slice(idx, idx + 600);
+
+    // Patrón 1: CUIT (11 dígitos) pegado al nombre → entidad argentina
+    const m = sector.match(/\d{11}([A-ZÁÉÍÓÚÜÑ][^\n]+)/);
+    if (m) return m[1].trim();
+
+    // Patrón 2: entidad extranjera (sin CUIT) → primera línea de contenido real
+    const skip = /^(Apellido y Nombre|Domicilio|CUIT:|Condición|Ingresos|Fecha de |Punto de|Razón Social:|Comp\. Nro)|\d{2}\/\d{2}\/\d{4}|^\d+$/;
+    for (const linea of sector.split('\n').map(l => l.trim()).filter(Boolean)) {
+      if (!skip.test(linea)) return linea;
+    }
+  } catch (e) {
+    console.warn(`  [warn] No se pudo extraer nombre del PDF ${path.basename(pdfPath)}: ${e.message}`);
+  }
+  return null;
+}
+
 // ── Persistencia ──────────────────────────────────────────────────────────────
 
-function obtenerOCrearCliente(nroDoc, tipoDoc) {
-  // Buscar por CUIT/CUIL/DNI
-  let cliente = db.prepare('SELECT id FROM clientes WHERE cuit = ?').get(String(nroDoc));
-  if (cliente) return cliente.id;
+function obtenerOCrearCliente(nroDoc, nombre = null) {
+  const cuit = String(nroDoc);
+  let cliente = db.prepare('SELECT id, nombre FROM clientes WHERE cuit = ?').get(cuit);
 
-  // Crear cliente mínimo con el CUIT como nombre; completar nombre real desde la app
-  const res = db.prepare(
-    'INSERT INTO clientes (nombre, cuit) VALUES (?, ?)'
-  ).run(String(nroDoc), String(nroDoc));
+  if (cliente) {
+    // Actualizar nombre si el actual es solo el CUIT y ahora tenemos el nombre real
+    if (nombre && cliente.nombre === cuit) {
+      db.prepare('UPDATE clientes SET nombre = ? WHERE cuit = ?').run(nombre, cuit);
+    }
+    return cliente.id;
+  }
+
+  const nombreGuardar = nombre ?? cuit;
+  const res = db.prepare('INSERT INTO clientes (nombre, cuit) VALUES (?, ?)').run(nombreGuardar, cuit);
   return res.lastInsertRowid;
 }
 
@@ -231,7 +262,9 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
       console.log(`  [raw] ${numero}  importe="${fila.importeTotal}" → ${montoTotal}`);
 
       const pdfPath   = await descargarPDF(page, context, fila, numero);
-      const clienteId = obtenerOCrearCliente(fila.nroDoc, fila.tipoDoc);
+      const nombre    = await extraerNombreDesedePDF(pdfPath);
+      if (nombre) console.log(`  [nombre] ${nombre}`);
+      const clienteId = obtenerOCrearCliente(fila.nroDoc, nombre);
       const fecha     = isoFecha(fila.fecha);
 
       guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, forzar });

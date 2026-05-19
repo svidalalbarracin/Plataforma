@@ -38,4 +38,5 @@ const API = {
     create: (data)     => _req('POST',   '/pagos', data),
     delete: (id)       => _req('DELETE', `/pagos/${id}`),
   },
+  importar: () => _req('POST', '/importar'),
 };

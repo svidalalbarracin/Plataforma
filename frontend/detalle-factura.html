@@ -232,7 +232,7 @@
       e.target.reset();
       document.getElementById('pago-fecha').valueAsDate = new Date();
       document.getElementById('retencion-preview').textContent = '—';
-      cargarPagos();
+      await Promise.all([cargarFactura(), cargarPagos()]);
     } catch (err) {
       toast(err.message, 'error');
     } finally {

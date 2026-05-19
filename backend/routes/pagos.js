@@ -42,6 +42,9 @@ router.post('/', (req, res) => {
     'INSERT INTO pagos (factura_id, fecha, monto, retencion, nota) VALUES (?, ?, ?, ?, ?)'
   ).run(factura_id, fecha, monto, retencion, nota ?? null);
 
+  // Al registrar cualquier cobro, marcar la factura como pagada automáticamente
+  db.prepare("UPDATE facturas SET estado = 'pagada' WHERE id = ? AND estado = 'impaga'").run(factura_id);
+
   res.status(201).json({ id: lastInsertRowid, factura_id, fecha, monto, retencion, nota });
 });
 
