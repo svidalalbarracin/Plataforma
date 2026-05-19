@@ -305,16 +305,20 @@ function isoFecha(ddmmaaaa) {
 }
 
 function parsearMonto(str) {
-  // RCEL usa formato argentino: punto = miles, coma = decimal → "1.234,56"
-  // Limpia espacios, símbolo $ y caracteres no numéricos excepto puntos y comas
   const limpio = str.trim().replace(/[^\d.,]/g, '');
 
-  // Si tiene coma → es el separador decimal ("1.234,56" → 1234.56)
   if (limpio.includes(',')) {
+    // "1.234,56" → punto=miles, coma=decimal
     return parseFloat(limpio.replace(/\./g, '').replace(',', '.')) || 0;
   }
 
-  // Sin coma: los puntos son separadores de miles ("1.234.567" → 1234567)
+  const partes = limpio.split('.');
+  if (partes.length === 2 && partes[1].length <= 2) {
+    // Un solo punto con ≤2 decimales → es separador decimal ("13451977.56")
+    return parseFloat(limpio) || 0;
+  }
+
+  // Sin coma y múltiples puntos, o punto con 3 dígitos → separadores de miles
   return parseFloat(limpio.replace(/\./g, '')) || 0;
 }
 
