@@ -45,13 +45,20 @@ function yaImportada(numero) {
   return !!db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero);
 }
 
-function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath }) {
+function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, forzar = false }) {
   const montoNeto = Math.round((montoTotal / 1.21) * 100) / 100;
   const iva       = Math.round((montoTotal - montoNeto) * 100) / 100;
-  db.prepare(`
-    INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath));
+
+  if (forzar && db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero)) {
+    db.prepare(`
+      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=? WHERE numero=?
+    `).run(montoNeto, iva, montoNeto, montoTotal, numero);
+  } else {
+    db.prepare(`
+      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath));
+  }
 }
 
 // ── Parseo de tabla ───────────────────────────────────────────────────────────
@@ -193,7 +200,7 @@ async function completarFormulario(page, { fechaDesde, fechaHasta, tipoComproban
 
 // ── Buscar y procesar resultados ──────────────────────────────────────────────
 
-async function buscarYProcesar(page, context) {
+async function buscarYProcesar(page, context, { forzar = false } = {}) {
   console.log('  Haciendo click en "Buscar"...');
   await page.locator('input[type="submit"], button[type="submit"], input[value*="uscar"]').first().click();
   await page.waitForLoadState('networkidle');
@@ -202,38 +209,48 @@ async function buscarYProcesar(page, context) {
   console.log(`  Resultados: ${filas.length} fila(s)`);
 
   if (filas.length === 0) {
-    // Mostrar texto de la página para diagnóstico
     const texto = await page.textContent('body');
     console.log('  Texto página:', texto.replace(/\s+/g, ' ').slice(0, 400));
-    return { importadas: 0, omitidas: 0, errores: 0 };
+    return { importadas: 0, actualizadas: 0, omitidas: 0, errores: 0, numerosImportados: [] };
   }
 
-  let importadas = 0, omitidas = 0, errores = 0;
+  let importadas = 0, actualizadas = 0, omitidas = 0, errores = 0;
+  const numerosImportados = [];
 
   for (const fila of filas) {
     const numero = normalizarNumero(fila.nroComp);
+    const existe = yaImportada(numero);
 
-    if (yaImportada(numero)) {
+    if (existe && !forzar) {
       omitidas++;
       continue;
     }
 
     try {
-      const pdfPath    = await descargarPDF(page, context, fila, numero);
-      const clienteId  = obtenerOCrearCliente(fila.nroDoc, fila.tipoDoc);
-      const fecha      = isoFecha(fila.fecha);
       const montoTotal = parsearMonto(fila.importeTotal);
+      console.log(`  [raw] ${numero}  importe="${fila.importeTotal}" → ${montoTotal}`);
 
-      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath });
-      console.log(`  [OK] ${numero}  ${fecha}  $${montoTotal}`);
-      importadas++;
+      const pdfPath   = await descargarPDF(page, context, fila, numero);
+      const clienteId = obtenerOCrearCliente(fila.nroDoc, fila.tipoDoc);
+      const fecha     = isoFecha(fila.fecha);
+
+      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, forzar });
+
+      if (existe) {
+        console.log(`  [UPD] ${numero}  ${fecha}  $${montoTotal}`);
+        actualizadas++;
+      } else {
+        console.log(`  [OK] ${numero}  ${fecha}  $${montoTotal}`);
+        numerosImportados.push(numero);
+        importadas++;
+      }
     } catch (e) {
       console.error(`  [ERR] ${numero}: ${e.message}`);
       errores++;
     }
   }
 
-  return { importadas, omitidas, errores };
+  return { importadas, actualizadas, omitidas, errores, numerosImportados };
 }
 
 // ── Descargar PDF ─────────────────────────────────────────────────────────────
@@ -288,19 +305,28 @@ function isoFecha(ddmmaaaa) {
 }
 
 function parsearMonto(str) {
-  // "1.234,56" → 1234.56
-  return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
+  // RCEL usa formato argentino: punto = miles, coma = decimal → "1.234,56"
+  // Limpia espacios, símbolo $ y caracteres no numéricos excepto puntos y comas
+  const limpio = str.trim().replace(/[^\d.,]/g, '');
+
+  // Si tiene coma → es el separador decimal ("1.234,56" → 1234.56)
+  if (limpio.includes(',')) {
+    return parseFloat(limpio.replace(/\./g, '').replace(',', '.')) || 0;
+  }
+
+  // Sin coma: los puntos son separadores de miles ("1.234.567" → 1234567)
+  return parseFloat(limpio.replace(/\./g, '')) || 0;
 }
 
 // ── Función principal exportable ──────────────────────────────────────────────
 
-async function importarFacturas({ fechaDesde, fechaHasta, tipoComprobante, puntoVenta } = {}) {
+async function importarFacturas({ fechaDesde, fechaHasta, tipoComprobante, puntoVenta, forzar = false } = {}) {
   const desde = fechaDesde ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const hasta  = fechaHasta ?? new Date();
 
   console.log('\n══ Importación RCEL ══════════════════════════════════════');
   console.log(`  Período: ${fmtDDMMAAAA(desde)} → ${fmtDDMMAAAA(hasta)}`);
-  console.log(`  Tipo: ${tipoComprobante ?? 'todos'}  PV: ${puntoVenta ?? 'todos'}\n`);
+  console.log(`  Tipo: ${tipoComprobante ?? 'todos'}  PV: ${puntoVenta ?? 'todos'}  forzar: ${forzar}\n`);
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -330,10 +356,10 @@ async function importarFacturas({ fechaDesde, fechaHasta, tipoComprobante, punto
 
     // 6. Buscar y procesar
     console.log('\n6. Buscando y procesando...');
-    const totales = await buscarYProcesar(repPage, context);
+    const totales = await buscarYProcesar(repPage, context, { forzar });
 
     console.log('\n══ Resultado ═════════════════════════════════════════════');
-    console.log(`  ${totales.importadas} importadas · ${totales.omitidas} ya existían · ${totales.errores} errores`);
+    console.log(`  ${totales.importadas} importadas · ${totales.actualizadas} actualizadas · ${totales.omitidas} ya existían · ${totales.errores} errores`);
     return totales;
 
   } finally {
