@@ -1,6 +1,9 @@
 const { Router } = require('express');
 const path = require('path');
+const fs = require('fs');
 const db = require('../database');
+
+const PDF_DIR = path.join(__dirname, '../../storage/facturas');
 
 const router = Router();
 
@@ -72,9 +75,17 @@ router.patch('/:id/estado', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  const factura = db.prepare('SELECT pdf_path FROM facturas WHERE id = ?').get(req.params.id);
+  if (!factura) return res.status(404).json({ error: 'Factura no encontrada' });
+
   db.prepare('DELETE FROM pagos WHERE factura_id = ?').run(req.params.id);
-  const { changes } = db.prepare('DELETE FROM facturas WHERE id = ?').run(req.params.id);
-  if (!changes) return res.status(404).json({ error: 'Factura no encontrada' });
+  db.prepare('DELETE FROM facturas WHERE id = ?').run(req.params.id);
+
+  if (factura.pdf_path) {
+    const pdfFile = path.join(PDF_DIR, path.basename(factura.pdf_path));
+    try { fs.unlinkSync(pdfFile); } catch { /* ya no existía */ }
+  }
+
   res.status(204).send();
 });
 
