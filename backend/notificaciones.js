@@ -117,7 +117,7 @@ async function enviarMail({ asunto, titulo, subtitulo, descripcion, facturas }) 
   console.log(`  Mail enviado (${facturas.length} vencidas) → ${process.env.MAIL_TO}`);
 }
 
-// Llamar después de una importación: notifica sólo las recién importadas que ya estén vencidas
+// Llamar después de una importación: notifica solo las recién importadas que ya estén vencidas
 async function notificarImportadasVencidas(numeros) {
   if (!numeros.length) return 0;
   const vencidas = obtenerVencidas(numeros);
