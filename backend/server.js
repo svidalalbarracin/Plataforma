@@ -17,11 +17,18 @@ app.use('/api/pagos',    require('./routes/pagos'));
 app.post('/api/importar', async (req, res) => {
   try {
     const { importarFacturas } = require('./arca/scraper');
+    const { notificarImportadasVencidas } = require('./notificaciones');
     const resultado = await importarFacturas({
       fechaDesde: new Date('2026-01-01'),
       fechaHasta: new Date(),
     });
     res.json(resultado);
+    // Notificar fuera del request para no demorar la respuesta
+    if (resultado.numerosImportados?.length) {
+      notificarImportadasVencidas(resultado.numerosImportados).catch(e =>
+        console.error('[importar] Error al notificar:', e.message)
+      );
+    }
   } catch (e) {
     console.error('[importar]', e.message);
     res.status(500).json({ error: e.message });

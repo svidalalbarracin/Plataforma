@@ -14,20 +14,6 @@ function fmtDDMMAAAA(d) {
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 }
 
-// Devuelve la última página abierta en el contexto
-async function ultimaPagina(context) {
-  const pages = context.pages();
-  return pages[pages.length - 1];
-}
-
-// Espera a que se abra una nueva pestaña en el contexto, con timeout
-async function esperarNuevaPestana(context, timeout = 15000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Timeout esperando nueva pestaña')), timeout);
-    context.once('page', page => { clearTimeout(timer); resolve(page); });
-  });
-}
-
 // ── Extracción de nombre desde PDF ───────────────────────────────────────────
 
 async function extraerNombreDesedePDF(pdfPath) {
