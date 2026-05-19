@@ -33,14 +33,16 @@ router.post('/', (req, res) => {
   if (!factura_id || !fecha || monto == null)
     return res.status(400).json({ error: 'factura_id, fecha y monto son requeridos' });
 
-  const factura = db.prepare('SELECT id FROM facturas WHERE id = ?').get(factura_id);
+  const factura = db.prepare('SELECT id, monto_total FROM facturas WHERE id = ?').get(factura_id);
   if (!factura) return res.status(400).json({ error: 'factura_id no existe' });
 
-  const { lastInsertRowid } = db.prepare(
-    'INSERT INTO pagos (factura_id, fecha, monto, nota) VALUES (?, ?, ?, ?)'
-  ).run(factura_id, fecha, monto, nota ?? null);
+  const retencion = Math.round((factura.monto_total - Number(monto)) * 100) / 100;
 
-  res.status(201).json({ id: lastInsertRowid, factura_id, fecha, monto, nota });
+  const { lastInsertRowid } = db.prepare(
+    'INSERT INTO pagos (factura_id, fecha, monto, retencion, nota) VALUES (?, ?, ?, ?, ?)'
+  ).run(factura_id, fecha, monto, retencion, nota ?? null);
+
+  res.status(201).json({ id: lastInsertRowid, factura_id, fecha, monto, retencion, nota });
 });
 
 router.delete('/:id', (req, res) => {

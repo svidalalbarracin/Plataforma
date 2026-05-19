@@ -57,15 +57,15 @@ async function importarPorTipo(pv, tc) {
     try {
       const comp      = await consultarComprobante(pv, tc, nro);
       const fecha     = afipFechaToISO(comp.CbteFch);
-      const monto     = Number(comp.ImpNeto)  || 0;
-      const iva       = Number(comp.ImpIVA)   || 0;
       const total     = Number(comp.ImpTotal) || 0;
+      const montoNeto = Math.round((total / 1.21) * 100) / 100;
+      const iva       = Math.round((total - montoNeto) * 100) / 100;
       const clienteId = obtenerOCrearCliente(comp.DocNro);
 
       db.prepare(`
-        INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_total, estado)
-        VALUES (?, ?, ?, ?, ?, ?, 'impaga')
-      `).run(clienteId, numero, fecha, monto, iva, total);
+        INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, estado)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'impaga')
+      `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, total);
 
       console.log(`  [OK] ${numero}  ${fecha}  $${total}`);
       importadas++;

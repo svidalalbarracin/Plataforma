@@ -46,11 +46,13 @@ function yaImportada(numero) {
   return !!db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero);
 }
 
-function guardarFactura({ clienteId, numero, fecha, monto, pdfPath }) {
+function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath }) {
+  const montoNeto = Math.round((montoTotal / 1.21) * 100) / 100;
+  const iva       = Math.round((montoTotal - montoNeto) * 100) / 100;
   db.prepare(`
-    INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_total, pdf_path)
-    VALUES (?, ?, ?, ?, NULL, ?, ?)
-  `).run(clienteId, numero, fecha, monto, monto, pdfPath);
+    INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath));
 }
 
 // ── Parseo de tabla ───────────────────────────────────────────────────────────
@@ -218,16 +220,13 @@ async function buscarYProcesar(page, context) {
     }
 
     try {
-      // Descargar PDF
-      const pdfPath = await descargarPDF(page, context, fila, numero);
+      const pdfPath    = await descargarPDF(page, context, fila, numero);
+      const clienteId  = obtenerOCrearCliente(fila.nroDoc, fila.tipoDoc);
+      const fecha      = isoFecha(fila.fecha);
+      const montoTotal = parsearMonto(fila.importeTotal);
 
-      // Persistir en DB
-      const clienteId = obtenerOCrearCliente(fila.nroDoc, fila.tipoDoc);
-      const fecha  = isoFecha(fila.fecha);
-      const monto  = parsearMonto(fila.importeTotal);
-
-      guardarFactura({ clienteId, numero, fecha, monto, pdfPath });
-      console.log(`  [OK] ${numero}  ${fecha}  $${monto}`);
+      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath });
+      console.log(`  [OK] ${numero}  ${fecha}  $${montoTotal}`);
       importadas++;
     } catch (e) {
       console.error(`  [ERR] ${numero}: ${e.message}`);

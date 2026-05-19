@@ -39,14 +39,14 @@
 
   <!-- Pagos registrados -->
   <div class="card">
-    <div class="card-title">Pagos registrados</div>
+    <div class="card-title">Cobros registrados</div>
     <div class="table-wrapper">
       <table>
         <thead>
           <tr>
             <th>Fecha</th>
-            <th class="text-right">Monto</th>
-            <th>Nota</th>
+            <th class="text-right">Monto recibido</th>
+            <th class="text-right">Retención Ganancias</th>
             <th></th>
           </tr>
         </thead>
@@ -55,26 +55,27 @@
         </tbody>
       </table>
     </div>
+    <div id="saldo-container" style="display:none;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:14px"></div>
   </div>
 
-  <!-- Agregar pago -->
+  <!-- Registrar cobro -->
   <div class="card" id="card-nuevo-pago">
-    <div class="card-title">Registrar nuevo pago</div>
-    <form id="form-pago" class="form-grid" style="max-width: 600px">
+    <div class="card-title">Registrar cobro</div>
+    <form id="form-pago" class="form-grid" style="max-width:600px">
       <div class="form-group">
-        <label for="pago-fecha">Fecha</label>
+        <label for="pago-fecha">Fecha de cobro</label>
         <input type="date" id="pago-fecha" required>
       </div>
       <div class="form-group">
-        <label for="pago-monto">Monto</label>
+        <label for="pago-monto">Monto recibido</label>
         <input type="number" id="pago-monto" min="0.01" step="0.01" placeholder="0.00" required>
       </div>
-      <div class="form-group" style="grid-column: 1 / -1">
-        <label for="pago-nota">Nota (opcional)</label>
-        <textarea id="pago-nota" placeholder="Transferencia, efectivo, nro. comprobante…"></textarea>
+      <div class="form-group">
+        <label>Retención de Ganancias</label>
+        <div id="retencion-preview" style="padding:8px 0;font-family:monospace;color:var(--text-muted)">—</div>
       </div>
-      <div style="grid-column: 1 / -1">
-        <button type="submit" class="btn btn-success" id="btn-guardar-pago">Registrar pago</button>
+      <div style="grid-column:1/-1">
+        <button type="submit" class="btn btn-success" id="btn-guardar-pago">Registrar cobro</button>
       </div>
     </form>
   </div>
@@ -82,9 +83,9 @@
 
 <script src="js/api.js"></script>
 <script>
-  const fmt     = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
-  const params  = new URLSearchParams(location.search);
-  const factId  = params.get('id');
+  const fmt    = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+  const params = new URLSearchParams(location.search);
+  const factId = params.get('id');
 
   let facturaActual = null;
 
@@ -106,23 +107,27 @@
     facturaActual = f;
     document.getElementById('titulo-factura').textContent = `Factura ${f.numero}`;
 
+    const montoNeto = f.monto_neto ?? (f.monto_total / 1.21);
+    const iva       = f.monto_total - montoNeto;
+
     document.getElementById('detalle-factura').innerHTML = `
       <div class="detail-item"><dt>Número</dt><dd class="font-mono">${f.numero}</dd></div>
       <div class="detail-item"><dt>Cliente</dt><dd>${f.cliente_nombre}</dd></div>
+      <div class="detail-item"><dt>CUIT</dt><dd class="font-mono">${f.cliente_cuit ?? '—'}</dd></div>
       <div class="detail-item"><dt>Fecha</dt><dd>${f.fecha}</dd></div>
       <div class="detail-item"><dt>Estado</dt><dd>${estadoBadge(f.estado)}</dd></div>
-      <div class="detail-item"><dt>Monto neto</dt><dd class="font-mono">${fmt.format(f.monto)}</dd></div>
-      <div class="detail-item"><dt>IVA</dt><dd class="font-mono">${fmt.format(f.iva)}</dd></div>
+      <div class="detail-item"><dt>Monto neto</dt><dd class="font-mono">${fmt.format(montoNeto)}</dd></div>
+      <div class="detail-item"><dt>IVA (21%)</dt><dd class="font-mono">${fmt.format(iva)}</dd></div>
       <div class="detail-item"><dt>Total</dt><dd class="font-mono large">${fmt.format(f.monto_total)}</dd></div>
     `;
 
-    const acciones = document.getElementById('acciones-header');
+    const acciones  = document.getElementById('acciones-header');
     const nuevoEstado = f.estado === 'pagada' ? 'impaga' : 'pagada';
-    const btnLabel   = f.estado === 'pagada' ? 'Marcar como impaga' : 'Marcar como pagada';
-    const btnClass   = f.estado === 'pagada' ? 'btn-ghost' : 'btn-success';
+    const btnLabel  = f.estado === 'pagada' ? 'Marcar como impaga' : 'Marcar como pagada';
+    const btnClass  = f.estado === 'pagada' ? 'btn-ghost' : 'btn-success';
 
     acciones.innerHTML = `
-      ${f.pdf_path ? `<a href="${f.pdf_path}" target="_blank" class="btn btn-ghost">Abrir PDF</a>` : ''}
+      ${f.pdf_url ? `<a href="${f.pdf_url}" target="_blank" class="btn btn-ghost">Abrir PDF</a>` : ''}
       <button class="btn ${btnClass}" id="btn-cambiar-estado">${btnLabel}</button>
     `;
 
@@ -138,14 +143,16 @@
   function renderPagos(pagos) {
     const tbody = document.getElementById('pagos-body');
     if (pagos.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty">Sin pagos registrados</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">Sin cobros registrados</td></tr>';
+      document.getElementById('saldo-container').style.display = 'none';
       return;
     }
+
     tbody.innerHTML = pagos.map(p => `
       <tr>
         <td>${p.fecha}</td>
         <td class="text-right font-mono">${fmt.format(p.monto)}</td>
-        <td class="text-muted">${p.nota || '—'}</td>
+        <td class="text-right font-mono">${p.retencion != null ? fmt.format(p.retencion) : '—'}</td>
         <td>
           <button class="btn btn-danger btn-sm btn-icon" data-id="${p.id}" title="Eliminar">✕</button>
         </td>
@@ -154,14 +161,30 @@
 
     tbody.querySelectorAll('[data-id]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        if (!confirm('¿Eliminar este pago?')) return;
+        if (!confirm('¿Eliminar este cobro?')) return;
         try {
           await API.pagos.delete(btn.dataset.id);
-          toast('Pago eliminado');
+          toast('Cobro eliminado');
           cargarPagos();
         } catch (e) { toast(e.message, 'error'); }
       });
     });
+
+    if (facturaActual) {
+      const totalCobrado = pagos.reduce((s, p) => s + p.monto, 0);
+      const saldo = facturaActual.monto_total - totalCobrado;
+      const cont  = document.getElementById('saldo-container');
+      cont.style.display = 'block';
+      if (saldo > 0.01) {
+        cont.style.background = 'rgba(220,38,38,0.08)';
+        cont.style.color = '#dc2626';
+        cont.innerHTML = `<strong>Saldo pendiente:</strong> ${fmt.format(saldo)}`;
+      } else {
+        cont.style.background = 'rgba(22,163,74,0.08)';
+        cont.style.color = '#16a34a';
+        cont.innerHTML = `<strong>Totalmente cobrada</strong>`;
+      }
+    }
   }
 
   async function cargarFactura() {
@@ -180,16 +203,26 @@
         '<p class="empty">No se especificó una factura. <a href="facturas.html">Volver al listado</a></p>';
       return;
     }
-
     try {
       await Promise.all([cargarFactura(), cargarPagos()]);
-
-      // Precargar fecha de hoy
       document.getElementById('pago-fecha').valueAsDate = new Date();
     } catch (e) {
       toast(e.message, 'error');
     }
   }
+
+  // Actualizar preview de retención mientras el usuario escribe
+  document.getElementById('pago-monto').addEventListener('input', () => {
+    const montoRecibido = Number(document.getElementById('pago-monto').value);
+    const preview = document.getElementById('retencion-preview');
+    if (!facturaActual || !montoRecibido) {
+      preview.textContent = '—';
+      return;
+    }
+    const retencion = facturaActual.monto_total - montoRecibido;
+    preview.textContent = fmt.format(retencion);
+    preview.style.color = retencion > 0 ? '#d97706' : 'var(--text-muted)';
+  });
 
   document.getElementById('form-pago').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -198,13 +231,13 @@
     try {
       await API.pagos.create({
         factura_id: Number(factId),
-        fecha:  document.getElementById('pago-fecha').value,
-        monto:  Number(document.getElementById('pago-monto').value),
-        nota:   document.getElementById('pago-nota').value || null,
+        fecha: document.getElementById('pago-fecha').value,
+        monto: Number(document.getElementById('pago-monto').value),
       });
-      toast('Pago registrado correctamente');
+      toast('Cobro registrado correctamente');
       e.target.reset();
       document.getElementById('pago-fecha').valueAsDate = new Date();
+      document.getElementById('retencion-preview').textContent = '—';
       cargarPagos();
     } catch (err) {
       toast(err.message, 'error');
