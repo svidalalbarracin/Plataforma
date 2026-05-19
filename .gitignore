@@ -4,7 +4,10 @@ storage/
 database/*.db
 database/*.db-shm
 database/*.db-wal
+# Certificados y claves — nunca commitear
+certs/
 *.pem
 *.p12
 *.crt
 *.key
+*.csr
