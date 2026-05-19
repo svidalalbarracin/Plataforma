@@ -42,7 +42,7 @@ db.exec(`
   );
 `);
 
-// Migración: permitir iva NULL (la columna fue creada con NOT NULL en versiones anteriores)
+// Migración: permitir iva NULL
 const ivaCol = db.prepare("PRAGMA table_info(facturas)").all().find(c => c.name === 'iva');
 if (ivaCol && ivaCol.notnull === 1) {
   db.exec(`
@@ -66,6 +66,47 @@ if (ivaCol && ivaCol.notnull === 1) {
     COMMIT;
     PRAGMA foreign_keys = ON;
   `);
+}
+
+// Migración: agregar monto_neto a facturas y backfill con IVA 21%
+const facturasCols = db.prepare('PRAGMA table_info(facturas)').all().map(c => c.name);
+if (!facturasCols.includes('monto_neto')) {
+  db.exec('ALTER TABLE facturas ADD COLUMN monto_neto REAL');
+  db.exec(`
+    UPDATE facturas
+    SET monto_neto = ROUND(monto_total / 1.21, 2),
+        iva        = ROUND(monto_total - ROUND(monto_total / 1.21, 2), 2),
+        monto      = ROUND(monto_total / 1.21, 2)
+  `);
+}
+
+// Fix: la migración de IVA nulo renombró facturas → _facturas_old y SQLite
+// actualizó automáticamente la FK de pagos, dejándola apuntando a _facturas_old.
+// Si la tabla pagos tiene esa FK rota, se recrea con la referencia correcta.
+const pagosSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='pagos'").get();
+if (pagosSchema?.sql?.includes('_facturas_old')) {
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    ALTER TABLE pagos RENAME TO _pagos_old;
+    CREATE TABLE pagos (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      factura_id  INTEGER NOT NULL,
+      fecha       TEXT    NOT NULL,
+      monto       REAL    NOT NULL,
+      nota        TEXT,
+      retencion   REAL,
+      FOREIGN KEY (factura_id) REFERENCES facturas(id)
+    );
+    INSERT INTO pagos SELECT * FROM _pagos_old;
+    DROP TABLE _pagos_old;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
+// Migración: agregar retencion a pagos (para DBs que no pasaron por el fix anterior)
+const pagosCols = db.prepare('PRAGMA table_info(pagos)').all().map(c => c.name);
+if (!pagosCols.includes('retencion')) {
+  db.exec('ALTER TABLE pagos ADD COLUMN retencion REAL');
 }
 
 module.exports = db;

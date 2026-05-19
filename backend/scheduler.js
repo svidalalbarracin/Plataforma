@@ -1,6 +1,6 @@
 require('dotenv').config();
 const cron = require('node-cron');
-const { enviarNotificaciones } = require('./notificaciones');
+const { notificarResumenDiario } = require('./notificaciones');
 
 const HORA = process.env.NOTIF_HORA || '9';
 const expr = `0 ${HORA} * * *`;
@@ -11,7 +11,7 @@ console.log(`[scheduler] Expresión cron: ${expr}`);
 cron.schedule(expr, async () => {
   console.log(`[${new Date().toISOString()}] Ejecutando chequeo de notificaciones...`);
   try {
-    await enviarNotificaciones();
+    await notificarResumenDiario();
   } catch (err) {
     console.error(`[${new Date().toISOString()}] Error en notificaciones:`, err.message);
   }
