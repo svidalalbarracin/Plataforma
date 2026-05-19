@@ -75,15 +75,13 @@
             <th>Cliente</th>
             <th>CUIT</th>
             <th>Fecha</th>
-            <th class="text-right">Neto</th>
-            <th class="text-right">IVA 21%</th>
             <th class="text-right">Total</th>
             <th>Estado</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="facturas-body">
-          <tr><td colspan="9" class="empty">Cargando…</td></tr>
+          <tr><td colspan="7" class="empty">Cargando…</td></tr>
         </tbody>
       </table>
     </div>
@@ -113,7 +111,7 @@
   function renderTabla(facturas) {
     const tbody = document.getElementById('facturas-body');
     if (facturas.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay facturas que coincidan con los filtros</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">No hay facturas que coincidan con los filtros</td></tr>';
       return;
     }
     tbody.innerHTML = facturas.map(f => `
@@ -122,30 +120,11 @@
         <td>${f.cliente_nombre}</td>
         <td class="font-mono">${f.cliente_cuit ?? '—'}</td>
         <td>${f.fecha}</td>
-        <td class="text-right font-mono">${fmt.format(f.monto_neto ?? f.monto)}</td>
-        <td class="text-right font-mono">${fmt.format(f.iva ?? 0)}</td>
         <td class="text-right font-mono fw-bold">${fmt.format(f.monto_total)}</td>
         <td>${estadoBadge(f.estado)}</td>
-        <td>
-          <div class="flex gap-1">
-            <a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a>
-            <button class="btn btn-danger btn-sm" data-action="eliminar" data-id="${f.id}">Eliminar</button>
-          </div>
-        </td>
+        <td><a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a></td>
       </tr>
     `).join('');
-
-    tbody.querySelectorAll('[data-action="eliminar"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('¿Eliminar esta factura? Se eliminarán también todos sus pagos registrados.')) return;
-        try {
-          await API.facturas.delete(btn.dataset.id);
-          todasLasFacturas = todasLasFacturas.filter(f => String(f.id) !== btn.dataset.id);
-          toast('Factura eliminada');
-          aplicarFiltros();
-        } catch (e) { toast(e.message, 'error'); }
-      });
-    });
   }
 
   function aplicarFiltros() {

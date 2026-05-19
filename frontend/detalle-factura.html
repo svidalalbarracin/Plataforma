@@ -129,6 +129,7 @@
     acciones.innerHTML = `
       ${f.pdf_url ? `<a href="${f.pdf_url}" target="_blank" class="btn btn-ghost">Abrir PDF</a>` : ''}
       <button class="btn ${btnClass}" id="btn-cambiar-estado">${btnLabel}</button>
+      <button class="btn btn-danger" id="btn-eliminar">Eliminar</button>
     `;
 
     document.getElementById('btn-cambiar-estado').addEventListener('click', async () => {
@@ -136,6 +137,14 @@
         await API.facturas.estado(factId, nuevoEstado);
         toast(`Factura marcada como ${nuevoEstado}`);
         cargarFactura();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+
+    document.getElementById('btn-eliminar').addEventListener('click', async () => {
+      if (!confirm('¿Eliminar esta factura? Se eliminarán también todos sus cobros registrados.')) return;
+      try {
+        await API.facturas.delete(factId);
+        location.href = 'facturas.html';
       } catch (e) { toast(e.message, 'error'); }
     });
   }
