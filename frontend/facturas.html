@@ -160,8 +160,9 @@
 
       todasLasFacturas = facturas;
 
-      // Populate cliente filter
+      // Populate cliente filter (limpiar primero para soportar llamadas repetidas)
       const selCliente = document.getElementById('f-cliente');
+      while (selCliente.options.length > 1) selCliente.remove(1);
       clientes.forEach(c => {
         const o = document.createElement('option');
         o.value = c.id; o.textContent = c.nombre;
@@ -171,6 +172,7 @@
       // Populate año filter
       const anios = [...new Set(facturas.map(f => f.fecha.slice(0, 4)))].sort().reverse();
       const selAnio = document.getElementById('f-anio');
+      while (selAnio.options.length > 1) selAnio.remove(1);
       anios.forEach(a => {
         const o = document.createElement('option');
         o.value = a; o.textContent = a;
@@ -181,7 +183,7 @@
 
     } catch (e) {
       document.getElementById('facturas-body').innerHTML =
-        `<tr><td colspan="8" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
+        `<tr><td colspan="7" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
     }
   }
 
