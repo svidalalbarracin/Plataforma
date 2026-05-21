@@ -38,5 +38,11 @@ const API = {
     create: (data)     => _req('POST',   '/pagos', data),
     delete: (id)       => _req('DELETE', `/pagos/${id}`),
   },
+  recurrentes: {
+    list:   ()           => _req('GET',    '/recurrentes'),
+    upsert: (data)       => _req('POST',   '/recurrentes', data),
+    toggle: (id, activo) => _req('PUT',    `/recurrentes/${id}`, { activo }),
+    delete: (id)         => _req('DELETE', `/recurrentes/${id}`),
+  },
   importar: () => _req('POST', '/importar'),
 };

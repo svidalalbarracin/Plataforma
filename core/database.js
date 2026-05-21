@@ -40,6 +40,15 @@ db.exec(`
     nota        TEXT,
     FOREIGN KEY (factura_id) REFERENCES facturas(id)
   );
+
+  CREATE TABLE IF NOT EXISTS facturacion_recurrente (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id    INTEGER NOT NULL UNIQUE,
+    honorario_usd REAL    NOT NULL,
+    activo        INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT    NOT NULL DEFAULT (date('now')),
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+  );
 `);
 
 // Migración: permitir iva NULL

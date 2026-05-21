@@ -1,6 +1,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
 const nodemailer = require('nodemailer');
 const db = require('../../../core/database');
+const { obtenerTipoCambio } = require('../../../core/tipoCambio');
 
 const DIAS_DEMORA = Number(process.env.DIAS_DEMORA ?? 30);
 
@@ -153,4 +154,71 @@ async function notificarResumenDiario() {
   return n;
 }
 
-module.exports = { notificarImportadasVencidas, notificarResumenDiario };
+// Aviso mensual de honorarios recurrentes (se ejecuta el día 1 de cada mes)
+async function notificarRecurrentes() {
+  const recurrentes = db.prepare(`
+    SELECT r.*, c.nombre AS cliente_nombre
+    FROM facturacion_recurrente r
+    JOIN clientes c ON c.id = r.cliente_id
+    WHERE r.activo = 1
+    ORDER BY c.nombre ASC
+  `).all();
+
+  if (!recurrentes.length) {
+    console.log('  Sin facturaciones recurrentes activas.');
+    return 0;
+  }
+
+  const tipoCambio = await obtenerTipoCambio();
+  const fmt    = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+  const fmtUSD = n => `USD ${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+  const hoy    = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const mes    = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+
+  const filas = recurrentes.map(r => {
+    const montoPesos = Math.round(r.honorario_usd * tipoCambio * 100) / 100;
+    return `
+    <tr>
+      <td style="padding:9px 14px;border-bottom:1px solid #e2e8f0">${r.cliente_nombre}</td>
+      <td style="padding:9px 14px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace;font-size:13px">${fmtUSD(r.honorario_usd)}</td>
+      <td style="padding:9px 14px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace;font-size:13px">${fmt.format(montoPesos)}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a">
+  <div style="max-width:660px;margin:0 auto;background:#ffffff;border-radius:12px;padding:36px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
+    <h1 style="margin:0 0 6px;font-size:20px;font-weight:700">Avisos de honorarios — ${mes}</h1>
+    <p style="margin:0 0 24px;color:#64748b;font-size:14px">${hoy} · Tipo de cambio oficial: ${fmt.format(tipoCambio)}</p>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 20px">
+    <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+      <thead>
+        <tr style="background:#f8fafc">
+          <th style="padding:8px 14px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Cliente</th>
+          <th style="padding:8px 14px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Honorario USD</th>
+          <th style="padding:8px 14px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Monto ARS</th>
+        </tr>
+      </thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <p style="margin-top:36px;font-size:12px;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:16px">
+      Generado automáticamente · Sistema de Facturación
+    </p>
+  </div>
+</body>
+</html>`;
+
+  const transporter = crearTransporter();
+  await transporter.sendMail({
+    from: `"Facturación" <${process.env.MAIL_USER}>`,
+    to: process.env.MAIL_TO,
+    subject: `🗓️ Honorarios ${mes} — ${recurrentes.length} cliente${recurrentes.length !== 1 ? 's' : ''} · TC ${fmt.format(tipoCambio)}`,
+    html,
+  });
+
+  console.log(`  Aviso de honorarios enviado: ${recurrentes.length} cliente(s) · TC: ${fmt.format(tipoCambio)}`);
+  return recurrentes.length;
+}
+
+module.exports = { notificarImportadasVencidas, notificarResumenDiario, notificarRecurrentes };
