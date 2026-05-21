@@ -21,18 +21,18 @@ async function obtenerTipoCambio() {
 
   let valor;
   try {
-    const data = await fetchJson('https://dolarapi.com/v1/dolares/oficial');
+    const data = await fetchJson('https://dolarapi.com/v1/ambito/dolares/oficial');
     if (!data.venta) throw new Error('Campo venta ausente');
     valor = data.venta;
   } catch (e) {
-    console.warn('[tipoCambio] dolarapi.com falló:', e.message, '— usando exchangerate-api');
-    const data = await fetchJson('https://api.exchangerate-api.com/v4/latest/USD');
-    valor = data.rates?.ARS;
-    if (!valor) throw new Error('No se pudo obtener el tipo de cambio');
+    console.warn('[tipoCambio] Ámbito falló:', e.message, '— usando Banco Nación');
+    const data = await fetchJson('https://dolarapi.com/v1/dolares/nacion');
+    if (!data.venta) throw new Error('No se pudo obtener el tipo de cambio');
+    valor = data.venta;
   }
 
   _cache = { fecha: hoy, valor };
-  console.log(`[tipoCambio] USD/ARS oficial del ${hoy}: $${valor}`);
+  console.log(`[tipoCambio] USD/ARS (Ámbito/Nación) del ${hoy}: $${valor}`);
   return valor;
 }
 
