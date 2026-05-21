@@ -38,6 +38,10 @@ const API = {
     create: (data)     => _req('POST',   '/pagos', data),
     delete: (id)       => _req('DELETE', `/pagos/${id}`),
   },
+  estadisticas: {
+    mes:                (p = {}) => _req('GET', '/estadisticas/mes' + _qs(p)),
+    clientesPendientes: ()       => _req('GET', '/estadisticas/clientes-pendientes'),
+  },
   recurrentes: {
     list:   ()           => _req('GET',    '/recurrentes'),
     upsert: (data)       => _req('POST',   '/recurrentes', data),
