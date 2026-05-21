@@ -19,20 +19,25 @@ async function obtenerTipoCambio() {
   const hoy = new Date().toISOString().slice(0, 10);
   if (_cache.fecha === hoy && _cache.valor != null) return _cache.valor;
 
+  const fuentes = [
+    { url: 'https://dolar-bna.vercel.app/api/cotizacion',  nombre: 'BNA Vercel' },
+    { url: 'https://dolarapi.com/v1/dolares/oficial',       nombre: 'DolarAPI Oficial' },
+  ];
+
   let valor;
-  try {
-    const data = await fetchJson('https://dolarapi.com/v1/ambito/dolares/oficial');
-    if (!data.venta) throw new Error('Campo venta ausente');
-    valor = data.venta;
-  } catch (e) {
-    console.warn('[tipoCambio] Ámbito falló:', e.message, '— usando Banco Nación');
-    const data = await fetchJson('https://dolarapi.com/v1/dolares/nacion');
-    if (!data.venta) throw new Error('No se pudo obtener el tipo de cambio');
-    valor = data.venta;
+  for (const fuente of fuentes) {
+    try {
+      const data = await fetchJson(fuente.url);
+      if (!data.venta) throw new Error('Campo venta ausente');
+      valor = data.venta;
+      console.log(`[tipoCambio] USD/ARS (${fuente.nombre}) del ${hoy}: $${valor}`);
+      break;
+    } catch (e) {
+      console.warn(`[tipoCambio] ${fuente.nombre} falló:`, e.message);
+    }
   }
 
-  _cache = { fecha: hoy, valor };
-  console.log(`[tipoCambio] USD/ARS (Ámbito/Nación) del ${hoy}: $${valor}`);
+  if (valor == null) throw new Error('No se pudo obtener el tipo de cambio de ninguna fuente');
   return valor;
 }
 
