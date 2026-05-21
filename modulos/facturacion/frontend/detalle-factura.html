@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Detalle de Factura — Facturación</title>
   <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
-  <script src="js/theme.js"></script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
   <link rel="stylesheet" href="css/styles.css">
 </head>
-<body>
+<body class="has-sidebar">
 
 <nav class="navbar">
   <a href="index.html" class="navbar-brand">Facturación</a>
@@ -68,6 +69,7 @@
 </div>
 
 <script src="js/api.js"></script>
+<script src="/js/layout.js"></script>
 <script>
   const fmt    = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
   const params = new URLSearchParams(location.search);

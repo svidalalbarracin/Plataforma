@@ -5,8 +5,8 @@
 //
 // Uso: node backend/scripts/migrar-clientes.js
 
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
-const db = require('../database');
+require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env') });
+const db = require('../../../../core/database');
 
 const PATRONES = [
   /^(CUIT|CUIL|DNI)\s+(\d+)$/i,

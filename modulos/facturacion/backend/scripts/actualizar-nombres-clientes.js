@@ -5,11 +5,11 @@
  *
  * Uso: node backend/scripts/actualizar-nombres-clientes.js
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env') });
 const path = require('path');
 const fs = require('fs');
 const pdfParse = require('pdf-parse');
-const db = require('../database');
+const db = require('../../../../core/database');
 
 const PDF_DIR = path.join(__dirname, '../../storage/facturas');
 

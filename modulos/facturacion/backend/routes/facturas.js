@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const path = require('path');
 const fs = require('fs');
-const db = require('../database');
+const db = require('../../../../core/database');
 
 const PDF_DIR = path.join(__dirname, '../../storage/facturas');
 

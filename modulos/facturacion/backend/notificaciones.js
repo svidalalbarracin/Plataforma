@@ -1,6 +1,6 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
 const nodemailer = require('nodemailer');
-const db = require('./database');
+const db = require('../../../core/database');
 
 const DIAS_DEMORA = Number(process.env.DIAS_DEMORA ?? 30);
 

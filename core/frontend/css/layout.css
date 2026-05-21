@@ -1,0 +1,109 @@
+:root {
+  --sidebar-w:   220px;
+  --sidebar-bg:  #1e3a8a;
+  --sidebar-sep: rgba(255,255,255,.08);
+}
+
+html.dark {
+  --sidebar-bg: #0b1628;
+}
+
+/* ── Body con sidebar ────────────────────────────── */
+body.has-sidebar {
+  padding-left: var(--sidebar-w);
+}
+
+/* ── Sidebar ─────────────────────────────────────── */
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  z-index: 150;
+  overflow-y: auto;
+}
+
+.sidebar-brand {
+  display: block;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--sidebar-sep);
+  text-decoration: none;
+}
+
+.sidebar-brand-name {
+  color: #fff;
+  font-size: .9375rem;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  display: block;
+}
+
+.sidebar-brand-sub {
+  color: rgba(255,255,255,.4);
+  font-size: .6875rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-top: .2rem;
+  display: block;
+}
+
+.sidebar-section {
+  padding: .875rem .75rem .3rem;
+  font-size: .625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: rgba(255,255,255,.3);
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: .5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+  padding: .55rem .75rem;
+  border-radius: 6px;
+  text-decoration: none;
+  color: rgba(255,255,255,.65);
+  font-size: .875rem;
+  font-weight: 500;
+  transition: background .15s, color .15s;
+}
+
+.sidebar-item:hover {
+  background: rgba(255,255,255,.08);
+  color: #fff;
+}
+
+.sidebar-item.active {
+  background: rgba(255,255,255,.15);
+  color: #fff;
+}
+
+.sidebar-item.disabled {
+  opacity: .4;
+  pointer-events: none;
+}
+
+.sidebar-badge {
+  margin-left: auto;
+  font-size: .5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  background: rgba(255,255,255,.1);
+  color: rgba(255,255,255,.45);
+  padding: .15rem .45rem;
+  border-radius: 999px;
+}
