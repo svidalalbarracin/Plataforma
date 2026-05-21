@@ -14,6 +14,16 @@ function fmtDDMMAAAA(d) {
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 }
 
+function mapearTipo(tipoComp) {
+  if (!tipoComp) return null;
+  const t = tipoComp.trim();
+  if (/Factura\s+A\b/i.test(t))             return 'A';
+  if (/Factura\s+B\b/i.test(t))             return 'B';
+  if (/Factura\s+C\b/i.test(t))             return 'C';
+  if (/Cr[eé]dito|FCE/i.test(t))            return 'FCE';
+  return t || null;
+}
+
 // ── Extracción de nombre desde PDF ───────────────────────────────────────────
 
 async function extraerNombreDesedePDF(pdfPath) {
@@ -252,7 +262,7 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
       if (nombre) console.log(`  [nombre] ${nombre}`);
       const clienteId = obtenerOCrearCliente(fila.nroDoc, nombre);
       const fecha     = isoFecha(fila.fecha);
-      const tipo      = fila.tipoComp?.trim() || null;
+      const tipo      = mapearTipo(fila.tipoComp);
 
       guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, forzar });
 
