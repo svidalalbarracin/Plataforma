@@ -13,6 +13,7 @@ app.get('/api/status', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/clientes',      require('../modulos/facturacion/backend/routes/clientes'));
 app.use('/api/facturas',      require('../modulos/facturacion/backend/routes/facturas'));
 app.use('/api/pagos',         require('../modulos/facturacion/backend/routes/pagos'));
+app.use('/api/recurrentes',   require('../modulos/facturacion/backend/routes/recurrentes'));
 app.use('/api/configuracion', require('../core/configuracion/backend/routes'));
 
 app.post('/api/importar', async (req, res) => {
