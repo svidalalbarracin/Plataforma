@@ -72,6 +72,10 @@
       </div>
       <button class="btn btn-primary" id="btn-filtrar">Filtrar</button>
       <button class="btn btn-ghost" id="btn-limpiar">Limpiar</button>
+      <div style="margin-left:auto;display:flex;gap:.5rem;align-items:flex-end">
+        <button class="btn btn-ghost btn-sm" id="btn-exportar-excel">↓ Excel</button>
+        <button class="btn btn-ghost btn-sm" id="btn-exportar-pdf">↓ PDF</button>
+      </div>
     </div>
 
     <div class="table-wrapper">
@@ -231,6 +235,36 @@
       btn.textContent = 'Buscar nuevas facturas';
     }
   });
+
+  function exportar(formato) {
+    const params = new URLSearchParams();
+    const clienteId = document.getElementById('f-cliente').value;
+    const mes       = document.getElementById('f-mes').value;
+    const anio      = document.getElementById('f-anio').value;
+    const estado    = document.getElementById('f-estado').value;
+    if (clienteId) params.set('cliente_id', clienteId);
+    if (mes)       params.set('mes', mes);
+    if (anio)      params.set('anio', anio);
+    if (estado)    params.set('estado', estado);
+
+    const btn = document.getElementById(`btn-exportar-${formato}`);
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Generando…';
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    iframe.src = `/api/facturas/exportar/${formato}?${params}`;
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = label;
+      iframe.remove();
+    }, 4000);
+  }
+
+  document.getElementById('btn-exportar-excel').addEventListener('click', () => exportar('excel'));
+  document.getElementById('btn-exportar-pdf').addEventListener('click',   () => exportar('pdf'));
 
   document.getElementById('btn-filtrar').addEventListener('click', aplicarFiltros);
 
