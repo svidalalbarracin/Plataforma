@@ -46,6 +46,22 @@
       margin-right: auto;
     }
 
+    .btn-config {
+      background: transparent;
+      border: 1px solid var(--border, #e2e8f0);
+      color: var(--text-muted, #64748b);
+      border-radius: 6px;
+      padding: .35rem .7rem;
+      font-size: 1rem;
+      line-height: 1;
+      margin-left: .75rem;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      transition: background .15s;
+    }
+    .btn-config:hover { background: var(--bg, #f1f5f9); }
+
     .btn-theme {
       background: transparent;
       border: 1px solid var(--border, #e2e8f0);
@@ -141,6 +157,7 @@
 
 <div class="topbar">
   <span class="topbar-title">Inicio</span>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
   <button class="btn-theme" id="btn-theme">☾</button>
 </div>
 

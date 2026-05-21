@@ -96,6 +96,25 @@ body.has-sidebar {
   pointer-events: none;
 }
 
+/* ── Ícono de configuración en navbar ────────────── */
+.btn-config {
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.2);
+  color: rgba(255,255,255,.85);
+  border-radius: 6px;
+  padding: .35rem .7rem;
+  font-size: 1rem;
+  line-height: 1;
+  margin-left: .75rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: background .15s, color .15s;
+}
+
+.btn-config:hover  { background: rgba(255,255,255,.2); color: #fff; }
+.btn-config.active { background: rgba(255,255,255,.2); color: #fff; }
+
 .sidebar-badge {
   margin-left: auto;
   font-size: .5625rem;
