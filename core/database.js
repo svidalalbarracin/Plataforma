@@ -109,4 +109,10 @@ if (!pagosCols.includes('retencion')) {
   db.exec('ALTER TABLE pagos ADD COLUMN retencion REAL');
 }
 
+// Migración: agregar tipo a facturas
+const facturasCols2 = db.prepare('PRAGMA table_info(facturas)').all().map(c => c.name);
+if (!facturasCols2.includes('tipo')) {
+  db.exec('ALTER TABLE facturas ADD COLUMN tipo TEXT');
+}
+
 module.exports = db;

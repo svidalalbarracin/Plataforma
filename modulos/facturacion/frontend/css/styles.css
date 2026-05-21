@@ -187,6 +187,17 @@ tbody td { padding: .8125rem 1rem; vertical-align: middle; }
 .badge-info    { background: var(--primary-light); color: var(--primary-text); }
 .badge-orange  { background: var(--orange-light);  color: var(--orange-text); }
 
+.badge-tipo {
+  background: var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  font-size: .6875rem;
+  padding: .1rem .4rem;
+  font-weight: 700;
+  vertical-align: middle;
+  margin-left: .375rem;
+}
+
 /* ── Alert rows ──────────────────────────────────── */
 .row-critical td { background: #fff1f2; }
 .row-high     td { background: var(--orange-light); }

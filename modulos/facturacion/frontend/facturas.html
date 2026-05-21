@@ -72,6 +72,10 @@
       </div>
       <button class="btn btn-primary" id="btn-filtrar">Filtrar</button>
       <button class="btn btn-ghost" id="btn-limpiar">Limpiar</button>
+      <div style="margin-left:auto;display:flex;gap:.5rem;align-items:flex-end">
+        <button class="btn btn-ghost btn-sm" id="btn-exportar-excel">↓ Excel</button>
+        <button class="btn btn-ghost btn-sm" id="btn-exportar-pdf">↓ PDF</button>
+      </div>
     </div>
 
     <div class="table-wrapper">
@@ -83,12 +87,13 @@
             <th>CUIT</th>
             <th>Fecha</th>
             <th class="text-right">Total</th>
+            <th class="text-right">Retención</th>
             <th>Estado</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="facturas-body">
-          <tr><td colspan="7" class="empty">Cargando…</td></tr>
+          <tr><td colspan="8" class="empty">Cargando…</td></tr>
         </tbody>
       </table>
     </div>
@@ -99,6 +104,19 @@
 <script src="/js/layout.js"></script>
 <script>
   const fmt = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+
+  function formatNumero(numero) {
+    const parts = numero.split('-');
+    return parts.length === 2 ? String(parseInt(parts[1], 10)) : numero;
+  }
+
+  function truncar(texto, max = 20) {
+    return texto.length > max ? texto.slice(0, max) + '…' : texto;
+  }
+
+  function tipoBadge(tipo) {
+    return tipo ? `<span class="badge badge-tipo">${tipo}</span>` : '';
+  }
 
   function toast(msg, tipo = 'success') {
     const el = document.createElement('div');
@@ -119,16 +137,17 @@
   function renderTabla(facturas) {
     const tbody = document.getElementById('facturas-body');
     if (facturas.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty">No hay facturas que coincidan con los filtros</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay facturas que coincidan con los filtros</td></tr>';
       return;
     }
     tbody.innerHTML = facturas.map(f => `
       <tr>
-        <td class="font-mono">${f.numero}</td>
-        <td>${f.cliente_nombre}</td>
+        <td class="font-mono">${formatNumero(f.numero)}${tipoBadge(f.tipo)}</td>
+        <td title="${f.cliente_nombre}">${truncar(f.cliente_nombre)}</td>
         <td class="font-mono">${f.cliente_cuit ?? '—'}</td>
         <td>${f.fecha}</td>
         <td class="text-right font-mono fw-bold">${fmt.format(f.monto_total)}</td>
+        <td class="text-right font-mono">${f.retencion_total != null ? fmt.format(f.retencion_total) : '—'}</td>
         <td>${estadoBadge(f.estado)}</td>
         <td><a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a></td>
       </tr>
@@ -186,7 +205,7 @@
 
     } catch (e) {
       document.getElementById('facturas-body').innerHTML =
-        `<tr><td colspan="7" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
+        `<tr><td colspan="8" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
     }
   }
 
@@ -216,6 +235,36 @@
       btn.textContent = 'Buscar nuevas facturas';
     }
   });
+
+  function exportar(formato) {
+    const params = new URLSearchParams();
+    const clienteId = document.getElementById('f-cliente').value;
+    const mes       = document.getElementById('f-mes').value;
+    const anio      = document.getElementById('f-anio').value;
+    const estado    = document.getElementById('f-estado').value;
+    if (clienteId) params.set('cliente_id', clienteId);
+    if (mes)       params.set('mes', mes);
+    if (anio)      params.set('anio', anio);
+    if (estado)    params.set('estado', estado);
+
+    const btn = document.getElementById(`btn-exportar-${formato}`);
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Generando…';
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    iframe.src = `/api/facturas/exportar/${formato}?${params}`;
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = label;
+      iframe.remove();
+    }, 4000);
+  }
+
+  document.getElementById('btn-exportar-excel').addEventListener('click', () => exportar('excel'));
+  document.getElementById('btn-exportar-pdf').addEventListener('click',   () => exportar('pdf'));
 
   document.getElementById('btn-filtrar').addEventListener('click', aplicarFiltros);
 
