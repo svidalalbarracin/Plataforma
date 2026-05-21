@@ -5,7 +5,7 @@ const path = require('path');
 const ENV_PATH = path.join(__dirname, '../../../.env');
 
 const VISIBLES  = ['CUIT', 'MAIL_TO'];
-const SENSIBLES = ['CLAVE_FISCAL', 'MAIL_PASS'];
+const SENSIBLES = ['CLAVE_FISCAL'];
 const PERMITIDOS = [...VISIBLES, ...SENSIBLES];
 
 const router = Router();
