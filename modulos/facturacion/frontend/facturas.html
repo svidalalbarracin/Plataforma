@@ -8,6 +8,14 @@
   <script src="/js/theme.js"></script>
   <link rel="stylesheet" href="/css/layout.css">
   <link rel="stylesheet" href="css/styles.css">
+  <style>
+    .row-totales td {
+      background: var(--bg);
+      border-top: 2px solid var(--border);
+      font-size: .8125rem;
+      padding: .75rem 1rem;
+    }
+  </style>
 </head>
 <body class="has-sidebar">
 
@@ -135,13 +143,17 @@
       : '<span class="badge badge-danger">Impaga</span>';
   }
 
+  function hayFiltros() {
+    return ['f-cliente', 'f-mes', 'f-anio', 'f-estado'].some(id => document.getElementById(id).value !== '');
+  }
+
   function renderTabla(facturas) {
     const tbody = document.getElementById('facturas-body');
     if (facturas.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay facturas que coincidan con los filtros</td></tr>';
       return;
     }
-    tbody.innerHTML = facturas.map(f => `
+    let html = facturas.map(f => `
       <tr>
         <td class="font-mono">${formatNumero(f.numero)}${tipoBadge(f.tipo)}</td>
         <td title="${f.cliente_nombre}">${truncar(f.cliente_nombre)}</td>
@@ -153,6 +165,27 @@
         <td><a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a></td>
       </tr>
     `).join('');
+
+    if (hayFiltros()) {
+      const neto = facturas.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
+      const iva  = facturas.reduce((s, f) => s + (f.iva  ?? 0), 0);
+      const tot  = facturas.reduce((s, f) => s + f.monto_total, 0);
+      const ret  = facturas.reduce((s, f) => s + (f.retencion_total ?? 0), 0);
+      const n    = facturas.length;
+      html += `
+        <tr class="row-totales">
+          <td colspan="4" class="text-muted">
+            <strong>${n}</strong> factura${n !== 1 ? 's' : ''}
+            &nbsp;·&nbsp; Neto: <strong>${fmt.format(neto)}</strong>
+            &nbsp;·&nbsp; IVA: <strong>${fmt.format(iva)}</strong>
+          </td>
+          <td class="text-right font-mono fw-bold">${fmt.format(tot)}</td>
+          <td class="text-right font-mono">${ret > 0 ? fmt.format(ret) : '—'}</td>
+          <td colspan="2"></td>
+        </tr>`;
+    }
+
+    tbody.innerHTML = html;
   }
 
   function aplicarFiltros() {

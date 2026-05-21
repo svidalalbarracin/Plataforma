@@ -100,12 +100,36 @@ router.get('/exportar/excel', async (req, res) => {
       });
     });
 
+    // Fila de totales
+    const sumNeto = facturas.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
+    const sumIva  = facturas.reduce((s, f) => s + (f.iva  ?? 0), 0);
+    const sumTot  = facturas.reduce((s, f) => s + f.monto_total, 0);
+    const sumRet  = facturas.reduce((s, f) => s + (f.retencion_total ?? 0), 0);
+    const n = facturas.length;
+
+    const totRow = ws.addRow({
+      numero:          `${n} factura${n !== 1 ? 's' : ''}`,
+      tipo:            '', cliente_nombre: '', cliente_cuit: '',
+      fecha:           'TOTAL',
+      monto_neto:      sumNeto,
+      iva:             sumIva,
+      monto_total:     sumTot,
+      retencion_total: sumRet,
+      estado:          '',
+    });
+    totRow.font = { bold: true, color: { argb: 'FF1E3A8A' } };
+    totRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+    totRow.eachCell(cell => {
+      cell.border = { top: { style: 'medium', color: { argb: 'FF1E3A8A' } } };
+    });
+
     // Formato numérico para columnas de dinero
     COLS_EXPORT.forEach((c, i) => {
       if (c.money) ws.getColumn(i + 1).numFmt = '#,##0.00';
     });
 
-    ws.eachRow(row => {
+    ws.eachRow((row, idx) => {
+      if (idx === ws.rowCount) return; // totales ya tiene borde
       row.eachCell(cell => {
         cell.border = { bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
       });
@@ -140,11 +164,41 @@ router.get('/exportar/pdf', (req, res) => {
       ? new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
       : '—';
 
+    // Totales generales
+    const MESES_PDF = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const pdfNeto = facturas.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
+    const pdfIva  = facturas.reduce((s, f) => s + (f.iva  ?? 0), 0);
+    const pdfTot  = facturas.reduce((s, f) => s + f.monto_total, 0);
+    const pdfRet  = facturas.reduce((s, f) => s + (f.retencion_total ?? 0), 0);
+
+    // Filtros activos descripción
+    const filtrosDesc = [];
+    if (req.query.cliente_id) {
+      const c = db.prepare('SELECT nombre FROM clientes WHERE id = ?').get(req.query.cliente_id);
+      if (c) filtrosDesc.push(`Cliente: ${c.nombre}`);
+    }
+    if (req.query.mes)    filtrosDesc.push(`Mes: ${MESES_PDF[Number(req.query.mes)]}`);
+    if (req.query.anio)   filtrosDesc.push(`Año: ${req.query.anio}`);
+    if (req.query.estado) filtrosDesc.push(`Estado: ${req.query.estado.charAt(0).toUpperCase() + req.query.estado.slice(1)}`);
+
     // Encabezado del documento
     doc.font('Helvetica-Bold').fontSize(14).fillColor('#1E3A8A').text(nombreEstudio);
     doc.font('Helvetica').fontSize(9).fillColor('#64748B')
        .text(`Listado de facturas — Exportado el ${fechaExport}`);
-    doc.moveDown(0.7);
+
+    if (filtrosDesc.length) {
+      doc.fontSize(8).fillColor('#64748B')
+         .text(`Filtros: ${filtrosDesc.join('  ·  ')}`);
+    }
+
+    // Resumen de totales
+    doc.fontSize(8).fillColor('#1E3A8A').font('Helvetica-Bold')
+       .text(
+         `${facturas.length} factura${facturas.length !== 1 ? 's' : ''}  ·  ` +
+         `Neto: ${fmtMoney(pdfNeto)}  ·  IVA: ${fmtMoney(pdfIva)}  ·  ` +
+         `Total: ${fmtMoney(pdfTot)}  ·  Retenciones: ${fmtMoney(pdfRet)}`
+       );
+    doc.moveDown(0.6);
 
     // Definición de columnas del PDF
     const PDF_COLS = [
@@ -204,9 +258,32 @@ router.get('/exportar/pdf', (req, res) => {
       y = drawTableRow(f, y, i % 2 === 0);
     });
 
-    doc.moveDown(0.6);
-    doc.font('Helvetica').fontSize(8).fillColor('#64748B')
-       .text(`Total: ${facturas.length} factura${facturas.length !== 1 ? 's' : ''}`, MARGIN);
+    // Fila de totales al pie de la tabla
+    if (y + ROW_H > doc.page.height - doc.page.margins.bottom - 20) {
+      doc.addPage();
+      y = doc.page.margins.top;
+    }
+    doc.rect(MARGIN, y, TOTAL_W, ROW_H).fill('#DBEAFE');
+    doc.fillColor('#1E3A8A').font('Helvetica-Bold').fontSize(FONT_SZ);
+    const totalesData = {
+      numero: `${facturas.length} factura${facturas.length !== 1 ? 's' : ''}`,
+      tipo: '', cliente_nombre: 'TOTAL', cliente_cuit: '', fecha: '',
+      monto_neto:      pdfNeto,
+      iva:             pdfIva,
+      monto_total:     pdfTot,
+      retencion_total: pdfRet,
+      estado: '',
+    };
+    let xt = MARGIN;
+    PDF_COLS.forEach(col => {
+      const raw = totalesData[col.key];
+      const val = col.format && raw != null && raw !== '' ? col.format(raw) : String(raw ?? '');
+      doc.text(val, xt + PAD, y + (ROW_H - FONT_SZ) / 2 + 1, {
+        width: col.width - PAD * 2, align: col.align, lineBreak: false,
+      });
+      xt += col.width;
+    });
+    y += ROW_H;
 
     doc.end();
   } catch (e) {
