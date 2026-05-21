@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configuración — Plataforma</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg);
+      min-height: 100vh;
+      --text:       #0f172a;
+      --text-muted: #64748b;
+      --border:     #e2e8f0;
+      --bg:         #f1f5f9;
+      --card-bg:    #ffffff;
+      --primary:    #1d4ed8;
+      --primary-dark: #1e3a8a;
+      --success:    #16a34a;
+      --danger:     #dc2626;
+    }
+
+    html.dark body {
+      --text:       #f1f5f9;
+      --text-muted: #94a3b8;
+      --border:     #334155;
+      --bg:         #0f172a;
+      --card-bg:    #1e293b;
+    }
+
+    /* navbar, btn-theme y btn-config vienen de layout.css */
+
+    /* ── Layout ───────────────────────────────────── */
+    .container { max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    .page-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; }
+
+    /* ── Card ─────────────────────────────────────── */
+    .card {
+      background: var(--card-bg);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card-title {
+      font-size: .75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-muted);
+      margin-bottom: 1.25rem;
+    }
+
+    /* ── Form ─────────────────────────────────────── */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: .35rem; }
+
+    .form-group label { font-size: .8125rem; font-weight: 600; color: var(--text); }
+
+    .input-wrap { display: flex; gap: .5rem; }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="number"],
+    input[type="password"] {
+      flex: 1;
+      padding: .5rem .75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: .875rem;
+      color: var(--text);
+      background: var(--card-bg);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+      font-family: inherit;
+      width: 100%;
+    }
+
+    input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(29,78,216,.12);
+    }
+
+    html.dark input { color-scheme: dark; }
+
+    /* ── Buttons ──────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .375rem;
+      padding: .5rem 1rem;
+      border-radius: 6px;
+      font-size: .875rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      text-decoration: none;
+      transition: background .15s, opacity .15s;
+      white-space: nowrap;
+      font-family: inherit;
+    }
+
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-primary  { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+    .btn-ghost    { background: transparent; border-color: var(--border); color: var(--text-muted); }
+    .btn-ghost:hover:not(:disabled)  { background: var(--bg); color: var(--text); }
+    .btn-sm { padding: .3rem .65rem; font-size: .8125rem; }
+
+    .divider { border: none; border-top: 1px solid var(--border); margin: 1.25rem 0; }
+
+    /* ── Toast ────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      padding: .75rem 1.25rem;
+      border-radius: 8px;
+      color: #fff;
+      font-size: .875rem;
+      font-weight: 500;
+      z-index: 400;
+      box-shadow: 0 4px 16px rgba(0,0,0,.18);
+      animation: toastIn .2s ease;
+    }
+
+    .toast-success { background: var(--success); }
+    .toast-error   { background: var(--danger); }
+
+    @keyframes toastIn {
+      from { transform: translateY(1rem); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+  </style>
+</head>
+<body class="has-sidebar">
+
+<nav class="navbar">
+  <a href="/" class="navbar-brand">Plataforma</a>
+  <a href="/configuracion" class="btn-config active" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <h1 class="page-title">Configuración</h1>
+
+  <form id="form-config">
+
+    <div class="card">
+      <div class="card-title">ARCA</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="cfg-CUIT">CUIT</label>
+          <input type="text" id="cfg-CUIT" placeholder="20123456789">
+        </div>
+        <div class="form-group">
+          <label for="cfg-CLAVE_FISCAL">Clave Fiscal</label>
+          <div class="input-wrap">
+            <input type="password" id="cfg-CLAVE_FISCAL" autocomplete="new-password">
+            <button type="button" class="btn btn-ghost btn-sm btn-revelar" data-target="cfg-CLAVE_FISCAL">Mostrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Notificaciones por mail</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="cfg-MAIL_PASS">Contraseña de mail</label>
+          <div class="input-wrap">
+            <input type="password" id="cfg-MAIL_PASS" autocomplete="new-password">
+            <button type="button" class="btn btn-ghost btn-sm btn-revelar" data-target="cfg-MAIL_PASS">Mostrar</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="cfg-MAIL_TO">Mail destinatario</label>
+          <input type="email" id="cfg-MAIL_TO" placeholder="destinatario@ejemplo.com">
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary" id="btn-guardar">Guardar</button>
+
+  </form>
+</div>
+
+<script src="/js/layout.js"></script>
+<script src="js/configuracion.js"></script>
+</body>
+</html>

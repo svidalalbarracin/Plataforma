@@ -8,6 +8,61 @@ html.dark {
   --sidebar-bg: #0b1628;
 }
 
+/* ── Navbar ──────────────────────────────────────── */
+.navbar {
+  background: #1e3a8a;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  padding: 0 2rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+
+.navbar-brand {
+  color: #fff;
+  font-size: 1.125rem;
+  font-weight: 700;
+  text-decoration: none;
+  letter-spacing: -.02em;
+  margin-right: auto;
+}
+
+.navbar-links { display: flex; gap: .25rem; }
+
+.navbar-links a {
+  color: rgba(255,255,255,.7);
+  text-decoration: none;
+  padding: .5rem 1rem;
+  border-radius: 6px;
+  font-size: .875rem;
+  font-weight: 500;
+  transition: background .15s, color .15s;
+}
+
+.navbar-links a:hover  { background: rgba(255,255,255,.1); color: #fff; }
+.navbar-links a.active { background: rgba(255,255,255,.15); color: #fff; }
+
+.btn-theme {
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.2);
+  color: rgba(255,255,255,.85);
+  border-radius: 6px;
+  padding: .35rem .7rem;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  margin-left: .75rem;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+
+.btn-theme:hover { background: rgba(255,255,255,.2); color: #fff; }
+
+html.dark .navbar { background: #0b1628; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
 /* ── Body con sidebar ────────────────────────────── */
 body.has-sidebar {
   padding-left: var(--sidebar-w);
@@ -95,6 +150,25 @@ body.has-sidebar {
   opacity: .4;
   pointer-events: none;
 }
+
+/* ── Ícono de configuración en navbar ────────────── */
+.btn-config {
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.2);
+  color: rgba(255,255,255,.85);
+  border-radius: 6px;
+  padding: .35rem .7rem;
+  font-size: 1rem;
+  line-height: 1;
+  margin-left: .75rem;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: background .15s, color .15s;
+}
+
+.btn-config:hover  { background: rgba(255,255,255,.2); color: #fff; }
+.btn-config.active { background: rgba(255,255,255,.2); color: #fff; }
 
 .sidebar-badge {
   margin-left: auto;

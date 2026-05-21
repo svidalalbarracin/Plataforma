@@ -26,45 +26,11 @@
       --border: #334155;
     }
 
-    .topbar {
-      background: var(--card-bg, #fff);
-      border-bottom: 1px solid var(--border, #e2e8f0);
-      height: 60px;
-      display: flex;
-      align-items: center;
-      padding: 0 2rem;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      box-shadow: 0 1px 3px rgba(0,0,0,.06);
-    }
-
-    .topbar-title {
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--text, #0f172a);
-      margin-right: auto;
-    }
-
-    .btn-theme {
-      background: transparent;
-      border: 1px solid var(--border, #e2e8f0);
-      color: var(--text-muted, #64748b);
-      border-radius: 6px;
-      padding: .35rem .7rem;
-      cursor: pointer;
-      font-size: 1rem;
-      line-height: 1;
-      transition: background .15s;
-    }
-
-    .btn-theme:hover { background: var(--bg, #f1f5f9); }
-
     .container {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 2.5rem 1.5rem;
+      /* layout.css provee navbar, btn-theme, btn-config */
     }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 2.5rem 1.5rem; }
 
     .page-title {
       font-size: 1.5rem;
@@ -139,10 +105,11 @@
 </head>
 <body class="has-sidebar">
 
-<div class="topbar">
-  <span class="topbar-title">Inicio</span>
+<nav class="navbar">
+  <a href="/" class="navbar-brand">Plataforma</a>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
   <button class="btn-theme" id="btn-theme">☾</button>
-</div>
+</nav>
 
 <div class="container">
   <h1 class="page-title">Bienvenido al sistema</h1>
