@@ -19,7 +19,8 @@ function addComputed(f) {
 router.get('/', (req, res) => {
   const { cliente_id, estado } = req.query;
   let sql = `
-    SELECT f.*, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit
+    SELECT f.*, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit,
+      (SELECT SUM(retencion) FROM pagos WHERE factura_id = f.id) AS retencion_total
     FROM facturas f
     JOIN clientes c ON c.id = f.cliente_id
   `;

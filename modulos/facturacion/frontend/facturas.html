@@ -79,11 +79,11 @@
         <thead>
           <tr>
             <th>Número</th>
-            <th>Tipo</th>
             <th>Cliente</th>
             <th>CUIT</th>
             <th>Fecha</th>
             <th class="text-right">Total</th>
+            <th class="text-right">Retención</th>
             <th>Estado</th>
             <th></th>
           </tr>
@@ -100,6 +100,19 @@
 <script src="/js/layout.js"></script>
 <script>
   const fmt = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+
+  function formatNumero(numero) {
+    const parts = numero.split('-');
+    return parts.length === 2 ? String(parseInt(parts[1], 10)) : numero;
+  }
+
+  function truncar(texto, max = 20) {
+    return texto.length > max ? texto.slice(0, max) + '…' : texto;
+  }
+
+  function tipoBadge(tipo) {
+    return tipo ? `<span class="badge badge-tipo">${tipo}</span>` : '';
+  }
 
   function toast(msg, tipo = 'success') {
     const el = document.createElement('div');
@@ -125,12 +138,12 @@
     }
     tbody.innerHTML = facturas.map(f => `
       <tr>
-        <td class="font-mono">${f.numero}</td>
-        <td>${f.tipo ?? '—'}</td>
-        <td>${f.cliente_nombre}</td>
+        <td class="font-mono">${formatNumero(f.numero)}${tipoBadge(f.tipo)}</td>
+        <td title="${f.cliente_nombre}">${truncar(f.cliente_nombre)}</td>
         <td class="font-mono">${f.cliente_cuit ?? '—'}</td>
         <td>${f.fecha}</td>
         <td class="text-right font-mono fw-bold">${fmt.format(f.monto_total)}</td>
+        <td class="text-right font-mono">${f.retencion_total != null ? fmt.format(f.retencion_total) : '—'}</td>
         <td>${estadoBadge(f.estado)}</td>
         <td><a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a></td>
       </tr>
@@ -188,7 +201,7 @@
 
     } catch (e) {
       document.getElementById('facturas-body').innerHTML =
-        `<tr><td colspan="7" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
+        `<tr><td colspan="8" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
     }
   }
 
