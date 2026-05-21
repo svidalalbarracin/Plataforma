@@ -47,6 +47,8 @@ app.use('/facturacion',   express.static(path.join(__dirname, '../modulos/factur
 app.use('/configuracion', express.static(path.join(__dirname, '../core/configuracion/frontend')));
 app.use('/pdfs',          express.static(path.join(__dirname, '../modulos/facturacion/storage/facturas')));
 
+require('../modulos/facturacion/backend/scheduler');
+
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
