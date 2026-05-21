@@ -62,19 +62,19 @@ function yaImportada(numero) {
   return !!db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero);
 }
 
-function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, forzar = false }) {
+function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, forzar = false }) {
   const montoNeto = Math.round((montoTotal / 1.21) * 100) / 100;
   const iva       = Math.round((montoTotal - montoNeto) * 100) / 100;
 
   if (forzar && db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero)) {
     db.prepare(`
-      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=? WHERE numero=?
-    `).run(montoNeto, iva, montoNeto, montoTotal, numero);
+      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=?, tipo=? WHERE numero=?
+    `).run(montoNeto, iva, montoNeto, montoTotal, tipo, numero);
   } else {
     db.prepare(`
-      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath));
+      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path, tipo)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath), tipo);
   }
 }
 
@@ -252,8 +252,9 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
       if (nombre) console.log(`  [nombre] ${nombre}`);
       const clienteId = obtenerOCrearCliente(fila.nroDoc, nombre);
       const fecha     = isoFecha(fila.fecha);
+      const tipo      = fila.tipoComp?.trim() || null;
 
-      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, forzar });
+      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, forzar });
 
       if (existe) {
         console.log(`  [UPD] ${numero}  ${fecha}  $${montoTotal}`);

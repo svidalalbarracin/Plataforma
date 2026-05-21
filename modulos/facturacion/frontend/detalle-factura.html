@@ -100,6 +100,7 @@
 
     document.getElementById('detalle-factura').innerHTML = `
       <div class="detail-item"><dt>Número</dt><dd class="font-mono">${f.numero}</dd></div>
+      <div class="detail-item"><dt>Tipo</dt><dd>${f.tipo ?? '—'}</dd></div>
       <div class="detail-item"><dt>Cliente</dt><dd>${f.cliente_nombre}</dd></div>
       <div class="detail-item"><dt>CUIT</dt><dd class="font-mono">${f.cliente_cuit ?? '—'}</dd></div>
       <div class="detail-item"><dt>Fecha</dt><dd>${f.fecha}</dd></div>
