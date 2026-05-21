@@ -10,8 +10,7 @@
   const items = MODULOS.map(m => {
     const activo = m.slug ? path.startsWith('/' + m.slug + '/') || path === '/' + m.slug : path === '/';
     const clases = ['sidebar-item', activo ? 'active' : '', m.pronto ? 'disabled' : ''].filter(Boolean).join(' ');
-    const badge  = m.pronto ? '<span class="sidebar-badge">Pronto</span>' : '';
-    return `<a href="${m.href}" class="${clases}">${m.label}${badge}</a>`;
+    return `<a href="${m.href}" class="${clases}">${m.label}</a>`;
   }).join('');
 
   const sidebar = document.createElement('aside');

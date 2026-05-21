@@ -42,7 +42,6 @@
   <div class="card">
     <div class="card-title">Cobros registrados</div>
     <ul id="pagos-body" style="list-style:none;padding:0;margin:0"></ul>
-    <div id="saldo-container" style="display:none;margin-top:12px;padding:10px 14px;border-radius:8px;font-size:14px"></div>
   </div>
 
   <!-- Registrar cobro -->
@@ -142,7 +141,6 @@
 
     if (pagos.length === 0) {
       lista.innerHTML = '<li style="padding:1.5rem 0;text-align:center;color:var(--text-muted)">Sin cobros registrados</li>';
-      document.getElementById('saldo-container').style.display = 'none';
       return;
     }
 
@@ -166,21 +164,6 @@
       });
     });
 
-    if (facturaActual) {
-      const totalCobrado = pagos.reduce((s, p) => s + p.monto, 0);
-      const saldo = facturaActual.monto_total - totalCobrado;
-      const cont  = document.getElementById('saldo-container');
-      cont.style.display = 'block';
-      if (saldo > 0.01) {
-        cont.style.background = 'rgba(220,38,38,0.08)';
-        cont.style.color = '#dc2626';
-        cont.innerHTML = `<strong>Saldo pendiente:</strong> ${fmt.format(saldo)}`;
-      } else {
-        cont.style.background = 'rgba(22,163,74,0.08)';
-        cont.style.color = '#16a34a';
-        cont.innerHTML = `<strong>Totalmente cobrada</strong>`;
-      }
-    }
   }
 
   async function cargarFactura() {
