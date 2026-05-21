@@ -1,5 +1,5 @@
 const SENSIBLES = ['CLAVE_FISCAL', 'MAIL_PASS'];
-const CAMPOS    = ['CUIT', 'CLAVE_FISCAL', 'MAIL_USER', 'MAIL_PASS', 'MAIL_TO', 'PUNTO_VENTA'];
+const CAMPOS    = ['CUIT', 'CLAVE_FISCAL', 'MAIL_PASS', 'MAIL_TO'];
 
 function toast(msg, tipo = 'success') {
   const el = document.createElement('div');

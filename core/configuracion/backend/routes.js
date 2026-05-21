@@ -4,7 +4,7 @@ const path = require('path');
 
 const ENV_PATH = path.join(__dirname, '../../../.env');
 
-const VISIBLES  = ['CUIT', 'MAIL_USER', 'MAIL_TO', 'PUNTO_VENTA'];
+const VISIBLES  = ['CUIT', 'MAIL_TO'];
 const SENSIBLES = ['CLAVE_FISCAL', 'MAIL_PASS'];
 const PERMITIDOS = [...VISIBLES, ...SENSIBLES];
 
