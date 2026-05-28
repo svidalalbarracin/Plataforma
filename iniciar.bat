@@ -72,7 +72,5 @@ echo   Cerra esta ventana para apagar el sistema.
 echo ============================================================
 echo.
 
-rem -- 7. Mantener la ventana abierta
-:mantener
-timeout /t 10 /nobreak > nul
-goto :mantener
+rem -- 7. Mostrar logs en tiempo real (Ctrl+C para apagar)
+powershell -NoProfile -Command "Get-Content 'logs\server.log' -Wait"

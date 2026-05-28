@@ -83,5 +83,11 @@ echo "  Presiona Ctrl+C para apagar el sistema."
 echo "============================================================"
 echo ""
 
-# -- 8. Mantener proceso vivo hasta Ctrl+C
+# -- 8. Mostrar logs en tiempo real hasta Ctrl+C
+tail -f logs/server.log &
+TAIL_PID=$!
+
+trap "kill $NODE_PID $TAIL_PID 2>/dev/null; exit 0" INT TERM
+
 wait "$NODE_PID"
+kill "$TAIL_PID" 2>/dev/null
