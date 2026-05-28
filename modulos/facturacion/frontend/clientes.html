@@ -105,6 +105,22 @@
         </div>
       </div>
 
+      <div class="card-title" style="margin:1.25rem 0 .75rem">Datos de facturación</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="c-anticipo">Anticipo (USD)</label>
+          <input type="number" id="c-anticipo" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label for="c-honorario-exito">Honorario de éxito (USD)</label>
+          <input type="number" id="c-honorario-exito" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label for="c-concepto">Concepto de facturación</label>
+          <textarea id="c-concepto" rows="2" placeholder="Honorarios profesionales USD 500 mes de [MES]" style="resize:vertical"></textarea>
+        </div>
+      </div>
+
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" id="btn-cancelar">Cancelar</button>
         <button type="submit" class="btn btn-primary" id="btn-guardar">Guardar</button>
@@ -136,10 +152,13 @@
   function abrirModal(cliente = null) {
     editandoId = cliente ? cliente.id : null;
     document.getElementById('modal-titulo').textContent = cliente ? 'Editar cliente' : 'Nuevo cliente';
-    document.getElementById('c-nombre').value   = cliente?.nombre   ?? '';
-    document.getElementById('c-cuit').value     = cliente?.cuit     ?? '';
-    document.getElementById('c-email').value    = cliente?.email    ?? '';
-    document.getElementById('c-telefono').value = cliente?.telefono ?? '';
+    document.getElementById('c-nombre').value          = cliente?.nombre              ?? '';
+    document.getElementById('c-cuit').value            = cliente?.cuit               ?? '';
+    document.getElementById('c-email').value           = cliente?.email              ?? '';
+    document.getElementById('c-telefono').value        = cliente?.telefono           ?? '';
+    document.getElementById('c-anticipo').value        = cliente?.anticipo_usd       ?? '';
+    document.getElementById('c-honorario-exito').value = cliente?.honorario_exito_usd ?? '';
+    document.getElementById('c-concepto').value        = cliente?.concepto_facturacion ?? '';
     document.getElementById('modal-backdrop').classList.add('open');
     document.getElementById('c-nombre').focus();
   }
@@ -259,11 +278,16 @@
     e.preventDefault();
     const btn = document.getElementById('btn-guardar');
     btn.disabled = true;
+    const anticipoVal        = parseFloat(document.getElementById('c-anticipo').value);
+    const honorarioExitoVal  = parseFloat(document.getElementById('c-honorario-exito').value);
     const data = {
-      nombre:   document.getElementById('c-nombre').value.trim(),
-      cuit:     document.getElementById('c-cuit').value.trim(),
-      email:    document.getElementById('c-email').value.trim() || null,
-      telefono: document.getElementById('c-telefono').value.trim() || null,
+      nombre:                document.getElementById('c-nombre').value.trim(),
+      cuit:                  document.getElementById('c-cuit').value.trim(),
+      email:                 document.getElementById('c-email').value.trim() || null,
+      telefono:              document.getElementById('c-telefono').value.trim() || null,
+      anticipo_usd:          isNaN(anticipoVal)       ? null : anticipoVal,
+      honorario_exito_usd:   isNaN(honorarioExitoVal) ? null : honorarioExitoVal,
+      concepto_facturacion:  document.getElementById('c-concepto').value.trim() || null,
     };
     try {
       if (editandoId) {

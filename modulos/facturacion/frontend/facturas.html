@@ -112,7 +112,9 @@
 <script src="js/api.js"></script>
 <script src="/js/layout.js"></script>
 <script>
-  const fmt = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+  const fmt    = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+  const fmtUSD = n => `USD ${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+  const fmtMonto = (monto, moneda) => moneda === 'USD' ? fmtUSD(monto) : fmt.format(monto);
 
   function formatNumero(numero) {
     const parts = numero.split('-');
@@ -160,15 +162,20 @@
     }
     let html = facturas.map(f => {
       const nc = esNC(f.tipo);
+      const moneda = f.moneda || 'ARS';
       let montoHtml;
       if (nc) {
-        montoHtml = `<span style="color:var(--danger)">${fmt.format(f.monto_total)}</span>`;
+        montoHtml = `<span style="color:var(--danger)">${fmtMonto(f.monto_total, moneda)}</span>`;
       } else if (f.monto_nc_asociado > 0) {
         const efectivo = f.monto_total - f.monto_nc_asociado;
-        montoHtml = `<span style="text-decoration:line-through;color:var(--text-muted);font-size:.8em">${fmt.format(f.monto_total)}</span> `
-                  + `<span class="fw-bold">${fmt.format(efectivo)}</span>`;
+        montoHtml = `<span style="text-decoration:line-through;color:var(--text-muted);font-size:.8em">${fmtMonto(f.monto_total, moneda)}</span> `
+                  + `<span class="fw-bold">${fmtMonto(efectivo, moneda)}</span>`;
       } else {
-        montoHtml = fmt.format(f.monto_total);
+        montoHtml = fmtMonto(f.monto_total, moneda);
+      }
+      if (moneda === 'USD' && f.tipo_cambio) {
+        const ars = f.monto_total * f.tipo_cambio;
+        montoHtml += ` <span class="text-muted" style="font-size:.8em">(≈ ${fmt.format(ars)} · TC ${new Intl.NumberFormat('es-AR').format(f.tipo_cambio)})</span>`;
       }
       return `
       <tr${nc ? ' style="opacity:.85"' : ''}>
@@ -184,25 +191,33 @@
     }).join('');
 
     if (hayFiltros()) {
+      const ars     = facturas.filter(f => !esNC(f.tipo) && (f.moneda || 'ARS') === 'ARS');
+      const usd     = facturas.filter(f => !esNC(f.tipo) && f.moneda === 'USD');
+      const arsNCs  = facturas.filter(f =>  esNC(f.tipo) && (f.moneda || 'ARS') === 'ARS');
+      const usdNCs  = facturas.filter(f =>  esNC(f.tipo) && f.moneda === 'USD');
+      const ncs     = facturas.filter(f =>  esNC(f.tipo));
       const normales = facturas.filter(f => !esNC(f.tipo));
-      const ncs      = facturas.filter(f => esNC(f.tipo));
-      const neto = normales.reduce((s, f) => s + (f.monto_neto ?? 0), 0)
-                 - ncs.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
-      const iva  = normales.reduce((s, f) => s + (f.iva ?? 0), 0)
-                 - ncs.reduce((s, f) => s + (f.iva ?? 0), 0);
-      const tot  = normales.reduce((s, f) => s + f.monto_total, 0)
-                 - ncs.reduce((s, f) => s + f.monto_total, 0);
-      const ret  = facturas.reduce((s, f) => s + (f.retencion_total ?? 0), 0);
-      const n    = normales.length;
-      const ncTxt = ncs.length > 0 ? ` &nbsp;·&nbsp; <span style="color:var(--danger)">${ncs.length} NC</span>` : '';
+
+      const netoARS = ars.reduce((s, f) => s + (f.monto_neto ?? 0), 0) - arsNCs.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
+      const ivaARS  = ars.reduce((s, f) => s + (f.iva ?? 0), 0)        - arsNCs.reduce((s, f) => s + (f.iva ?? 0), 0);
+      const totARS  = ars.reduce((s, f) => s + f.monto_total, 0)       - arsNCs.reduce((s, f) => s + f.monto_total, 0);
+      const totUSD  = usd.reduce((s, f) => s + f.monto_total, 0)       - usdNCs.reduce((s, f) => s + f.monto_total, 0);
+      const ret     = facturas.reduce((s, f) => s + (f.retencion_total ?? 0), 0);
+      const n       = normales.length;
+      const ncTxt   = ncs.length > 0 ? ` &nbsp;·&nbsp; <span style="color:var(--danger)">${ncs.length} NC</span>` : '';
+
+      const hayUSD  = usd.length > 0 || usdNCs.length > 0;
+      const montoTd = hayUSD
+        ? `${fmt.format(totARS)} <span class="text-muted" style="font-size:.85em">&nbsp;+&nbsp;</span> ${fmtUSD(totUSD)}`
+        : fmt.format(totARS);
+      const infoARS = hayUSD ? '' : `&nbsp;·&nbsp; Neto: <strong>${fmt.format(netoARS)}</strong> &nbsp;·&nbsp; IVA: <strong>${fmt.format(ivaARS)}</strong>`;
+
       html += `
         <tr class="row-totales">
           <td colspan="4" class="text-muted">
-            <strong>${n}</strong> factura${n !== 1 ? 's' : ''}${ncTxt}
-            &nbsp;·&nbsp; Neto: <strong>${fmt.format(neto)}</strong>
-            &nbsp;·&nbsp; IVA: <strong>${fmt.format(iva)}</strong>
+            <strong>${n}</strong> factura${n !== 1 ? 's' : ''}${ncTxt}${infoARS}
           </td>
-          <td class="text-right font-mono fw-bold">${fmt.format(tot)}</td>
+          <td class="text-right font-mono fw-bold">${montoTd}</td>
           <td class="text-right font-mono">${ret > 0 ? fmt.format(ret) : '—'}</td>
           <td colspan="2"></td>
         </tr>`;

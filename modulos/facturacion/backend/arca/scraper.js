@@ -20,11 +20,12 @@ function mapearTipo(tipoComp) {
   if (/Factura\s+A\b/i.test(t))                  return 'A';
   if (/Factura\s+B\b/i.test(t))                  return 'B';
   if (/Factura\s+C\b/i.test(t))                  return 'C';
-  if (/Nota\s+de\s+Cr[eé]dito\s+A\b/i.test(t))  return 'NC A';
-  if (/Nota\s+de\s+Cr[eé]dito\s+B\b/i.test(t))  return 'NC B';
-  if (/Nota\s+de\s+Cr[eé]dito\s+C\b/i.test(t))  return 'NC C';
-  if (/Nota\s+de\s+Cr[eé]dito/i.test(t))         return 'NC';
-  if (/FCE|Factura\s+de\s+Cr[eé]dito/i.test(t)) return 'FCE';
+  if (/Nota\s+de\s+Cr[eé]dito\s+A\b/i.test(t))          return 'NC A';
+  if (/Nota\s+de\s+Cr[eé]dito\s+B\b/i.test(t))          return 'NC B';
+  if (/Nota\s+de\s+Cr[eé]dito\s+C\b/i.test(t))          return 'NC C';
+  if (/Nota\s+de\s+Cr[eé]dito/i.test(t))                return 'NC';
+  if (/FCE|Factura\s+de\s+Cr[eé]dito/i.test(t))         return 'FCE';
+  if (/Factura\s+de\s+Exportaci[oó]n|Exportaci[oó]n/i.test(t)) return 'E';
   return t || null;
 }
 
@@ -59,6 +60,34 @@ async function extraerNombreDesedePDF(pdfPath) {
   return null;
 }
 
+// ── Detección de moneda desde PDF ────────────────────────────────────────────
+
+async function extraerMoneda(pdfPath) {
+  try {
+    const buf = fs.readFileSync(pdfPath);
+    const { text } = await pdfParse(buf);
+    // ARCA indica "Moneda: USD - Dólar Estadounidense" o "Moneda: Pesos Argentinos"
+    const m = text.match(/Moneda:\s*([^\n]{3,60})/i);
+    if (m && /d[oó]lar|USD/i.test(m[1])) return 'USD';
+  } catch (e) {
+    console.warn(`  [warn] No se pudo detectar moneda de ${path.basename(pdfPath)}: ${e.message}`);
+  }
+  return 'ARS';
+}
+
+async function extraerTipoCambio(pdfPath) {
+  try {
+    const buf = fs.readFileSync(pdfPath);
+    const { text } = await pdfParse(buf);
+    // ARCA: "tipo de cambio consignado de 1349.000000"
+    const m = text.match(/tipo de cambio\D{0,30}?([\d]+(?:[.,]\d+)?)/i);
+    if (m) return parseFloat(m[1].replace(',', '.'));
+  } catch (e) {
+    console.warn(`  [warn] No se pudo extraer tipo de cambio de ${path.basename(pdfPath)}: ${e.message}`);
+  }
+  return null;
+}
+
 // ── Extracción de comprobante asociado desde PDF (para notas de crédito) ─────
 
 async function extraerComprobanteAsociado(pdfPath) {
@@ -66,18 +95,19 @@ async function extraerComprobanteAsociado(pdfPath) {
     const buf = fs.readFileSync(pdfPath);
     const { text } = await pdfParse(buf);
 
+    // Patrón ARCA más común: "Fac. A: 00002-00000669" en descripción del ítem
+    const m0 = text.match(/Fac\.\s+[A-Z]:\s*(\d{1,5}-\d{6,8})/i);
+    if (m0) return normalizarNumero(m0[1]);
+
+    // Patrón alternativo: sección "Comprobante Asociado" con PV-NRO
     const idx = text.search(/Comprobantes?\s+Asoc/i);
-    if (idx === -1) return null;
-
-    const sector = text.slice(idx, idx + 500);
-
-    // Patrón: PPPP-NNNNNNNN (separados por guión o espacio)
-    const m1 = sector.match(/(\d{1,4})\s*[-–]\s*(\d{6,8})/);
-    if (m1) return normalizarNumero(`${m1[1]}-${m1[2]}`);
-
-    // Patrón alternativo: cuatro dígitos seguidos de ocho dígitos
-    const m2 = sector.match(/\b(\d{4})\s+(\d{8})\b/);
-    if (m2) return `${m2[1]}-${m2[2]}`;
+    if (idx !== -1) {
+      const sector = text.slice(idx, idx + 500);
+      const m1 = sector.match(/(\d{1,4})\s*[-–]\s*(\d{6,8})/);
+      if (m1) return normalizarNumero(`${m1[1]}-${m1[2]}`);
+      const m2 = sector.match(/\b(\d{4})\s+(\d{8})\b/);
+      if (m2) return `${m2[1]}-${m2[2]}`;
+    }
   } catch (e) {
     console.warn(`  [warn] No se pudo extraer comprobante asociado de ${path.basename(pdfPath)}: ${e.message}`);
   }
@@ -107,19 +137,19 @@ function yaImportada(numero) {
   return !!db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero);
 }
 
-function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, facturaAsociadaNumero = null, forzar = false }) {
+function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, facturaAsociadaNumero = null, moneda = 'ARS', tipoCambio = null, forzar = false }) {
   const montoNeto = Math.round((montoTotal / 1.21) * 100) / 100;
   const iva       = Math.round((montoTotal - montoNeto) * 100) / 100;
 
   if (forzar && db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero)) {
     db.prepare(`
-      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=?, tipo=?, factura_asociada_numero=? WHERE numero=?
-    `).run(montoNeto, iva, montoNeto, montoTotal, tipo, facturaAsociadaNumero, numero);
+      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=?, tipo=?, factura_asociada_numero=?, moneda=?, tipo_cambio=? WHERE numero=?
+    `).run(montoNeto, iva, montoNeto, montoTotal, tipo, facturaAsociadaNumero, moneda, tipoCambio, numero);
   } else {
     db.prepare(`
-      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path, tipo, factura_asociada_numero)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath), tipo, facturaAsociadaNumero);
+      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path, tipo, factura_asociada_numero, moneda, tipo_cambio)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath), tipo, facturaAsociadaNumero, moneda, tipoCambio);
   }
 }
 
@@ -299,12 +329,16 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
       const fecha     = isoFecha(fila.fecha);
       const tipo      = mapearTipo(fila.tipoComp);
 
+      const moneda     = await extraerMoneda(pdfPath);
+      const tipoCambio = moneda === 'USD' ? await extraerTipoCambio(pdfPath) : null;
+      if (moneda === 'USD') console.log(`  [USD] ${numero}  TC: ${tipoCambio}`);
+
       const facturaAsociadaNumero = esNotaCredito(tipo)
         ? await extraerComprobanteAsociado(pdfPath)
         : null;
       if (facturaAsociadaNumero) console.log(`  [NC→] asociada a ${facturaAsociadaNumero}`);
 
-      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, facturaAsociadaNumero, forzar });
+      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, facturaAsociadaNumero, moneda, tipoCambio, forzar });
 
       if (existe) {
         console.log(`  [UPD] ${numero}  ${fecha}  $${montoTotal}`);
@@ -357,13 +391,11 @@ async function descargarPDF(page, context, fila, numero) {
 // ── Utils ─────────────────────────────────────────────────────────────────────
 
 function normalizarNumero(raw) {
-  // Puede venir como "0002-00001234" o "2-1234" → normalizar a "0002-000-00001234"
-  // Si ya tiene el formato estándar lo deja
   const limpio = raw.replace(/\s/g, '');
   const match = limpio.match(/^(\d+)-(\d+)$/);
   if (match) {
-    const pv  = String(match[1]).padStart(4, '0');
-    const nro = String(match[2]).padStart(8, '0');
+    const pv  = String(parseInt(match[1], 10)).padStart(4, '0');
+    const nro = String(parseInt(match[2], 10)).padStart(8, '0');
     return `${pv}-${nro}`;
   }
   return limpio;

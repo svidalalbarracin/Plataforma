@@ -15,26 +15,26 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { nombre, cuit, email, telefono } = req.body;
+  const { nombre, cuit, email, telefono, anticipo_usd, honorario_exito_usd, concepto_facturacion } = req.body;
   if (!nombre || !cuit) return res.status(400).json({ error: 'nombre y cuit son requeridos' });
 
   const { lastInsertRowid } = db.prepare(
-    'INSERT INTO clientes (nombre, cuit, email, telefono) VALUES (?, ?, ?, ?)'
-  ).run(nombre, cuit, email ?? null, telefono ?? null);
+    'INSERT INTO clientes (nombre, cuit, email, telefono, anticipo_usd, honorario_exito_usd, concepto_facturacion) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(nombre, cuit, email ?? null, telefono ?? null, anticipo_usd ?? null, honorario_exito_usd ?? null, concepto_facturacion ?? null);
 
-  res.status(201).json({ id: lastInsertRowid, nombre, cuit, email, telefono });
+  res.status(201).json({ id: lastInsertRowid, nombre, cuit, email, telefono, anticipo_usd, honorario_exito_usd, concepto_facturacion });
 });
 
 router.put('/:id', (req, res) => {
-  const { nombre, cuit, email, telefono } = req.body;
+  const { nombre, cuit, email, telefono, anticipo_usd, honorario_exito_usd, concepto_facturacion } = req.body;
   if (!nombre || !cuit) return res.status(400).json({ error: 'nombre y cuit son requeridos' });
 
   const { changes } = db.prepare(
-    'UPDATE clientes SET nombre = ?, cuit = ?, email = ?, telefono = ? WHERE id = ?'
-  ).run(nombre, cuit, email ?? null, telefono ?? null, req.params.id);
+    'UPDATE clientes SET nombre = ?, cuit = ?, email = ?, telefono = ?, anticipo_usd = ?, honorario_exito_usd = ?, concepto_facturacion = ? WHERE id = ?'
+  ).run(nombre, cuit, email ?? null, telefono ?? null, anticipo_usd ?? null, honorario_exito_usd ?? null, concepto_facturacion ?? null, req.params.id);
 
   if (!changes) return res.status(404).json({ error: 'Cliente no encontrado' });
-  res.json({ id: Number(req.params.id), nombre, cuit, email, telefono });
+  res.json({ id: Number(req.params.id), nombre, cuit, email, telefono, anticipo_usd, honorario_exito_usd, concepto_facturacion });
 });
 
 router.delete('/:id', (req, res) => {
