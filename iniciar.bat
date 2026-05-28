@@ -6,7 +6,7 @@ cd /d "%~dp0"
 
 echo.
 echo ============================================================
-echo   SISTEMA ESTUDIO
+echo   PLATAFORMA MEMO
 echo ============================================================
 echo.
 
@@ -22,16 +22,16 @@ if errorlevel 1 (
 rem -- 2. Actualizar desde GitHub
 echo Verificando actualizaciones...
 git checkout main > nul 2>&1
-git pull origin main > "%TEMP%\git_pull_out.txt" 2>&1
-findstr /i "Already up to date" "%TEMP%\git_pull_out.txt" > nul
-if errorlevel 1 (
+for /f "tokens=*" %%h in ('git rev-parse HEAD') do set "BEFORE=%%h"
+git pull origin main > nul 2>&1
+for /f "tokens=*" %%h in ('git rev-parse HEAD') do set "AFTER=%%h"
+if not "!BEFORE!"=="!AFTER!" (
     echo Actualizacion disponible. Instalando dependencias...
     call npm install --silent
     if errorlevel 1 echo [AVISO] npm install fallo. Continuando de todas formas...
 ) else (
     echo Sistema al dia.
 )
-del "%TEMP%\git_pull_out.txt" > nul 2>&1
 echo.
 
 rem -- 3. Preparar entorno
