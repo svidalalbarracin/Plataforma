@@ -26,16 +26,21 @@ function leerEnv() {
 function escribirEnv(updates) {
   let content = fs.readFileSync(ENV_PATH, 'utf8');
   for (const [key, value] of Object.entries(updates)) {
-    const regex = new RegExp(`^${key}=.*$`, 'm');
-    if (regex.test(content)) {
-      content = content.replace(regex, `${key}=${value}`);
+    const trimmedValue = value.trim();
+    // Detecta el caso KEY=\nvalor_huerfano (bug de instalar.bat con chcp 65001)
+    const regexOrfano = new RegExp(`^${key}=[ \t]*\n[^\n]+`, 'm');
+    const regexNormal = new RegExp(`^${key}=[^\n]*`, 'm');
+    if (regexOrfano.test(content)) {
+      content = content.replace(regexOrfano, `${key}=${trimmedValue}`);
+    } else if (regexNormal.test(content)) {
+      content = content.replace(regexNormal, `${key}=${trimmedValue}`);
     } else {
-      content = content.trimEnd() + `\n${key}=${value}\n`;
+      content = content.trimEnd() + `\n${key}=${trimmedValue}\n`;
     }
   }
   fs.writeFileSync(ENV_PATH, content, 'utf8');
   for (const [key, value] of Object.entries(updates)) {
-    process.env[key] = value;
+    process.env[key] = value.trim();
   }
 }
 
