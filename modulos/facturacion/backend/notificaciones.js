@@ -157,7 +157,7 @@ async function notificarResumenDiario() {
 // Aviso mensual de honorarios recurrentes (se ejecuta el día 1 de cada mes)
 async function notificarRecurrentes() {
   const recurrentes = db.prepare(`
-    SELECT r.*, c.nombre AS cliente_nombre
+    SELECT r.honorario_usd, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit, c.concepto_facturacion
     FROM facturacion_recurrente r
     JOIN clientes c ON c.id = r.cliente_id
     WHERE r.activo = 1
@@ -172,53 +172,66 @@ async function notificarRecurrentes() {
   const tipoCambio = await obtenerTipoCambio();
   const fmt    = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
   const fmtUSD = n => `USD ${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+  const fmtTC  = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
   const hoy    = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const mes    = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
 
-  const filas = recurrentes.map(r => {
+  // "mayo de 2026" → "Mayo de 2026"
+  const mesAnio = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  const mesAnioCapital = mesAnio.charAt(0).toUpperCase() + mesAnio.slice(1);
+  const mesNombre = new Date().toLocaleDateString('es-AR', { month: 'long' });
+  const mesCapital = mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1);
+
+  const transporter = crearTransporter();
+  let enviados = 0;
+
+  for (const r of recurrentes) {
     const montoPesos = Math.round(r.honorario_usd * tipoCambio * 100) / 100;
-    return `
-    <tr>
-      <td style="padding:9px 14px;border-bottom:1px solid #e2e8f0">${r.cliente_nombre}</td>
-      <td style="padding:9px 14px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace;font-size:13px">${fmtUSD(r.honorario_usd)}</td>
-      <td style="padding:9px 14px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace;font-size:13px">${fmt.format(montoPesos)}</td>
-    </tr>`;
-  }).join('');
+    const concepto   = (r.concepto_facturacion || 'Honorarios profesionales mes de [MES]')
+                         .replace(/\[MES\]/gi, mesCapital);
 
-  const html = `<!DOCTYPE html>
+    const fila = (label, valor, mono = false) => `
+      <tr>
+        <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;white-space:nowrap">${label}</td>
+        <td style="padding:10px 16px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:600${mono ? ';font-family:monospace' : ''}">${valor}</td>
+      </tr>`;
+
+    const html = `<!DOCTYPE html>
 <html lang="es">
 <body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a">
-  <div style="max-width:660px;margin:0 auto;background:#ffffff;border-radius:12px;padding:36px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
-    <h1 style="margin:0 0 6px;font-size:20px;font-weight:700">Avisos de honorarios — ${mes}</h1>
-    <p style="margin:0 0 24px;color:#64748b;font-size:14px">${hoy} · Tipo de cambio oficial: ${fmt.format(tipoCambio)}</p>
+  <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:12px;padding:36px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
+    <h1 style="margin:0 0 4px;font-size:20px;font-weight:700">Facturación mensual</h1>
+    <p style="margin:0 0 24px;color:#64748b;font-size:14px">${mesAnioCapital} · ${hoy} · TC oficial: <strong>${fmt.format(tipoCambio)}</strong></p>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 20px">
     <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
-      <thead>
-        <tr style="background:#f8fafc">
-          <th style="padding:8px 14px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Cliente</th>
-          <th style="padding:8px 14px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Honorario USD</th>
-          <th style="padding:8px 14px;text-align:right;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Monto ARS</th>
-        </tr>
-      </thead>
-      <tbody>${filas}</tbody>
+      <tbody>
+        ${fila('Cliente',         r.cliente_nombre)}
+        ${fila('CUIT',            r.cliente_cuit, true)}
+        ${fila('Concepto',        concepto)}
+        ${fila('Honorario',       fmtUSD(r.honorario_usd), true)}
+        ${fila('Tipo de cambio',  fmt.format(tipoCambio),  true)}
+        ${fila('Monto en pesos',  fmt.format(montoPesos),  true)}
+      </tbody>
     </table>
-    <p style="margin-top:36px;font-size:12px;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:16px">
+    <p style="margin-top:32px;font-size:12px;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:16px">
       Generado automáticamente · Sistema de Facturación
     </p>
   </div>
 </body>
 </html>`;
 
-  const transporter = crearTransporter();
-  await transporter.sendMail({
-    from: `"Facturación" <${process.env.MAIL_USER}>`,
-    to: process.env.MAIL_TO,
-    subject: `🗓️ Honorarios ${mes} — ${recurrentes.length} cliente${recurrentes.length !== 1 ? 's' : ''} · TC ${fmt.format(tipoCambio)}`,
-    html,
-  });
+    await transporter.sendMail({
+      from:    `"Facturación" <${process.env.MAIL_USER}>`,
+      to:      process.env.MAIL_TO,
+      subject: `Facturación mensual - ${r.cliente_nombre} - ${mesAnioCapital}`,
+      html,
+    });
 
-  console.log(`  Aviso de honorarios enviado: ${recurrentes.length} cliente(s) · TC: ${fmt.format(tipoCambio)}`);
-  return recurrentes.length;
+    console.log(`  [mail] ${r.cliente_nombre} · ${fmtUSD(r.honorario_usd)} · TC ${fmtTC(tipoCambio)} · ${fmt.format(montoPesos)}`);
+    enviados++;
+  }
+
+  console.log(`  Avisos enviados: ${enviados} cliente(s) · TC: ${fmt.format(tipoCambio)}`);
+  return enviados;
 }
 
 module.exports = { notificarImportadasVencidas, notificarResumenDiario, notificarRecurrentes };
