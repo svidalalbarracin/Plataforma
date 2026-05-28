@@ -209,15 +209,16 @@ async function login(context) {
   console.log('  Ingresando clave fiscal...');
   await auth.fill('#F1\\:password', process.env.CLAVE_FISCAL);
   await auth.click('#F1\\:btnIngresar');
-  await auth.waitForLoadState('load');
 
-  if (!auth.url().includes('portalcf')) {
-    const screenshotPath = path.join(__dirname, '../../../../logs/login-fallido.png');
-    await auth.screenshot({ path: screenshotPath }).catch(() => null);
-    const texto = await auth.textContent('body').catch(() => '');
-    console.error('  [login] URL actual:', auth.url());
-    console.error('  [login] Texto de la página:', texto.replace(/\s+/g, ' ').slice(0, 500));
-    console.error('  [login] Screenshot guardado en logs/login-fallido.png');
+  // ARCA redirige por múltiples pasos (SAML/SSO) antes de llegar al portal.
+  // Esperamos a que la URL final contenga 'portalcf'; si no llega en 60s, falló.
+  const llegóAlPortal = await auth.waitForURL('**/portalcf/**', { timeout: 60000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!llegóAlPortal) {
+    console.error('  [login] URL final:', auth.url());
+    console.error('  [login] Texto:', (await auth.textContent('body').catch(() => '')).replace(/\s+/g, ' ').slice(0, 500));
     throw new Error(`Login fallido. URL actual: ${auth.url()}`);
   }
   console.log('  Login OK');
