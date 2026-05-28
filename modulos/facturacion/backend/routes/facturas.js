@@ -22,7 +22,9 @@ router.get('/', (req, res) => {
   const { cliente_id, estado } = req.query;
   let sql = `
     SELECT f.*, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit,
-      (SELECT SUM(retencion) FROM pagos WHERE factura_id = f.id) AS retencion_total
+      (SELECT SUM(retencion) FROM pagos WHERE factura_id = f.id) AS retencion_total,
+      (SELECT COALESCE(SUM(nc.monto_total), 0) FROM facturas nc
+       WHERE nc.factura_asociada_numero = f.numero) AS monto_nc_asociado
     FROM facturas f
     JOIN clientes c ON c.id = f.cliente_id
   `;
