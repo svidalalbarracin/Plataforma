@@ -9,10 +9,10 @@ function getMonthStats(anio, mes) {
 
   const base = db.prepare(`
     SELECT
-      COUNT(*)                                          AS total_facturas,
-      COALESCE(SUM(monto_total), 0)                    AS total_facturado,
-      COUNT(CASE WHEN estado = 'pagada' THEN 1 END)    AS cobradas,
-      COUNT(CASE WHEN estado = 'impaga' THEN 1 END)    AS pendientes
+      COUNT(CASE WHEN tipo IS NULL OR tipo NOT LIKE 'NC%' THEN 1 END)                         AS total_facturas,
+      COALESCE(SUM(CASE WHEN tipo LIKE 'NC%' THEN -monto_total ELSE monto_total END), 0)      AS total_facturado,
+      COUNT(CASE WHEN estado = 'pagada' AND (tipo IS NULL OR tipo NOT LIKE 'NC%') THEN 1 END) AS cobradas,
+      COUNT(CASE WHEN estado = 'impaga' AND (tipo IS NULL OR tipo NOT LIKE 'NC%') THEN 1 END) AS pendientes
     FROM facturas
     WHERE strftime('%Y', fecha) = ? AND strftime('%m', fecha) = ?
   `).get(y, m);
@@ -50,11 +50,11 @@ router.get('/anio', (req, res) => {
 
   const facturadoPorMes = db.prepare(`
     SELECT
-      CAST(strftime('%m', fecha) AS INTEGER)        AS mes,
-      COUNT(*)                                       AS total_facturas,
-      COALESCE(SUM(monto_total), 0)                  AS total_facturado,
-      COUNT(CASE WHEN estado = 'pagada' THEN 1 END)  AS cobradas,
-      COUNT(CASE WHEN estado = 'impaga' THEN 1 END)  AS pendientes
+      CAST(strftime('%m', fecha) AS INTEGER)                                                        AS mes,
+      COUNT(CASE WHEN tipo IS NULL OR tipo NOT LIKE 'NC%' THEN 1 END)                              AS total_facturas,
+      COALESCE(SUM(CASE WHEN tipo LIKE 'NC%' THEN -monto_total ELSE monto_total END), 0)           AS total_facturado,
+      COUNT(CASE WHEN estado = 'pagada' AND (tipo IS NULL OR tipo NOT LIKE 'NC%') THEN 1 END)      AS cobradas,
+      COUNT(CASE WHEN estado = 'impaga' AND (tipo IS NULL OR tipo NOT LIKE 'NC%') THEN 1 END)      AS pendientes
     FROM facturas
     WHERE strftime('%Y', fecha) = ?
     GROUP BY mes

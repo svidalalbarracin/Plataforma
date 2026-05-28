@@ -17,11 +17,21 @@ function fmtDDMMAAAA(d) {
 function mapearTipo(tipoComp) {
   if (!tipoComp) return null;
   const t = tipoComp.trim();
-  if (/Factura\s+A\b/i.test(t))             return 'A';
-  if (/Factura\s+B\b/i.test(t))             return 'B';
-  if (/Factura\s+C\b/i.test(t))             return 'C';
-  if (/Cr[eé]dito|FCE/i.test(t))            return 'FCE';
+  if (/Factura\s+A\b/i.test(t))                  return 'A';
+  if (/Factura\s+B\b/i.test(t))                  return 'B';
+  if (/Factura\s+C\b/i.test(t))                  return 'C';
+  if (/Nota\s+de\s+Cr[eé]dito\s+A\b/i.test(t))  return 'NC A';
+  if (/Nota\s+de\s+Cr[eé]dito\s+B\b/i.test(t))  return 'NC B';
+  if (/Nota\s+de\s+Cr[eé]dito\s+C\b/i.test(t))  return 'NC C';
+  if (/Nota\s+de\s+Cr[eé]dito/i.test(t))         return 'NC';
+  if (/FCE|Factura\s+de\s+Cr[eé]dito/i.test(t)) return 'FCE';
   return t || null;
+}
+
+// ── Helpers de tipo ───────────────────────────────────────────────────────────
+
+function esNotaCredito(tipo) {
+  return tipo != null && tipo.startsWith('NC');
 }
 
 // ── Extracción de nombre desde PDF ───────────────────────────────────────────
@@ -49,6 +59,31 @@ async function extraerNombreDesedePDF(pdfPath) {
   return null;
 }
 
+// ── Extracción de comprobante asociado desde PDF (para notas de crédito) ─────
+
+async function extraerComprobanteAsociado(pdfPath) {
+  try {
+    const buf = fs.readFileSync(pdfPath);
+    const { text } = await pdfParse(buf);
+
+    const idx = text.search(/Comprobantes?\s+Asoc/i);
+    if (idx === -1) return null;
+
+    const sector = text.slice(idx, idx + 500);
+
+    // Patrón: PPPP-NNNNNNNN (separados por guión o espacio)
+    const m1 = sector.match(/(\d{1,4})\s*[-–]\s*(\d{6,8})/);
+    if (m1) return normalizarNumero(`${m1[1]}-${m1[2]}`);
+
+    // Patrón alternativo: cuatro dígitos seguidos de ocho dígitos
+    const m2 = sector.match(/\b(\d{4})\s+(\d{8})\b/);
+    if (m2) return `${m2[1]}-${m2[2]}`;
+  } catch (e) {
+    console.warn(`  [warn] No se pudo extraer comprobante asociado de ${path.basename(pdfPath)}: ${e.message}`);
+  }
+  return null;
+}
+
 // ── Persistencia ──────────────────────────────────────────────────────────────
 
 function obtenerOCrearCliente(nroDoc, nombre = null) {
@@ -72,19 +107,19 @@ function yaImportada(numero) {
   return !!db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero);
 }
 
-function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, forzar = false }) {
+function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, facturaAsociadaNumero = null, forzar = false }) {
   const montoNeto = Math.round((montoTotal / 1.21) * 100) / 100;
   const iva       = Math.round((montoTotal - montoNeto) * 100) / 100;
 
   if (forzar && db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero)) {
     db.prepare(`
-      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=?, tipo=? WHERE numero=?
-    `).run(montoNeto, iva, montoNeto, montoTotal, tipo, numero);
+      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=?, tipo=?, factura_asociada_numero=? WHERE numero=?
+    `).run(montoNeto, iva, montoNeto, montoTotal, tipo, facturaAsociadaNumero, numero);
   } else {
     db.prepare(`
-      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path, tipo)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath), tipo);
+      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path, tipo, factura_asociada_numero)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath), tipo, facturaAsociadaNumero);
   }
 }
 
@@ -264,7 +299,12 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
       const fecha     = isoFecha(fila.fecha);
       const tipo      = mapearTipo(fila.tipoComp);
 
-      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, forzar });
+      const facturaAsociadaNumero = esNotaCredito(tipo)
+        ? await extraerComprobanteAsociado(pdfPath)
+        : null;
+      if (facturaAsociadaNumero) console.log(`  [NC→] asociada a ${facturaAsociadaNumero}`);
+
+      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, facturaAsociadaNumero, forzar });
 
       if (existe) {
         console.log(`  [UPD] ${numero}  ${fecha}  $${montoTotal}`);

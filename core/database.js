@@ -124,4 +124,10 @@ if (!facturasCols2.includes('tipo')) {
   db.exec('ALTER TABLE facturas ADD COLUMN tipo TEXT');
 }
 
+// Migración: agregar factura_asociada_numero (para notas de crédito)
+const facturasCols3 = db.prepare('PRAGMA table_info(facturas)').all().map(c => c.name);
+if (!facturasCols3.includes('factura_asociada_numero')) {
+  db.exec('ALTER TABLE facturas ADD COLUMN factura_asociada_numero TEXT');
+}
+
 module.exports = db;

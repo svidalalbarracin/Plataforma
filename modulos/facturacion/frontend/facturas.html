@@ -123,8 +123,13 @@
     return texto.length > max ? texto.slice(0, max) + '…' : texto;
   }
 
+  function esNC(tipo) {
+    return tipo != null && tipo.startsWith('NC');
+  }
+
   function tipoBadge(tipo) {
-    return tipo ? `<span class="badge badge-tipo">${tipo}</span>` : '';
+    if (!tipo) return '';
+    return `<span class="badge ${esNC(tipo) ? 'badge-danger' : 'badge-tipo'}">${tipo}</span>`;
   }
 
   function toast(msg, tipo = 'success') {
@@ -153,29 +158,47 @@
       tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay facturas que coincidan con los filtros</td></tr>';
       return;
     }
-    let html = facturas.map(f => `
-      <tr>
+    let html = facturas.map(f => {
+      const nc = esNC(f.tipo);
+      let montoHtml;
+      if (nc) {
+        montoHtml = `<span style="color:var(--danger)">${fmt.format(f.monto_total)}</span>`;
+      } else if (f.monto_nc_asociado > 0) {
+        const efectivo = f.monto_total - f.monto_nc_asociado;
+        montoHtml = `<span style="text-decoration:line-through;color:var(--text-muted);font-size:.8em">${fmt.format(f.monto_total)}</span> `
+                  + `<span class="fw-bold">${fmt.format(efectivo)}</span>`;
+      } else {
+        montoHtml = fmt.format(f.monto_total);
+      }
+      return `
+      <tr${nc ? ' style="opacity:.85"' : ''}>
         <td class="font-mono">${formatNumero(f.numero)}${tipoBadge(f.tipo)}</td>
         <td title="${f.cliente_nombre}">${truncar(f.cliente_nombre)}</td>
         <td class="font-mono">${f.cliente_cuit ?? '—'}</td>
         <td>${f.fecha}</td>
-        <td class="text-right font-mono fw-bold">${fmt.format(f.monto_total)}</td>
+        <td class="text-right font-mono fw-bold">${montoHtml}</td>
         <td class="text-right font-mono">${f.retencion_total != null ? fmt.format(f.retencion_total) : '—'}</td>
-        <td>${estadoBadge(f.estado)}</td>
+        <td>${nc ? '' : estadoBadge(f.estado)}</td>
         <td><a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a></td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
 
     if (hayFiltros()) {
-      const neto = facturas.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
-      const iva  = facturas.reduce((s, f) => s + (f.iva  ?? 0), 0);
-      const tot  = facturas.reduce((s, f) => s + f.monto_total, 0);
+      const normales = facturas.filter(f => !esNC(f.tipo));
+      const ncs      = facturas.filter(f => esNC(f.tipo));
+      const neto = normales.reduce((s, f) => s + (f.monto_neto ?? 0), 0)
+                 - ncs.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
+      const iva  = normales.reduce((s, f) => s + (f.iva ?? 0), 0)
+                 - ncs.reduce((s, f) => s + (f.iva ?? 0), 0);
+      const tot  = normales.reduce((s, f) => s + f.monto_total, 0)
+                 - ncs.reduce((s, f) => s + f.monto_total, 0);
       const ret  = facturas.reduce((s, f) => s + (f.retencion_total ?? 0), 0);
-      const n    = facturas.length;
+      const n    = normales.length;
+      const ncTxt = ncs.length > 0 ? ` &nbsp;·&nbsp; <span style="color:var(--danger)">${ncs.length} NC</span>` : '';
       html += `
         <tr class="row-totales">
           <td colspan="4" class="text-muted">
-            <strong>${n}</strong> factura${n !== 1 ? 's' : ''}
+            <strong>${n}</strong> factura${n !== 1 ? 's' : ''}${ncTxt}
             &nbsp;·&nbsp; Neto: <strong>${fmt.format(neto)}</strong>
             &nbsp;·&nbsp; IVA: <strong>${fmt.format(iva)}</strong>
           </td>
