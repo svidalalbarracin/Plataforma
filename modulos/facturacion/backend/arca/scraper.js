@@ -66,9 +66,9 @@ async function extraerMoneda(pdfPath) {
   try {
     const buf = fs.readFileSync(pdfPath);
     const { text } = await pdfParse(buf);
-    // ARCA indica "Moneda: Dólares Estadounidenses" o "Moneda: Pesos"
-    const m = text.match(/Moneda\s*[:\s]+([^\n]{3,40})/i);
-    if (m && /d[oó]lar/i.test(m[1])) return 'USD';
+    // ARCA indica "Moneda: USD - Dólar Estadounidense" o "Moneda: Pesos Argentinos"
+    const m = text.match(/Moneda:\s*([^\n]{3,60})/i);
+    if (m && /d[oó]lar|USD/i.test(m[1])) return 'USD';
   } catch (e) {
     console.warn(`  [warn] No se pudo detectar moneda de ${path.basename(pdfPath)}: ${e.message}`);
   }
