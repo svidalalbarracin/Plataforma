@@ -17,7 +17,7 @@
   sidebar.className = 'sidebar';
   sidebar.innerHTML = `
     <a href="/" class="sidebar-brand">
-      <span class="sidebar-brand-name">Estudio Jurídico</span>
+      <span class="sidebar-brand-name">Plataforma Memo</span>
       <span class="sidebar-brand-sub">Plataforma de gestión</span>
     </a>
     <nav class="sidebar-nav">

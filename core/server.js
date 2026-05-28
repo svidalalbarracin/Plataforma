@@ -21,8 +21,9 @@ app.post('/api/importar', async (req, res) => {
   try {
     const { importarFacturas } = require('../modulos/facturacion/backend/arca/scraper');
     const { notificarImportadasVencidas } = require('../modulos/facturacion/backend/notificaciones');
+    const { fechaDesde } = req.body;
     const resultado = await importarFacturas({
-      fechaDesde: new Date('2026-01-01'),
+      fechaDesde: fechaDesde ? new Date(fechaDesde) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
       fechaHasta: new Date(),
     });
     res.json(resultado);

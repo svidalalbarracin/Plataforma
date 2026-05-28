@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 chcp 65001 > nul
-title Sistema Estudio
+title Plataforma Memo
 cd /d "%~dp0"
 
 echo.
