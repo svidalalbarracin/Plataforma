@@ -11,7 +11,8 @@ certs/
 *.crt
 *.key
 *.csr
-# Script de instalacion — se distribuye por separado, no va en el repo
+# Scripts de instalacion — se distribuyen por separado, no van en el repo
 instalar.bat
+instalar.sh
 # Logs del servidor
 logs/*.log
