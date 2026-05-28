@@ -212,7 +212,7 @@ async function login(context) {
 
   // ARCA redirige por múltiples pasos (SAML/SSO) antes de llegar al portal.
   // Esperamos a que la URL final contenga 'portalcf'; si no llega en 60s, falló.
-  const llegóAlPortal = await auth.waitForURL('**/portalcf/**', { timeout: 60000 })
+  const llegóAlPortal = await auth.waitForURL(/portalcf/, { timeout: 60000 })
     .then(() => true)
     .catch(() => false);
 
