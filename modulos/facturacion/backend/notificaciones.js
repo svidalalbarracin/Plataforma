@@ -186,8 +186,9 @@ async function notificarRecurrentes() {
 
   for (const r of recurrentes) {
     const montoPesos = Math.round(r.honorario_usd * tipoCambio * 100) / 100;
-    const concepto   = (r.concepto_facturacion || 'Honorarios profesionales mes de [MES]')
-                         .replace(/\[MES\]/gi, mesCapital);
+    const conceptoBase = r.concepto_facturacion
+      || `Honorarios profesionales USD ${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(r.honorario_usd)} mes de [MES]`;
+    const concepto = conceptoBase.replace(/\[MES\]/gi, mesCapital);
 
     const fila = (label, valor, mono = false) => `
       <tr>

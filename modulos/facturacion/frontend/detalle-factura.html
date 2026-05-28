@@ -92,12 +92,22 @@
       : '<span class="badge badge-danger">Impaga</span>';
   }
 
+  const fmtUSD = n => `USD ${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+  const fmtARS = n => new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+
   function renderFactura(f) {
     facturaActual = f;
     document.getElementById('titulo-factura').textContent = `Factura ${f.numero}`;
 
+    const esUSD     = f.moneda === 'USD';
     const montoNeto = f.monto_neto ?? (f.monto_total / 1.21);
     const iva       = f.monto_total - montoNeto;
+    const fmtMonto  = esUSD ? fmtUSD : fmt.format.bind(fmt);
+
+    const tcARS = esUSD && f.tipo_cambio
+      ? `<div class="detail-item"><dt>Tipo de cambio</dt><dd class="font-mono">${fmt.format(f.tipo_cambio)}</dd></div>
+         <div class="detail-item"><dt>Equivalente ARS</dt><dd class="font-mono">${fmt.format(f.monto_total * f.tipo_cambio)}</dd></div>`
+      : '';
 
     document.getElementById('detalle-factura').innerHTML = `
       <div class="detail-item"><dt>Número</dt><dd class="font-mono">${f.numero}</dd></div>
@@ -106,9 +116,11 @@
       <div class="detail-item"><dt>CUIT</dt><dd class="font-mono">${f.cliente_cuit ?? '—'}</dd></div>
       <div class="detail-item"><dt>Fecha</dt><dd>${f.fecha}</dd></div>
       <div class="detail-item"><dt>Estado</dt><dd>${estadoBadge(f.estado)}</dd></div>
-      <div class="detail-item"><dt>Monto neto</dt><dd class="font-mono">${fmt.format(montoNeto)}</dd></div>
-      <div class="detail-item"><dt>IVA (21%)</dt><dd class="font-mono">${fmt.format(iva)}</dd></div>
-      <div class="detail-item"><dt>Total</dt><dd class="font-mono large">${fmt.format(f.monto_total)}</dd></div>
+      <div class="detail-item"><dt>Moneda</dt><dd>${esUSD ? '<span class="badge badge-warning">USD</span>' : 'ARS'}</dd></div>
+      <div class="detail-item"><dt>Monto neto</dt><dd class="font-mono">${fmtMonto(montoNeto)}</dd></div>
+      <div class="detail-item"><dt>IVA (21%)</dt><dd class="font-mono">${fmtMonto(iva)}</dd></div>
+      <div class="detail-item"><dt>Total</dt><dd class="font-mono large">${fmtMonto(f.monto_total)}</dd></div>
+      ${tcARS}
     `;
 
     const acciones  = document.getElementById('acciones-header');
