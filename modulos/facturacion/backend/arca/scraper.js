@@ -59,6 +59,21 @@ async function extraerNombreDesedePDF(pdfPath) {
   return null;
 }
 
+// ── Detección de moneda desde PDF ────────────────────────────────────────────
+
+async function extraerMoneda(pdfPath) {
+  try {
+    const buf = fs.readFileSync(pdfPath);
+    const { text } = await pdfParse(buf);
+    // ARCA indica "Moneda: Dólares Estadounidenses" o "Moneda: Pesos"
+    const m = text.match(/Moneda\s*[:\s]+([^\n]{3,40})/i);
+    if (m && /d[oó]lar/i.test(m[1])) return 'USD';
+  } catch (e) {
+    console.warn(`  [warn] No se pudo detectar moneda de ${path.basename(pdfPath)}: ${e.message}`);
+  }
+  return 'ARS';
+}
+
 // ── Extracción de comprobante asociado desde PDF (para notas de crédito) ─────
 
 async function extraerComprobanteAsociado(pdfPath) {
@@ -107,19 +122,19 @@ function yaImportada(numero) {
   return !!db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero);
 }
 
-function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, facturaAsociadaNumero = null, forzar = false }) {
+function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, facturaAsociadaNumero = null, moneda = 'ARS', forzar = false }) {
   const montoNeto = Math.round((montoTotal / 1.21) * 100) / 100;
   const iva       = Math.round((montoTotal - montoNeto) * 100) / 100;
 
   if (forzar && db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero)) {
     db.prepare(`
-      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=?, tipo=?, factura_asociada_numero=? WHERE numero=?
-    `).run(montoNeto, iva, montoNeto, montoTotal, tipo, facturaAsociadaNumero, numero);
+      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=?, tipo=?, factura_asociada_numero=?, moneda=? WHERE numero=?
+    `).run(montoNeto, iva, montoNeto, montoTotal, tipo, facturaAsociadaNumero, moneda, numero);
   } else {
     db.prepare(`
-      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path, tipo, factura_asociada_numero)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath), tipo, facturaAsociadaNumero);
+      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path, tipo, factura_asociada_numero, moneda)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath), tipo, facturaAsociadaNumero, moneda);
   }
 }
 
@@ -299,12 +314,15 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
       const fecha     = isoFecha(fila.fecha);
       const tipo      = mapearTipo(fila.tipoComp);
 
+      const moneda = await extraerMoneda(pdfPath);
+      if (moneda === 'USD') console.log(`  [USD] ${numero}`);
+
       const facturaAsociadaNumero = esNotaCredito(tipo)
         ? await extraerComprobanteAsociado(pdfPath)
         : null;
       if (facturaAsociadaNumero) console.log(`  [NC→] asociada a ${facturaAsociadaNumero}`);
 
-      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, facturaAsociadaNumero, forzar });
+      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, facturaAsociadaNumero, moneda, forzar });
 
       if (existe) {
         console.log(`  [UPD] ${numero}  ${fecha}  $${montoTotal}`);

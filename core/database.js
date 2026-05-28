@@ -130,4 +130,22 @@ if (!facturasCols3.includes('factura_asociada_numero')) {
   db.exec('ALTER TABLE facturas ADD COLUMN factura_asociada_numero TEXT');
 }
 
+// Migración: agregar moneda a facturas
+const facturasCols4 = db.prepare('PRAGMA table_info(facturas)').all().map(c => c.name);
+if (!facturasCols4.includes('moneda')) {
+  db.exec("ALTER TABLE facturas ADD COLUMN moneda TEXT NOT NULL DEFAULT 'ARS'");
+}
+
+// Migración: agregar campos de facturación a clientes
+const clientesCols = db.prepare('PRAGMA table_info(clientes)').all().map(c => c.name);
+if (!clientesCols.includes('anticipo_usd')) {
+  db.exec('ALTER TABLE clientes ADD COLUMN anticipo_usd REAL');
+}
+if (!clientesCols.includes('honorario_exito_usd')) {
+  db.exec('ALTER TABLE clientes ADD COLUMN honorario_exito_usd REAL');
+}
+if (!clientesCols.includes('concepto_facturacion')) {
+  db.exec('ALTER TABLE clientes ADD COLUMN concepto_facturacion TEXT');
+}
+
 module.exports = db;
