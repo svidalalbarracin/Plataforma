@@ -49,5 +49,5 @@ const API = {
     toggle: (id, activo) => _req('PUT',    `/recurrentes/${id}`, { activo }),
     delete: (id)         => _req('DELETE', `/recurrentes/${id}`),
   },
-  importar: () => _req('POST', '/importar'),
+  importar: (body = {}) => _req('POST', '/importar', body),
 };

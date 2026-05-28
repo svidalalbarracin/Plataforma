@@ -34,7 +34,11 @@
 <div class="container">
   <div class="page-header">
     <h1 class="page-title">Facturas</h1>
-    <button class="btn btn-primary" id="btn-importar">Buscar nuevas facturas</button>
+    <div style="display:flex;align-items:center;gap:.75rem">
+      <label for="importar-desde" style="font-size:.875rem;color:var(--text-muted);white-space:nowrap">Desde</label>
+      <input type="date" id="importar-desde" style="font-size:.875rem">
+      <button class="btn btn-primary" id="btn-importar">Buscar nuevas facturas</button>
+    </div>
   </div>
 
   <div id="importar-status" style="display:none"></div>
@@ -292,7 +296,8 @@
     status.textContent = 'Conectando con ARCA y buscando facturas. Esto puede tardar unos minutos…';
 
     try {
-      const r = await API.importar();
+      const desde = document.getElementById('importar-desde').value;
+      const r = await API.importar(desde ? { fechaDesde: desde } : {});
       const msg = r.importadas > 0
         ? `${r.importadas} factura${r.importadas !== 1 ? 's' : ''} nueva${r.importadas !== 1 ? 's' : ''} importada${r.importadas !== 1 ? 's' : ''}.`
         : 'No hay facturas nuevas.';
@@ -346,6 +351,11 @@
     });
     renderTabla(todasLasFacturas);
   });
+
+  // Default "Desde": 30 días atrás
+  const _hace30 = new Date();
+  _hace30.setDate(_hace30.getDate() - 30);
+  document.getElementById('importar-desde').valueAsDate = _hace30;
 
   init();
 </script>
