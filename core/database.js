@@ -136,6 +136,12 @@ if (!facturasCols4.includes('moneda')) {
   db.exec("ALTER TABLE facturas ADD COLUMN moneda TEXT NOT NULL DEFAULT 'ARS'");
 }
 
+// Migración: agregar tipo_cambio a facturas (TC oficial al emitir, para facturas USD)
+const facturasCols5 = db.prepare('PRAGMA table_info(facturas)').all().map(c => c.name);
+if (!facturasCols5.includes('tipo_cambio')) {
+  db.exec('ALTER TABLE facturas ADD COLUMN tipo_cambio REAL');
+}
+
 // Migración: agregar campos de facturación a clientes
 const clientesCols = db.prepare('PRAGMA table_info(clientes)').all().map(c => c.name);
 if (!clientesCols.includes('anticipo_usd')) {

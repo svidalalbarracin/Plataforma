@@ -173,6 +173,10 @@
       } else {
         montoHtml = fmtMonto(f.monto_total, moneda);
       }
+      if (moneda === 'USD' && f.tipo_cambio) {
+        const ars = f.monto_total * f.tipo_cambio;
+        montoHtml += ` <span class="text-muted" style="font-size:.8em">(≈ ${fmt.format(ars)} · TC ${new Intl.NumberFormat('es-AR').format(f.tipo_cambio)})</span>`;
+      }
       return `
       <tr${nc ? ' style="opacity:.85"' : ''}>
         <td class="font-mono">${formatNumero(f.numero)}${tipoBadge(f.tipo)}</td>

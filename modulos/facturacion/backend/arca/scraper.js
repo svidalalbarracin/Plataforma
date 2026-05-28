@@ -75,6 +75,19 @@ async function extraerMoneda(pdfPath) {
   return 'ARS';
 }
 
+async function extraerTipoCambio(pdfPath) {
+  try {
+    const buf = fs.readFileSync(pdfPath);
+    const { text } = await pdfParse(buf);
+    // ARCA: "tipo de cambio consignado de 1349.000000"
+    const m = text.match(/tipo de cambio\D{0,30}?([\d]+(?:[.,]\d+)?)/i);
+    if (m) return parseFloat(m[1].replace(',', '.'));
+  } catch (e) {
+    console.warn(`  [warn] No se pudo extraer tipo de cambio de ${path.basename(pdfPath)}: ${e.message}`);
+  }
+  return null;
+}
+
 // ── Extracción de comprobante asociado desde PDF (para notas de crédito) ─────
 
 async function extraerComprobanteAsociado(pdfPath) {
@@ -124,19 +137,19 @@ function yaImportada(numero) {
   return !!db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero);
 }
 
-function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, facturaAsociadaNumero = null, moneda = 'ARS', forzar = false }) {
+function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, facturaAsociadaNumero = null, moneda = 'ARS', tipoCambio = null, forzar = false }) {
   const montoNeto = Math.round((montoTotal / 1.21) * 100) / 100;
   const iva       = Math.round((montoTotal - montoNeto) * 100) / 100;
 
   if (forzar && db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero)) {
     db.prepare(`
-      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=?, tipo=?, factura_asociada_numero=?, moneda=? WHERE numero=?
-    `).run(montoNeto, iva, montoNeto, montoTotal, tipo, facturaAsociadaNumero, moneda, numero);
+      UPDATE facturas SET monto=?, iva=?, monto_neto=?, monto_total=?, tipo=?, factura_asociada_numero=?, moneda=?, tipo_cambio=? WHERE numero=?
+    `).run(montoNeto, iva, montoNeto, montoTotal, tipo, facturaAsociadaNumero, moneda, tipoCambio, numero);
   } else {
     db.prepare(`
-      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path, tipo, factura_asociada_numero, moneda)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath), tipo, facturaAsociadaNumero, moneda);
+      INSERT INTO facturas (cliente_id, numero, fecha, monto, iva, monto_neto, monto_total, pdf_path, tipo, factura_asociada_numero, moneda, tipo_cambio)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(clienteId, numero, fecha, montoNeto, iva, montoNeto, montoTotal, path.basename(pdfPath), tipo, facturaAsociadaNumero, moneda, tipoCambio);
   }
 }
 
@@ -316,15 +329,16 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
       const fecha     = isoFecha(fila.fecha);
       const tipo      = mapearTipo(fila.tipoComp);
 
-      const moneda = await extraerMoneda(pdfPath);
-      if (moneda === 'USD') console.log(`  [USD] ${numero}`);
+      const moneda     = await extraerMoneda(pdfPath);
+      const tipoCambio = moneda === 'USD' ? await extraerTipoCambio(pdfPath) : null;
+      if (moneda === 'USD') console.log(`  [USD] ${numero}  TC: ${tipoCambio}`);
 
       const facturaAsociadaNumero = esNotaCredito(tipo)
         ? await extraerComprobanteAsociado(pdfPath)
         : null;
       if (facturaAsociadaNumero) console.log(`  [NC→] asociada a ${facturaAsociadaNumero}`);
 
-      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, facturaAsociadaNumero, moneda, forzar });
+      guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, facturaAsociadaNumero, moneda, tipoCambio, forzar });
 
       if (existe) {
         console.log(`  [UPD] ${numero}  ${fecha}  $${montoTotal}`);
