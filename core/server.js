@@ -45,6 +45,7 @@ app.get('/configuracion', (req, res) => {
 
 app.use(express.static(path.join(__dirname, '../core/frontend')));
 app.use('/facturacion',   express.static(path.join(__dirname, '../modulos/facturacion/frontend')));
+app.use('/causas',        express.static(path.join(__dirname, '../modulos/causas/frontend')));
 app.use('/configuracion', express.static(path.join(__dirname, '../core/configuracion/frontend')));
 app.use('/pdfs',          express.static(path.join(__dirname, '../modulos/facturacion/storage/facturas')));
 
