@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facturas — Facturación</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    .row-totales td {
+      background: var(--bg);
+      border-top: 2px solid var(--border);
+      font-size: .8125rem;
+      padding: .75rem 1rem;
+    }
+  </style>
+</head>
+<body class="has-sidebar">
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">Facturación</a>
+  <div class="navbar-links">
+    <a href="index.html">Dashboard</a>
+    <a href="facturas.html" class="active">Facturas</a>
+    <a href="clientes.html">Clientes</a>
+    <a href="estadisticas.html">Estadísticas</a>
+  </div>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h1 class="page-title">Facturas</h1>
+    <button class="btn btn-primary" id="btn-importar">Buscar nuevas facturas</button>
+  </div>
+
+  <div id="importar-status" style="display:none"></div>
+
+  <div class="card">
+    <div class="filters">
+      <div class="filter-group">
+        <label for="f-cliente">Cliente</label>
+        <select id="f-cliente" style="min-width:160px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="f-mes">Mes</label>
+        <select id="f-mes">
+          <option value="">Todos</option>
+          <option value="1">Enero</option>
+          <option value="2">Febrero</option>
+          <option value="3">Marzo</option>
+          <option value="4">Abril</option>
+          <option value="5">Mayo</option>
+          <option value="6">Junio</option>
+          <option value="7">Julio</option>
+          <option value="8">Agosto</option>
+          <option value="9">Septiembre</option>
+          <option value="10">Octubre</option>
+          <option value="11">Noviembre</option>
+          <option value="12">Diciembre</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="f-anio">Año</label>
+        <select id="f-anio" style="min-width:100px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="f-estado">Estado</label>
+        <select id="f-estado">
+          <option value="">Todos</option>
+          <option value="pagada">Pagada</option>
+          <option value="impaga">Impaga</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-filtrar">Filtrar</button>
+      <button class="btn btn-ghost" id="btn-limpiar">Limpiar</button>
+      <div style="margin-left:auto;display:flex;gap:.5rem;align-items:flex-end">
+        <button class="btn btn-ghost btn-sm" id="btn-exportar-excel">↓ Excel</button>
+        <button class="btn btn-ghost btn-sm" id="btn-exportar-pdf">↓ PDF</button>
+      </div>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Número</th>
+            <th>Cliente</th>
+            <th>CUIT</th>
+            <th>Fecha</th>
+            <th class="text-right">Total</th>
+            <th class="text-right">Retención</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="facturas-body">
+          <tr><td colspan="8" class="empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+  const fmt    = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+  const fmtUSD = n => `USD ${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+  const fmtMonto = (monto, moneda) => moneda === 'USD' ? fmtUSD(monto) : fmt.format(monto);
+
+  function formatNumero(numero) {
+    const parts = numero.split('-');
+    return parts.length === 2 ? String(parseInt(parts[1], 10)) : numero;
+  }
+
+  function truncar(texto, max = 20) {
+    return texto.length > max ? texto.slice(0, max) + '…' : texto;
+  }
+
+  function esNC(tipo) {
+    return tipo != null && tipo.startsWith('NC');
+  }
+
+  function tipoBadge(tipo) {
+    if (!tipo) return '';
+    return `<span class="badge ${esNC(tipo) ? 'badge-danger' : 'badge-tipo'}">${tipo}</span>`;
+  }
+
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  let todasLasFacturas = [];
+
+  function estadoBadge(estado) {
+    return estado === 'pagada'
+      ? '<span class="badge badge-success">Pagada</span>'
+      : '<span class="badge badge-danger">Impaga</span>';
+  }
+
+  function hayFiltros() {
+    return ['f-cliente', 'f-mes', 'f-anio', 'f-estado'].some(id => document.getElementById(id).value !== '');
+  }
+
+  function renderTabla(facturas) {
+    const tbody = document.getElementById('facturas-body');
+    if (facturas.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay facturas que coincidan con los filtros</td></tr>';
+      return;
+    }
+    let html = facturas.map(f => {
+      const nc = esNC(f.tipo);
+      const moneda = f.moneda || 'ARS';
+      let montoHtml;
+      if (nc) {
+        montoHtml = `<span style="color:var(--danger)">${fmtMonto(f.monto_total, moneda)}</span>`;
+      } else if (f.monto_nc_asociado > 0) {
+        const efectivo = f.monto_total - f.monto_nc_asociado;
+        montoHtml = `<span style="text-decoration:line-through;color:var(--text-muted);font-size:.8em">${fmtMonto(f.monto_total, moneda)}</span> `
+                  + `<span class="fw-bold">${fmtMonto(efectivo, moneda)}</span>`;
+      } else {
+        montoHtml = fmtMonto(f.monto_total, moneda);
+      }
+      if (moneda === 'USD' && f.tipo_cambio) {
+        const ars = f.monto_total * f.tipo_cambio;
+        montoHtml += ` <span class="text-muted" style="font-size:.8em">(≈ ${fmt.format(ars)} · TC ${new Intl.NumberFormat('es-AR').format(f.tipo_cambio)})</span>`;
+      }
+      return `
+      <tr${nc ? ' style="opacity:.85"' : ''}>
+        <td class="font-mono">${formatNumero(f.numero)}${tipoBadge(f.tipo)}</td>
+        <td title="${f.cliente_nombre}">${truncar(f.cliente_nombre)}</td>
+        <td class="font-mono">${f.cliente_cuit ?? '—'}</td>
+        <td>${f.fecha}</td>
+        <td class="text-right font-mono fw-bold">${montoHtml}</td>
+        <td class="text-right font-mono">${f.retencion_total != null ? fmt.format(f.retencion_total) : '—'}</td>
+        <td>${nc ? '' : estadoBadge(f.estado)}</td>
+        <td><a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a></td>
+      </tr>`;
+    }).join('');
+
+    if (hayFiltros()) {
+      const ars     = facturas.filter(f => !esNC(f.tipo) && (f.moneda || 'ARS') === 'ARS');
+      const usd     = facturas.filter(f => !esNC(f.tipo) && f.moneda === 'USD');
+      const arsNCs  = facturas.filter(f =>  esNC(f.tipo) && (f.moneda || 'ARS') === 'ARS');
+      const usdNCs  = facturas.filter(f =>  esNC(f.tipo) && f.moneda === 'USD');
+      const ncs     = facturas.filter(f =>  esNC(f.tipo));
+      const normales = facturas.filter(f => !esNC(f.tipo));
+
+      const netoARS = ars.reduce((s, f) => s + (f.monto_neto ?? 0), 0) - arsNCs.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
+      const ivaARS  = ars.reduce((s, f) => s + (f.iva ?? 0), 0)        - arsNCs.reduce((s, f) => s + (f.iva ?? 0), 0);
+      const totARS  = ars.reduce((s, f) => s + f.monto_total, 0)       - arsNCs.reduce((s, f) => s + f.monto_total, 0);
+      const totUSD  = usd.reduce((s, f) => s + f.monto_total, 0)       - usdNCs.reduce((s, f) => s + f.monto_total, 0);
+      const ret     = facturas.reduce((s, f) => s + (f.retencion_total ?? 0), 0);
+      const n       = normales.length;
+      const ncTxt   = ncs.length > 0 ? ` &nbsp;·&nbsp; <span style="color:var(--danger)">${ncs.length} NC</span>` : '';
+
+      const hayUSD  = usd.length > 0 || usdNCs.length > 0;
+      const montoTd = hayUSD
+        ? `${fmt.format(totARS)} <span class="text-muted" style="font-size:.85em">&nbsp;+&nbsp;</span> ${fmtUSD(totUSD)}`
+        : fmt.format(totARS);
+      const infoARS = hayUSD ? '' : `&nbsp;·&nbsp; Neto: <strong>${fmt.format(netoARS)}</strong> &nbsp;·&nbsp; IVA: <strong>${fmt.format(ivaARS)}</strong>`;
+
+      html += `
+        <tr class="row-totales">
+          <td colspan="4" class="text-muted">
+            <strong>${n}</strong> factura${n !== 1 ? 's' : ''}${ncTxt}${infoARS}
+          </td>
+          <td class="text-right font-mono fw-bold">${montoTd}</td>
+          <td class="text-right font-mono">${ret > 0 ? fmt.format(ret) : '—'}</td>
+          <td colspan="2"></td>
+        </tr>`;
+    }
+
+    tbody.innerHTML = html;
+  }
+
+  function aplicarFiltros() {
+    const clienteId = document.getElementById('f-cliente').value;
+    const mes       = document.getElementById('f-mes').value;
+    const anio      = document.getElementById('f-anio').value;
+    const estado    = document.getElementById('f-estado').value;
+
+    let resultado = todasLasFacturas;
+
+    if (clienteId) resultado = resultado.filter(f => String(f.cliente_id) === clienteId);
+    if (estado)    resultado = resultado.filter(f => f.estado === estado);
+    if (anio)      resultado = resultado.filter(f => f.fecha.startsWith(anio));
+    if (mes) {
+      const m = mes.padStart(2, '0');
+      resultado = resultado.filter(f => f.fecha.slice(5, 7) === m);
+    }
+
+    renderTabla(resultado);
+  }
+
+  async function init() {
+    try {
+      const [clientes, facturas] = await Promise.all([
+        API.clientes.list(),
+        API.facturas.list(),
+      ]);
+
+      todasLasFacturas = facturas;
+
+      // Populate cliente filter (limpiar primero para soportar llamadas repetidas)
+      const selCliente = document.getElementById('f-cliente');
+      while (selCliente.options.length > 1) selCliente.remove(1);
+      clientes.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.id; o.textContent = c.nombre;
+        selCliente.appendChild(o);
+      });
+
+      // Populate año filter
+      const anios = [...new Set(facturas.map(f => f.fecha.slice(0, 4)))].sort().reverse();
+      const selAnio = document.getElementById('f-anio');
+      while (selAnio.options.length > 1) selAnio.remove(1);
+      anios.forEach(a => {
+        const o = document.createElement('option');
+        o.value = a; o.textContent = a;
+        selAnio.appendChild(o);
+      });
+
+      renderTabla(facturas);
+
+    } catch (e) {
+      document.getElementById('facturas-body').innerHTML =
+        `<tr><td colspan="8" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
+    }
+  }
+
+  document.getElementById('btn-importar').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-importar');
+    const status = document.getElementById('importar-status');
+
+    btn.disabled = true;
+    btn.textContent = 'Buscando…';
+    status.style.display = 'block';
+    status.style.cssText = 'display:block;padding:12px 16px;border-radius:8px;font-size:14px;margin-bottom:16px;background:rgba(37,99,235,0.08);color:#2563eb;border:1px solid rgba(37,99,235,0.2)';
+    status.textContent = 'Conectando con ARCA y buscando facturas. Esto puede tardar unos minutos…';
+
+    try {
+      const r = await API.importar();
+      const msg = r.importadas > 0
+        ? `${r.importadas} factura${r.importadas !== 1 ? 's' : ''} nueva${r.importadas !== 1 ? 's' : ''} importada${r.importadas !== 1 ? 's' : ''}.`
+        : 'No hay facturas nuevas.';
+      status.style.cssText = 'display:block;padding:12px 16px;border-radius:8px;font-size:14px;margin-bottom:16px;background:rgba(22,163,74,0.08);color:#16a34a;border:1px solid rgba(22,163,74,0.2)';
+      status.textContent = msg + (r.errores > 0 ? ` (${r.errores} con error)` : '');
+      if (r.importadas > 0) await init();
+    } catch (e) {
+      status.style.cssText = 'display:block;padding:12px 16px;border-radius:8px;font-size:14px;margin-bottom:16px;background:rgba(220,38,38,0.08);color:#dc2626;border:1px solid rgba(220,38,38,0.2)';
+      status.textContent = 'Error al importar: ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Buscar nuevas facturas';
+    }
+  });
+
+  function exportar(formato) {
+    const params = new URLSearchParams();
+    const clienteId = document.getElementById('f-cliente').value;
+    const mes       = document.getElementById('f-mes').value;
+    const anio      = document.getElementById('f-anio').value;
+    const estado    = document.getElementById('f-estado').value;
+    if (clienteId) params.set('cliente_id', clienteId);
+    if (mes)       params.set('mes', mes);
+    if (anio)      params.set('anio', anio);
+    if (estado)    params.set('estado', estado);
+
+    const btn = document.getElementById(`btn-exportar-${formato}`);
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Generando…';
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    iframe.src = `/api/facturas/exportar/${formato}?${params}`;
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = label;
+      iframe.remove();
+    }, 4000);
+  }
+
+  document.getElementById('btn-exportar-excel').addEventListener('click', () => exportar('excel'));
+  document.getElementById('btn-exportar-pdf').addEventListener('click',   () => exportar('pdf'));
+
+  document.getElementById('btn-filtrar').addEventListener('click', aplicarFiltros);
+
+  document.getElementById('btn-limpiar').addEventListener('click', () => {
+    ['f-cliente','f-mes','f-anio','f-estado'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    renderTabla(todasLasFacturas);
+  });
+
+  init();
+</script>
+</body>
+</html>

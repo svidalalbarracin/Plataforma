@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clientes — Facturación</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="has-sidebar">
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">Facturación</a>
+  <div class="navbar-links">
+    <a href="index.html">Dashboard</a>
+    <a href="facturas.html">Facturas</a>
+    <a href="clientes.html" class="active">Clientes</a>
+    <a href="estadisticas.html">Estadísticas</a>
+  </div>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h1 class="page-title">Clientes</h1>
+    <button class="btn btn-primary" id="btn-nuevo">+ Nuevo cliente</button>
+  </div>
+
+  <div class="card">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>CUIT</th>
+            <th>Email</th>
+            <th>Teléfono</th>
+            <th>Honorarios</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="clientes-body">
+          <tr><td colspan="6" class="empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal facturación recurrente -->
+<div class="modal-backdrop" id="modal-rec-backdrop">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <h2 class="modal-title">Facturación recurrente</h2>
+      <button class="modal-close" id="btn-cerrar-rec" aria-label="Cerrar">&times;</button>
+    </div>
+    <p id="rec-cliente-nombre" style="margin-bottom:1.25rem;font-weight:600"></p>
+    <div class="form-grid" style="max-width:380px">
+      <div class="form-group">
+        <label for="rec-honorario">Honorario mensual (USD)</label>
+        <input type="number" id="rec-honorario" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group" style="justify-content:flex-end">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;margin-top:.25rem">
+          <input type="checkbox" id="rec-activo" checked> Aviso activo
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" id="btn-rec-cancelar">Cancelar</button>
+      <button type="button" class="btn btn-danger btn-sm" id="btn-rec-eliminar" style="display:none">Eliminar</button>
+      <button type="button" class="btn btn-primary" id="btn-rec-guardar">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal alta / edición -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-titulo">Nuevo cliente</h2>
+      <button class="modal-close" id="btn-cerrar-modal" aria-label="Cerrar">&times;</button>
+    </div>
+
+    <form id="form-cliente">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label for="c-nombre">Nombre / Razón social *</label>
+          <input type="text" id="c-nombre" required placeholder="Empresa SA">
+        </div>
+        <div class="form-group">
+          <label for="c-cuit">CUIT *</label>
+          <input type="text" id="c-cuit" required placeholder="30-12345678-9">
+        </div>
+        <div class="form-group">
+          <label for="c-email">Email</label>
+          <input type="email" id="c-email" placeholder="contacto@empresa.com">
+        </div>
+        <div class="form-group">
+          <label for="c-telefono">Teléfono</label>
+          <input type="text" id="c-telefono" placeholder="011 1234-5678">
+        </div>
+      </div>
+
+      <div class="card-title" style="margin:1.25rem 0 .75rem">Datos de facturación</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="c-anticipo">Anticipo (USD)</label>
+          <input type="number" id="c-anticipo" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label for="c-honorario-exito">Honorario de éxito (USD)</label>
+          <input type="number" id="c-honorario-exito" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label for="c-concepto">Concepto de facturación</label>
+          <textarea id="c-concepto" rows="2" placeholder="Honorarios profesionales USD 500 mes de [MES]" style="resize:vertical"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="btn-cancelar">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="btn-guardar">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+  const fmtUSD = n => `USD ${new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+
+  let editandoId    = null;
+  let recMap        = {};   // cliente_id → registro recurrente
+  let recEditandoId = null; // id del registro recurrente que se está editando
+  let recClienteId  = null; // cliente_id activo en el modal de recurrente
+
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  // ── Modal cliente ──────────────────────────────────────────────────────────
+
+  function abrirModal(cliente = null) {
+    editandoId = cliente ? cliente.id : null;
+    document.getElementById('modal-titulo').textContent = cliente ? 'Editar cliente' : 'Nuevo cliente';
+    document.getElementById('c-nombre').value          = cliente?.nombre              ?? '';
+    document.getElementById('c-cuit').value            = cliente?.cuit               ?? '';
+    document.getElementById('c-email').value           = cliente?.email              ?? '';
+    document.getElementById('c-telefono').value        = cliente?.telefono           ?? '';
+    document.getElementById('c-anticipo').value        = cliente?.anticipo_usd       ?? '';
+    document.getElementById('c-honorario-exito').value = cliente?.honorario_exito_usd ?? '';
+    document.getElementById('c-concepto').value        = cliente?.concepto_facturacion ?? '';
+    document.getElementById('modal-backdrop').classList.add('open');
+    document.getElementById('c-nombre').focus();
+  }
+
+  function cerrarModal() {
+    document.getElementById('modal-backdrop').classList.remove('open');
+    document.getElementById('form-cliente').reset();
+    editandoId = null;
+  }
+
+  // ── Modal recurrente ───────────────────────────────────────────────────────
+
+  function abrirModalRec(cliente) {
+    const rec = recMap[cliente.id] ?? null;
+    recEditandoId = rec?.id ?? null;
+    recClienteId  = cliente.id;
+
+    document.getElementById('rec-cliente-nombre').textContent = cliente.nombre;
+    document.getElementById('rec-honorario').value = rec ? rec.honorario_usd : '';
+    document.getElementById('rec-activo').checked  = rec ? Boolean(rec.activo) : true;
+    document.getElementById('btn-rec-eliminar').style.display = rec ? '' : 'none';
+    document.getElementById('modal-rec-backdrop').classList.add('open');
+    document.getElementById('rec-honorario').focus();
+  }
+
+  function cerrarModalRec() {
+    document.getElementById('modal-rec-backdrop').classList.remove('open');
+    recEditandoId = null;
+  }
+
+  // ── Render tabla ───────────────────────────────────────────────────────────
+
+  function renderTabla(clientes) {
+    const tbody = document.getElementById('clientes-body');
+    if (clientes.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No hay clientes registrados</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = clientes.map(c => {
+      const rec = recMap[c.id];
+      let honorariosCell = '<span class="text-muted">—</span>';
+      if (rec) {
+        const badge = rec.activo
+          ? '<span class="badge badge-success" style="font-size:.65rem;margin-left:.4rem">Activo</span>'
+          : '<span class="badge badge-warning" style="font-size:.65rem;margin-left:.4rem">Pausado</span>';
+        honorariosCell = `<span class="font-mono">${fmtUSD(rec.honorario_usd)}</span>${badge}`;
+      }
+      return `
+      <tr>
+        <td class="fw-bold">${c.nombre}</td>
+        <td class="font-mono">${c.cuit}</td>
+        <td class="text-muted">${c.email || '—'}</td>
+        <td class="text-muted">${c.telefono || '—'}</td>
+        <td>${honorariosCell}</td>
+        <td>
+          <div class="flex gap-1">
+            <button class="btn btn-ghost btn-sm" data-action="editar" data-id="${c.id}">Editar</button>
+            <button class="btn btn-ghost btn-sm" data-action="rec" data-id="${c.id}" data-nombre="${c.nombre}">Honorarios</button>
+            <button class="btn btn-danger btn-sm" data-action="eliminar" data-id="${c.id}">Eliminar</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('[data-action="editar"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const cliente = await API.clientes.get(btn.dataset.id);
+        abrirModal(cliente);
+      });
+    });
+
+    tbody.querySelectorAll('[data-action="rec"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        abrirModalRec({ id: Number(btn.dataset.id), nombre: btn.dataset.nombre });
+      });
+    });
+
+    tbody.querySelectorAll('[data-action="eliminar"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar este cliente? Esta acción no se puede deshacer.')) return;
+        try {
+          await API.clientes.delete(btn.dataset.id);
+          toast('Cliente eliminado');
+          cargar();
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
+  }
+
+  // ── Carga de datos ─────────────────────────────────────────────────────────
+
+  async function cargar() {
+    try {
+      const [clientes, recurrentes] = await Promise.all([
+        API.clientes.list(),
+        API.recurrentes.list(),
+      ]);
+      recMap = Object.fromEntries(recurrentes.map(r => [r.cliente_id, r]));
+      renderTabla(clientes);
+    } catch (e) {
+      document.getElementById('clientes-body').innerHTML =
+        `<tr><td colspan="6" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
+    }
+  }
+
+  // ── Eventos cliente ────────────────────────────────────────────────────────
+
+  document.getElementById('btn-nuevo').addEventListener('click', () => abrirModal());
+  document.getElementById('btn-cerrar-modal').addEventListener('click', cerrarModal);
+  document.getElementById('btn-cancelar').addEventListener('click', cerrarModal);
+  document.getElementById('modal-backdrop').addEventListener('click', e => {
+    if (e.target === e.currentTarget) cerrarModal();
+  });
+
+  document.getElementById('form-cliente').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-guardar');
+    btn.disabled = true;
+    const anticipoVal        = parseFloat(document.getElementById('c-anticipo').value);
+    const honorarioExitoVal  = parseFloat(document.getElementById('c-honorario-exito').value);
+    const data = {
+      nombre:                document.getElementById('c-nombre').value.trim(),
+      cuit:                  document.getElementById('c-cuit').value.trim(),
+      email:                 document.getElementById('c-email').value.trim() || null,
+      telefono:              document.getElementById('c-telefono').value.trim() || null,
+      anticipo_usd:          isNaN(anticipoVal)       ? null : anticipoVal,
+      honorario_exito_usd:   isNaN(honorarioExitoVal) ? null : honorarioExitoVal,
+      concepto_facturacion:  document.getElementById('c-concepto').value.trim() || null,
+    };
+    try {
+      if (editandoId) {
+        await API.clientes.update(editandoId, data);
+        toast('Cliente actualizado');
+      } else {
+        await API.clientes.create(data);
+        toast('Cliente creado');
+      }
+      cerrarModal();
+      cargar();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ── Eventos recurrente ─────────────────────────────────────────────────────
+
+  document.getElementById('btn-cerrar-rec').addEventListener('click', cerrarModalRec);
+  document.getElementById('btn-rec-cancelar').addEventListener('click', cerrarModalRec);
+  document.getElementById('modal-rec-backdrop').addEventListener('click', e => {
+    if (e.target === e.currentTarget) cerrarModalRec();
+  });
+
+  document.getElementById('btn-rec-guardar').addEventListener('click', async () => {
+    const honorario = Number(document.getElementById('rec-honorario').value);
+    if (!honorario || honorario <= 0) {
+      toast('Ingresá un honorario válido', 'error');
+      return;
+    }
+
+    const clienteId = recClienteId;
+
+    const btn = document.getElementById('btn-rec-guardar');
+    btn.disabled = true;
+    try {
+      await API.recurrentes.upsert({
+        cliente_id:    clienteId,
+        honorario_usd: honorario,
+        activo:        document.getElementById('rec-activo').checked ? 1 : 0,
+      });
+      toast('Configuración guardada');
+      cerrarModalRec();
+      cargar();
+    } catch (e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('btn-rec-eliminar').addEventListener('click', async () => {
+    if (!confirm('¿Eliminar la configuración de honorarios recurrentes?')) return;
+    try {
+      await API.recurrentes.delete(recEditandoId);
+      toast('Configuración eliminada');
+      cerrarModalRec();
+      cargar();
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  cargar();
+</script>
+</body>
+</html>

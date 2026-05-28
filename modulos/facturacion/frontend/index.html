@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Facturación</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="has-sidebar">
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">Facturación</a>
+  <div class="navbar-links">
+    <a href="index.html" class="active">Dashboard</a>
+    <a href="facturas.html">Facturas</a>
+    <a href="clientes.html">Clientes</a>
+    <a href="estadisticas.html">Estadísticas</a>
+  </div>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <h1 class="page-title">Dashboard</h1>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Facturas impagas</div>
+      <div class="stat-value is-danger" id="stat-count">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Monto total pendiente</div>
+      <div class="stat-value is-warning" id="stat-monto">—</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Alertas de cobro — facturas impagas con más de 30 días</div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Antigüedad</th>
+            <th>Nro. Factura</th>
+            <th>Cliente</th>
+            <th>Fecha emisión</th>
+            <th class="text-right">Monto total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="alerts-body">
+          <tr><td colspan="6" class="empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+  const fmt = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+
+  function diasDesde(fechaStr) {
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    const d   = new Date(fechaStr + 'T00:00:00');
+    return Math.floor((hoy - d) / 86400000);
+  }
+
+  function rowClass(dias) {
+    if (dias >= 90) return 'row-critical';
+    if (dias >= 60) return 'row-high';
+    return 'row-medium';
+  }
+
+  function antiguedadBadge(dias) {
+    if (dias >= 90) return `<span class="badge badge-danger">+90 días</span>`;
+    if (dias >= 60) return `<span class="badge badge-orange">60–90 días</span>`;
+    return `<span class="badge badge-warning">30–60 días</span>`;
+  }
+
+  async function init() {
+    try {
+      const facturas = await API.facturas.list({ estado: 'impaga' });
+
+      document.getElementById('stat-count').textContent = facturas.length;
+      const total = facturas.reduce((s, f) => s + f.monto_total, 0);
+      document.getElementById('stat-monto').textContent = fmt.format(total);
+
+      const alertas = facturas
+        .map(f => ({ ...f, dias: diasDesde(f.fecha) }))
+        .filter(f => f.dias >= 30)
+        .sort((a, b) => b.dias - a.dias);
+
+      const tbody = document.getElementById('alerts-body');
+
+      if (alertas.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">Sin alertas pendientes ✓</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = alertas.map(f => `
+        <tr class="${rowClass(f.dias)}">
+          <td>${antiguedadBadge(f.dias)} <span class="text-muted">${f.dias} días</span></td>
+          <td class="font-mono">${f.numero}</td>
+          <td>${f.cliente_nombre}</td>
+          <td>${f.fecha}</td>
+          <td class="text-right font-mono">${fmt.format(f.monto_total)}</td>
+          <td><a href="detalle-factura.html?id=${f.id}" class="btn btn-ghost btn-sm">Ver detalle</a></td>
+        </tr>
+      `).join('');
+
+    } catch (e) {
+      document.getElementById('alerts-body').innerHTML =
+        `<tr><td colspan="6" class="empty">Error al cargar datos: ${e.message}</td></tr>`;
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Estudio Jurídico — Plataforma</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      color: var(--text, #0f172a);
+      background: var(--bg, #f1f5f9);
+      min-height: 100vh;
+    }
+
+    html.dark body {
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+    }
+
+    .container {
+      /* layout.css provee navbar, btn-theme, btn-config */
+    }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+
+    .page-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: .375rem;
+    }
+
+    .page-sub {
+      color: var(--text-muted, #64748b);
+      font-size: .9375rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .modulos-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .modulo-card {
+      background: var(--card-bg, #fff);
+      border: 1px solid var(--border, #e2e8f0);
+      border-radius: 12px;
+      padding: 1.75rem;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      transition: box-shadow .15s, transform .15s, border-color .15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+
+    .modulo-card:not(.disabled):hover {
+      box-shadow: 0 4px 16px rgba(0,0,0,.1);
+      transform: translateY(-2px);
+      border-color: #93c5fd;
+    }
+
+    .modulo-card.disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .modulo-nombre {
+      font-size: 1.0625rem;
+      font-weight: 700;
+      margin-bottom: .375rem;
+    }
+
+    .modulo-desc {
+      font-size: .875rem;
+      color: var(--text-muted, #64748b);
+      line-height: 1.5;
+    }
+
+    .modulo-tag {
+      display: inline-block;
+      margin-top: 1rem;
+      font-size: .6875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: .2rem .55rem;
+      border-radius: 999px;
+    }
+
+    .tag-activo { background: #dbeafe; color: #1e40af; }
+    .tag-pronto { background: var(--border, #e2e8f0); color: var(--text-muted, #64748b); }
+
+    html.dark .modulo-card:not(.disabled):hover { border-color: #3b82f6; }
+    html.dark .tag-activo { background: #1e3a5f; color: #93c5fd; }
+  </style>
+</head>
+<body class="has-sidebar">
+
+<nav class="navbar">
+  <a href="/" class="navbar-brand">Plataforma</a>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <h1 class="page-title">Bienvenido al sistema</h1>
+  <p class="page-sub">Seleccioná el módulo con el que querés trabajar.</p>
+
+  <div class="modulos-grid">
+
+    <a href="/facturacion/" class="modulo-card">
+      <div class="modulo-nombre">Facturación</div>
+      <div class="modulo-desc">Gestión de facturas, clientes y cobros. Importación automática desde ARCA.</div>
+      <span class="modulo-tag tag-activo">Disponible</span>
+    </a>
+
+    <div class="modulo-card disabled">
+      <div class="modulo-nombre">Causas</div>
+      <div class="modulo-desc">Seguimiento de causas judiciales, vencimientos y actuaciones.</div>
+      <span class="modulo-tag tag-pronto">Próximamente</span>
+    </div>
+
+    <div class="modulo-card disabled">
+      <div class="modulo-nombre">Carpetas</div>
+      <div class="modulo-desc">Organización de documentos y expedientes por cliente o causa.</div>
+      <span class="modulo-tag tag-pronto">Próximamente</span>
+    </div>
+
+  </div>
+</div>
+
+<script src="/js/layout.js"></script>
+</body>
+</html>
