@@ -212,6 +212,12 @@ async function login(context) {
   await auth.waitForLoadState('load');
 
   if (!auth.url().includes('portalcf')) {
+    const screenshotPath = path.join(__dirname, '../../../../logs/login-fallido.png');
+    await auth.screenshot({ path: screenshotPath }).catch(() => null);
+    const texto = await auth.textContent('body').catch(() => '');
+    console.error('  [login] URL actual:', auth.url());
+    console.error('  [login] Texto de la página:', texto.replace(/\s+/g, ' ').slice(0, 500));
+    console.error('  [login] Screenshot guardado en logs/login-fallido.png');
     throw new Error(`Login fallido. URL actual: ${auth.url()}`);
   }
   console.log('  Login OK');
