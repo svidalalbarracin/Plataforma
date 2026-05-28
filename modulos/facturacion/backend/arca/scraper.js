@@ -20,11 +20,12 @@ function mapearTipo(tipoComp) {
   if (/Factura\s+A\b/i.test(t))                  return 'A';
   if (/Factura\s+B\b/i.test(t))                  return 'B';
   if (/Factura\s+C\b/i.test(t))                  return 'C';
-  if (/Nota\s+de\s+Cr[eé]dito\s+A\b/i.test(t))  return 'NC A';
-  if (/Nota\s+de\s+Cr[eé]dito\s+B\b/i.test(t))  return 'NC B';
-  if (/Nota\s+de\s+Cr[eé]dito\s+C\b/i.test(t))  return 'NC C';
-  if (/Nota\s+de\s+Cr[eé]dito/i.test(t))         return 'NC';
-  if (/FCE|Factura\s+de\s+Cr[eé]dito/i.test(t)) return 'FCE';
+  if (/Nota\s+de\s+Cr[eé]dito\s+A\b/i.test(t))          return 'NC A';
+  if (/Nota\s+de\s+Cr[eé]dito\s+B\b/i.test(t))          return 'NC B';
+  if (/Nota\s+de\s+Cr[eé]dito\s+C\b/i.test(t))          return 'NC C';
+  if (/Nota\s+de\s+Cr[eé]dito/i.test(t))                return 'NC';
+  if (/FCE|Factura\s+de\s+Cr[eé]dito/i.test(t))         return 'FCE';
+  if (/Factura\s+de\s+Exportaci[oó]n|Exportaci[oó]n/i.test(t)) return 'E';
   return t || null;
 }
 
@@ -81,18 +82,19 @@ async function extraerComprobanteAsociado(pdfPath) {
     const buf = fs.readFileSync(pdfPath);
     const { text } = await pdfParse(buf);
 
+    // Patrón ARCA más común: "Fac. A: 00002-00000669" en descripción del ítem
+    const m0 = text.match(/Fac\.\s+[A-Z]:\s*(\d{1,5}-\d{6,8})/i);
+    if (m0) return normalizarNumero(m0[1]);
+
+    // Patrón alternativo: sección "Comprobante Asociado" con PV-NRO
     const idx = text.search(/Comprobantes?\s+Asoc/i);
-    if (idx === -1) return null;
-
-    const sector = text.slice(idx, idx + 500);
-
-    // Patrón: PPPP-NNNNNNNN (separados por guión o espacio)
-    const m1 = sector.match(/(\d{1,4})\s*[-–]\s*(\d{6,8})/);
-    if (m1) return normalizarNumero(`${m1[1]}-${m1[2]}`);
-
-    // Patrón alternativo: cuatro dígitos seguidos de ocho dígitos
-    const m2 = sector.match(/\b(\d{4})\s+(\d{8})\b/);
-    if (m2) return `${m2[1]}-${m2[2]}`;
+    if (idx !== -1) {
+      const sector = text.slice(idx, idx + 500);
+      const m1 = sector.match(/(\d{1,4})\s*[-–]\s*(\d{6,8})/);
+      if (m1) return normalizarNumero(`${m1[1]}-${m1[2]}`);
+      const m2 = sector.match(/\b(\d{4})\s+(\d{8})\b/);
+      if (m2) return `${m2[1]}-${m2[2]}`;
+    }
   } catch (e) {
     console.warn(`  [warn] No se pudo extraer comprobante asociado de ${path.basename(pdfPath)}: ${e.message}`);
   }
@@ -375,13 +377,11 @@ async function descargarPDF(page, context, fila, numero) {
 // ── Utils ─────────────────────────────────────────────────────────────────────
 
 function normalizarNumero(raw) {
-  // Puede venir como "0002-00001234" o "2-1234" → normalizar a "0002-000-00001234"
-  // Si ya tiene el formato estándar lo deja
   const limpio = raw.replace(/\s/g, '');
   const match = limpio.match(/^(\d+)-(\d+)$/);
   if (match) {
-    const pv  = String(match[1]).padStart(4, '0');
-    const nro = String(match[2]).padStart(8, '0');
+    const pv  = String(parseInt(match[1], 10)).padStart(4, '0');
+    const nro = String(parseInt(match[2], 10)).padStart(8, '0');
     return `${pv}-${nro}`;
   }
   return limpio;
