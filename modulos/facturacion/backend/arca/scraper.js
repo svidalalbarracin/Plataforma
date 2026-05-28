@@ -188,28 +188,28 @@ async function login(context) {
 
   // El click en "Ingresar con Clave Fiscal" abre nueva pestaña
   const [authPage] = await Promise.all([
-    context.waitForEvent('page', { timeout: 15000 }),
+    context.waitForEvent('page', { timeout: 30000 }),
     page.locator('a:has-text("Ingresar con Clave Fiscal"), a:has-text("ingresar")').first().click(),
   ]).catch(async () => {
     // Fallback: navegar directo al login
     console.log('  Fallback: navegando directo al login...');
-    await page.goto('https://auth.afip.gob.ar/contribuyente_/login.xhtml', { waitUntil: 'networkidle', timeout: 60000 });
+    await page.goto('https://auth.afip.gob.ar/contribuyente_/login.xhtml', { waitUntil: 'load', timeout: 60000 });
     return [page];
   });
 
   const auth = authPage ?? page;
-  auth.setDefaultTimeout(45000);
-  await auth.waitForLoadState('networkidle');
+  auth.setDefaultTimeout(60000);
+  await auth.waitForLoadState('load');
 
   console.log('  Ingresando CUIT...');
   await auth.fill('#F1\\:username', process.env.CUIT);
   await auth.click('#F1\\:btnSiguiente');
-  await auth.waitForLoadState('networkidle');
+  await auth.waitForLoadState('load');
 
   console.log('  Ingresando clave fiscal...');
   await auth.fill('#F1\\:password', process.env.CLAVE_FISCAL);
   await auth.click('#F1\\:btnIngresar');
-  await auth.waitForLoadState('networkidle');
+  await auth.waitForLoadState('load');
 
   if (!auth.url().includes('portalcf')) {
     throw new Error(`Login fallido. URL actual: ${auth.url()}`);
@@ -225,11 +225,11 @@ async function abrirRCEL(context, portalPage) {
 
   // El click abre nueva pestaña
   const [rcelPage] = await Promise.all([
-    context.waitForEvent('page', { timeout: 20000 }),
+    context.waitForEvent('page', { timeout: 30000 }),
     portalPage.locator('text=Comprobantes en línea').first().click(),
   ]);
-  rcelPage.setDefaultTimeout(45000);
-  await rcelPage.waitForLoadState('networkidle');
+  rcelPage.setDefaultTimeout(60000);
+  await rcelPage.waitForLoadState('load');
   console.log('  RCEL abierto:', rcelPage.url());
   return rcelPage;
 }
@@ -240,13 +240,13 @@ async function seleccionarRepresentado(rcelPage) {
   console.log('  Seleccionando representado (CUIT del abogado)...');
 
   // Esperar a que la página cargue contenido
-  await rcelPage.waitForLoadState('networkidle');
+  await rcelPage.waitForLoadState('load');
 
   // El portal muestra un <input type="button" class="btn_empresa"> por cada empresa
   // El onclick setea el hidden idContribuyente y hace submit del form
   await rcelPage.waitForSelector('input.btn_empresa', { timeout: 20000 });
   await rcelPage.locator('input.btn_empresa').first().click();
-  await rcelPage.waitForLoadState('networkidle');
+  await rcelPage.waitForLoadState('load');
 
   console.log('  Representado seleccionado:', rcelPage.url());
   return rcelPage;
@@ -257,7 +257,7 @@ async function seleccionarRepresentado(rcelPage) {
 async function irAConsultas(page) {
   console.log('  Haciendo click en "Consultas"...');
   await page.locator('a:has-text("Consultas")').first().click();
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('load');
   console.log('  En Consultas:', page.url());
 }
 
@@ -295,7 +295,7 @@ async function completarFormulario(page, { fechaDesde, fechaHasta, tipoComproban
 async function buscarYProcesar(page, context, { forzar = false } = {}) {
   console.log('  Haciendo click en "Buscar"...');
   await page.locator('input[type="submit"], button[type="submit"], input[value*="uscar"]').first().click();
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('load');
 
   const filas = await extraerFilas(page);
   console.log(`  Resultados: ${filas.length} fila(s)`);
