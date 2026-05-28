@@ -42,6 +42,53 @@ router.get('/mes', (req, res) => {
   res.json({ actual, anterior, mes, anio });
 });
 
+// GET /api/estadisticas/anio?anio=2026
+router.get('/anio', (req, res) => {
+  const hoy  = new Date();
+  const anio = Number(req.query.anio ?? hoy.getFullYear());
+  const y    = String(anio);
+
+  const facturadoPorMes = db.prepare(`
+    SELECT
+      CAST(strftime('%m', fecha) AS INTEGER)        AS mes,
+      COUNT(*)                                       AS total_facturas,
+      COALESCE(SUM(monto_total), 0)                  AS total_facturado,
+      COUNT(CASE WHEN estado = 'pagada' THEN 1 END)  AS cobradas,
+      COUNT(CASE WHEN estado = 'impaga' THEN 1 END)  AS pendientes
+    FROM facturas
+    WHERE strftime('%Y', fecha) = ?
+    GROUP BY mes
+  `).all(y);
+
+  const cobrosPorMes = db.prepare(`
+    SELECT
+      CAST(strftime('%m', f.fecha) AS INTEGER) AS mes,
+      COALESCE(SUM(p.monto), 0)               AS total_cobrado,
+      COALESCE(SUM(p.retencion), 0)           AS total_retenciones
+    FROM pagos p
+    JOIN facturas f ON f.id = p.factura_id
+    WHERE strftime('%Y', f.fecha) = ?
+    GROUP BY mes
+  `).all(y);
+
+  const meses = Array.from({ length: 12 }, (_, i) => {
+    const m = i + 1;
+    const f = facturadoPorMes.find(r => r.mes === m);
+    const c = cobrosPorMes.find(r => r.mes === m);
+    return {
+      mes:               m,
+      total_facturas:    f?.total_facturas    ?? 0,
+      total_facturado:   f?.total_facturado   ?? 0,
+      cobradas:          f?.cobradas          ?? 0,
+      pendientes:        f?.pendientes        ?? 0,
+      total_cobrado:     c?.total_cobrado     ?? 0,
+      total_retenciones: c?.total_retenciones ?? 0,
+    };
+  });
+
+  res.json({ anio, meses });
+});
+
 // GET /api/estadisticas/clientes-pendientes
 router.get('/clientes-pendientes', (req, res) => {
   const rows = db.prepare(`

@@ -39,7 +39,8 @@ const API = {
     delete: (id)       => _req('DELETE', `/pagos/${id}`),
   },
   estadisticas: {
-    mes:                (p = {}) => _req('GET', '/estadisticas/mes' + _qs(p)),
+    mes:                (p = {}) => _req('GET', '/estadisticas/mes'  + _qs(p)),
+    anio:               (p = {}) => _req('GET', '/estadisticas/anio' + _qs(p)),
     clientesPendientes: ()       => _req('GET', '/estadisticas/clientes-pendientes'),
   },
   recurrentes: {
