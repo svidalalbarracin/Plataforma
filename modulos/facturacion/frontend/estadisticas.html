@@ -9,8 +9,15 @@
   <link rel="stylesheet" href="/css/layout.css">
   <link rel="stylesheet" href="css/styles.css">
   <style>
-    .stat-value-md {
+    /* Forzar 2 filas de 3 y tamaños que no desborden */
+    #stats-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    #stats-grid .stat-value {
       font-size: 1.5rem;
+    }
+    .stat-value-md {
+      font-size: 1.25rem;
       font-weight: 700;
       line-height: 1;
     }
