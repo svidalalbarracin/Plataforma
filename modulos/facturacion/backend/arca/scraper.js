@@ -202,13 +202,13 @@ async function login(context) {
   await auth.waitForLoadState('networkidle');
 
   console.log('  Ingresando CUIT...');
-  await auth.fill('#F1\\:username', process.env.CUIT);
-  await auth.click('#F1\\:btnSiguiente');
+  await auth.fill('[id="F1:username"]', process.env.CUIT);
+  await auth.click('[id="F1:btnSiguiente"]');
   await auth.waitForLoadState('networkidle');
 
   console.log('  Ingresando clave fiscal...');
-  await auth.fill('#F1\\:password', process.env.CLAVE_FISCAL);
-  await auth.click('#F1\\:btnIngresar');
+  await auth.fill('[id="F1:password"]', process.env.CLAVE_FISCAL);
+  await auth.click('[id="F1:btnIngresar"]');
   await auth.waitForLoadState('networkidle');
 
   if (!auth.url().includes('portalcf')) {
