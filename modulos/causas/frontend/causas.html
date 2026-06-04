@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Causas — Plataforma Memo</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="css/causas.css">
+</head>
+<body class="has-sidebar">
+
+<aside class="sidebar">
+  <a href="causas.html" class="sidebar-brand">
+    <span class="sidebar-brand-name">Causas</span>
+    <span class="sidebar-brand-sub">Plataforma Memo</span>
+  </a>
+  <nav class="sidebar-nav">
+    <a href="causas.html" class="sidebar-item active" id="sidebar-todas">Todas las causas</a>
+    <a href="causas.html" class="sidebar-item" id="sidebar-notificaciones" data-filtro-sidebar="notificaciones">
+      Notificaciones
+      <span class="sidebar-badge sidebar-badge-danger" id="badge-notificaciones">3</span>
+    </a>
+    <a href="causas.html" class="sidebar-item" id="sidebar-vencimientos" data-filtro-sidebar="vencimientos">
+      Vencimientos
+      <span class="sidebar-badge sidebar-badge-warning" id="badge-vencimientos">0</span>
+    </a>
+    <a href="causas.html" class="sidebar-item" id="sidebar-sinmov" data-filtro-sidebar="sin-movimiento">
+      Sin movimiento
+    </a>
+
+    <div class="sidebar-section">Por tipo</div>
+    <a href="causas.html" class="sidebar-item" data-filtro-sidebar="tipo-pjn">Poder Judicial</a>
+    <a href="causas.html" class="sidebar-item" data-filtro-sidebar="tipo-aduana">Aduanero</a>
+    <a href="causas.html" class="sidebar-item" data-filtro-sidebar="tipo-fisica">Carpetas físicas</a>
+
+    <div class="sidebar-section">Estado</div>
+    <a href="causas.html" class="sidebar-item" data-filtro-sidebar="tramite">En trámite</a>
+    <a href="causas.html" class="sidebar-item" data-filtro-sidebar="cerrada">Cerradas</a>
+    <a href="causas.html" class="sidebar-item" data-filtro-sidebar="archivada">Archivadas</a>
+  </nav>
+</aside>
+
+<nav class="navbar">
+  <a href="/" class="navbar-brand">Plataforma</a>
+  <div class="navbar-links">
+    <a href="/facturacion/">Facturación</a>
+    <a href="/causas/causas.html" class="active">Causas</a>
+    <a href="#" style="opacity:.45;pointer-events:none">Carpetas</a>
+  </div>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h1 class="page-title" id="titulo-seccion">Todas las causas</h1>
+    <div class="flex gap-2">
+      <button class="btn btn-ghost btn-sm" onclick="toast('Importación desde Google Sheets próximamente', 'info')">
+        ↑ Importar desde Sheets
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="toast('Exportación próximamente', 'info')">
+        ↓ Exportar
+      </button>
+      <button class="btn btn-primary" onclick="toast('Alta de causas próximamente', 'info')">
+        + Nueva causa
+      </button>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total causas</div>
+      <div class="stat-value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Notificaciones sin leer</div>
+      <div class="stat-value is-danger" id="stat-notif">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Vencimientos próximos 7 días</div>
+      <div class="stat-value is-warning" id="stat-venc">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Sin movimiento +30 días</div>
+      <div class="stat-value is-muted" id="stat-sin-mov">—</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="quick-filters">
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filtro="">Todas</button>
+        <button class="filter-tab" data-filtro="tramite">En trámite</button>
+        <button class="filter-tab" data-filtro="cerrada">Cerradas</button>
+        <button class="filter-tab" data-filtro="vencimiento">Con vencimiento</button>
+        <button class="filter-tab" data-filtro="sin-movimiento">Sin movimiento</button>
+      </div>
+      <div class="search-box">
+        <input type="text" id="buscador" placeholder="Buscar por expediente o cliente…">
+      </div>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Expediente</th>
+            <th>Cliente / Carátula</th>
+            <th>Tribunal</th>
+            <th>Estado</th>
+            <th>Último movimiento</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="causas-body">
+          <tr><td colspan="6" class="empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="js/causas.js"></script>
+<script>
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  // Sidebar: filtros por tipo/estado desde el sidebar
+  document.querySelectorAll('[data-filtro-sidebar]').forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      const filtro = link.dataset.filtroSidebar;
+
+      document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+      link.classList.add('active');
+
+      const mapa = {
+        'notificaciones':  '',
+        'vencimientos':    'vencimiento',
+        'sin-movimiento':  'sin-movimiento',
+        'tipo-pjn':        '',
+        'tipo-aduana':     '',
+        'tipo-fisica':     '',
+        'tramite':         'tramite',
+        'cerrada':         'cerrada',
+        'archivada':       'cerrada',
+      };
+
+      const titulos = {
+        'notificaciones': 'Notificaciones',
+        'vencimientos':   'Vencimientos próximos',
+        'sin-movimiento': 'Sin movimiento',
+        'tipo-pjn':       'Poder Judicial',
+        'tipo-aduana':    'Aduanero',
+        'tipo-fisica':    'Carpetas físicas',
+        'tramite':        'En trámite',
+        'cerrada':        'Cerradas',
+        'archivada':      'Archivadas',
+      };
+
+      document.getElementById('titulo-seccion').textContent = titulos[filtro] ?? 'Causas';
+
+      // Activar filter-tab correspondiente o resetear
+      const tabFiltro = mapa[filtro] ?? '';
+      document.querySelectorAll('.filter-tab').forEach(b => {
+        b.classList.toggle('active', b.dataset.filtro === tabFiltro);
+      });
+
+      // Filtros por tipo (no disponibles en filter-tabs, se aplican aparte)
+      const tipoMap = { 'tipo-pjn': 'PJN', 'tipo-aduana': 'Aduana', 'tipo-fisica': 'Fisica' };
+      const tipoBuscado = tipoMap[filtro] ?? null;
+
+      const buscador = document.getElementById('buscador');
+      const busqueda = buscador ? buscador.value.trim() : '';
+
+      let resultado = filtrarCausas(CAUSAS, tabFiltro, busqueda);
+      if (tipoBuscado) resultado = resultado.filter(c => c.tipo === tipoBuscado);
+
+      renderTabla(resultado);
+    });
+  });
+</script>
+</body>
+</html>
