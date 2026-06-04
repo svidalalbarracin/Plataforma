@@ -11,41 +11,40 @@
 </head>
 <body class="has-sidebar">
 
-<aside class="sidebar">
-  <a href="causas.html" class="sidebar-brand">
-    <span class="sidebar-brand-name">Causas</span>
-    <span class="sidebar-brand-sub">Plataforma Memo</span>
-  </a>
-  <nav class="sidebar-nav">
-    <a href="causas.html" class="sidebar-item">Todas las causas</a>
-    <a href="causas.html" class="sidebar-item">
-      Notificaciones
-      <span class="sidebar-badge sidebar-badge-danger">3</span>
-    </a>
-    <a href="causas.html" class="sidebar-item">
-      Vencimientos
-      <span class="sidebar-badge sidebar-badge-warning" id="badge-vencimientos-sidebar">—</span>
-    </a>
-    <a href="causas.html" class="sidebar-item">Sin movimiento</a>
-
-    <div class="sidebar-section">Por tipo</div>
-    <a href="causas.html" class="sidebar-item">Poder Judicial</a>
-    <a href="causas.html" class="sidebar-item">Aduanero</a>
-    <a href="causas.html" class="sidebar-item">Carpetas físicas</a>
-
-    <div class="sidebar-section">Estado</div>
-    <a href="causas.html" class="sidebar-item">En trámite</a>
-    <a href="causas.html" class="sidebar-item">Cerradas</a>
-    <a href="causas.html" class="sidebar-item">Archivadas</a>
-  </nav>
-</aside>
-
 <nav class="navbar">
-  <a href="/" class="navbar-brand">Plataforma</a>
+  <a href="causas.html" class="navbar-brand">Causas</a>
   <div class="navbar-links">
-    <a href="/facturacion/">Facturación</a>
-    <a href="/causas/causas.html" class="active">Causas</a>
-    <a href="#" style="opacity:.45;pointer-events:none">Carpetas</a>
+    <a href="causas.html">Todas</a>
+    <a href="causas.html?nav=notificaciones">
+      Notificaciones
+      <span class="navbar-badge navbar-badge-danger">3</span>
+    </a>
+    <a href="causas.html?nav=vencimientos">
+      Vencimientos
+    </a>
+    <a href="causas.html?nav=sin-movimiento">Sin movimiento</a>
+
+    <div class="navbar-dropdown" id="dd-tipo">
+      <button class="navbar-dropdown-toggle">
+        Por tipo <span class="chevron">▾</span>
+      </button>
+      <div class="navbar-dropdown-menu">
+        <a href="causas.html?nav=tipo-pjn"    class="navbar-dropdown-item">Poder Judicial</a>
+        <a href="causas.html?nav=tipo-aduana" class="navbar-dropdown-item">Aduanero</a>
+        <a href="causas.html?nav=tipo-fisica" class="navbar-dropdown-item">Carpetas físicas</a>
+      </div>
+    </div>
+
+    <div class="navbar-dropdown" id="dd-estado">
+      <button class="navbar-dropdown-toggle">
+        Estado <span class="chevron">▾</span>
+      </button>
+      <div class="navbar-dropdown-menu">
+        <a href="causas.html?nav=tramite"   class="navbar-dropdown-item">En trámite</a>
+        <a href="causas.html?nav=cerrada"   class="navbar-dropdown-item">Cerradas</a>
+        <a href="causas.html?nav=archivada" class="navbar-dropdown-item">Archivadas</a>
+      </div>
+    </div>
   </div>
   <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
   <button class="btn-theme" id="btn-theme">☾</button>
@@ -514,12 +513,21 @@
     renderPendientes(detalle.pendientes);
     renderAvisos(detalle.avisos);
     document.getElementById('notas-textarea').value = detalle.notas ?? '';
-
-    // Badge sidebar
-    const bv = document.getElementById('badge-vencimientos-sidebar');
-    const venc = CAUSAS.filter(c => c.vencimiento && diasHasta(c.vencimiento) >= 0 && diasHasta(c.vencimiento) <= 7).length;
-    if (bv) bv.textContent = venc;
   }
+
+  // Dropdowns navbar
+  document.querySelectorAll('.navbar-dropdown').forEach(dd => {
+    dd.querySelector('.navbar-dropdown-toggle').addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = dd.classList.contains('open');
+      document.querySelectorAll('.navbar-dropdown').forEach(d => d.classList.remove('open'));
+      if (!isOpen) dd.classList.add('open');
+    });
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.navbar-dropdown').forEach(d => d.classList.remove('open'));
+  });
 </script>
+<script src="/js/layout.js"></script>
 </body>
 </html>
