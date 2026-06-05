@@ -1,4 +1,4 @@
-const HOY = '2026-06-04';
+const HOY = new Date().toISOString().slice(0, 10);
 
 const CAUSAS = [
   {
@@ -227,6 +227,94 @@ function actualizarMetricas(causas) {
   if (badgeNotif) badgeNotif.textContent = notif;
   if (badgeVenc)  badgeVenc.textContent  = venc;
 }
+
+// ── Pendientes de ejemplo ─────────────────────────
+const PENDIENTES = [
+  {
+    id: 101,
+    descripcion: 'Presentar escrito de apelación',
+    causaId: 1,
+    fechaLimite: (() => { const d = new Date(); d.setDate(d.getDate()+5); return d.toISOString().slice(0,10); })(),
+    diasAviso: 2,
+    fechaAviso: (() => { const d = new Date(); d.setDate(d.getDate()+3); return d.toISOString().slice(0,10); })(),
+    nota: 'Adjuntar prueba documental nueva',
+    completado: false,
+  },
+  {
+    id: 102,
+    descripcion: 'Contestar traslado de multa',
+    causaId: 3,
+    fechaLimite: (() => { const d = new Date(); d.setDate(d.getDate()+2); return d.toISOString().slice(0,10); })(),
+    diasAviso: 1,
+    fechaAviso: (() => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); })(),
+    nota: '',
+    completado: false,
+  },
+  {
+    id: 103,
+    descripcion: 'Solicitar copia de actuaciones',
+    causaId: 7,
+    fechaLimite: (() => { const d = new Date(); d.setDate(d.getDate()+14); return d.toISOString().slice(0,10); })(),
+    diasAviso: 3,
+    fechaAviso: (() => { const d = new Date(); d.setDate(d.getDate()+11); return d.toISOString().slice(0,10); })(),
+    nota: '',
+    completado: false,
+  },
+  {
+    id: 104,
+    descripcion: 'Presentar liquidación de honorarios',
+    causaId: 6,
+    fechaLimite: (() => { const d = new Date(); d.setDate(d.getDate()-3); return d.toISOString().slice(0,10); })(),
+    diasAviso: 2,
+    fechaAviso: (() => { const d = new Date(); d.setDate(d.getDate()-5); return d.toISOString().slice(0,10); })(),
+    nota: '',
+    completado: true,
+  },
+];
+
+// ── Notificaciones de ejemplo ─────────────────────
+const NOTIFICACIONES = [
+  {
+    id: 201,
+    causaId: 2,
+    fecha: (() => { const d = new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); })(),
+    descripcion: 'Nueva cédula de notificación electrónica — Resolución Interlocutoria Nro. 48/26. Se hace saber lo resuelto en autos.',
+    origen: 'PJN',
+    leida: false,
+  },
+  {
+    id: 202,
+    causaId: 3,
+    fecha: (() => { const d = new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); })(),
+    descripcion: 'Nuevo movimiento en sumario SICNEA 4422/2025 — Proveído: "Pasen los autos a resolver." Estado actualizado a resolución pendiente.',
+    origen: 'Aduana',
+    leida: false,
+  },
+  {
+    id: 203,
+    causaId: 1,
+    fecha: (() => { const d = new Date(); d.setDate(d.getDate()-2); return d.toISOString().slice(0,10); })(),
+    descripcion: 'Nuevo escrito presentado por la parte actora — Memorial de agravios. Traslado a la demandada por 10 días hábiles.',
+    origen: 'PJN',
+    leida: false,
+  },
+  {
+    id: 204,
+    causaId: 7,
+    fecha: (() => { const d = new Date(); d.setDate(d.getDate()-4); return d.toISOString().slice(0,10); })(),
+    descripcion: 'Movimiento registrado en SICNEA 1198/2025 — Resolución de recursos: desestimado el recurso de reconsideración. Traslado para alegato.',
+    origen: 'Aduana',
+    leida: true,
+  },
+  {
+    id: 205,
+    causaId: 4,
+    fecha: (() => { const d = new Date(); d.setDate(d.getDate()-6); return d.toISOString().slice(0,10); })(),
+    descripcion: 'Nueva cédula electrónica — Auto de sustanciación. Se corre traslado del informe pericial a las partes por 5 días.',
+    origen: 'PJN',
+    leida: true,
+  },
+];
 
 document.addEventListener('DOMContentLoaded', () => {
   let filtroActivo = '';

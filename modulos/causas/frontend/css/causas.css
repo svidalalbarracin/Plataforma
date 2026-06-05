@@ -708,3 +708,421 @@ html.dark .btn-ghost { background: transparent; }
 html.dark .btn-ghost:hover:not(:disabled) { background: #263044; }
 html.dark select { color-scheme: dark; }
 html.dark .filter-tab:hover { background: #263044; }
+
+/* ── Toggle vista ────────────────────────────────── */
+.toggle-vista {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.toggle-btn {
+  padding: .35rem .875rem;
+  font-size: .8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  transition: background .15s, color .15s;
+}
+
+.toggle-btn + .toggle-btn { border-left: 1px solid var(--border); }
+.toggle-btn:hover  { background: var(--bg); color: var(--text); }
+.toggle-btn.active { background: var(--primary); color: #fff; }
+
+/* ── Nav fecha ───────────────────────────────────── */
+.nav-fecha {
+  display: flex;
+  align-items: center;
+  gap: .375rem;
+}
+
+.nav-label {
+  font-size: .875rem;
+  font-weight: 600;
+  min-width: 200px;
+  text-align: center;
+}
+
+/* ── Leyenda ─────────────────────────────────────── */
+.leyenda {
+  display: flex;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.leyenda-item {
+  display: flex;
+  align-items: center;
+  gap: .375rem;
+  font-size: .8125rem;
+  color: var(--text-muted);
+}
+
+.leyenda-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-pendiente { background: var(--primary); }
+.dot-aviso     { background: var(--warning); }
+.dot-vencido   { background: var(--danger); }
+
+/* ── Calendario ──────────────────────────────────── */
+.cal-wrapper { margin-bottom: 1.5rem; }
+
+/* Vista semanal */
+.cal-semana {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.cal-dia-col {
+  background: var(--card-bg);
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.cal-dia-col.es-finde { background: var(--bg); }
+
+.cal-dia-col.es-hoy { background: var(--primary-light); }
+html.dark .cal-dia-col.es-hoy { background: #1a2f55; }
+
+.cal-dia-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: .625rem .5rem .5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.cal-dia-nombre {
+  font-size: .6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+}
+
+.cal-dia-num {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin-top: .2rem;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.cal-dia-num.hoy-num {
+  background: var(--primary);
+  color: #fff;
+}
+
+.cal-dia-eventos {
+  padding: .5rem .375rem;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  flex: 1;
+}
+
+/* Vista mensual */
+.cal-mes-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.cal-mes-dia-nombre {
+  padding: .5rem;
+  text-align: center;
+  font-size: .6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+}
+
+.cal-mes-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  overflow: hidden;
+}
+
+.cal-mes-celda {
+  background: var(--card-bg);
+  min-height: 110px;
+  padding: .375rem;
+}
+
+.cal-mes-celda.vacia     { background: var(--bg); }
+.cal-mes-celda.es-finde  { background: #f8fafc; }
+.cal-mes-celda.es-hoy    { background: var(--primary-light); }
+html.dark .cal-mes-celda.es-finde { background: #141e2e; }
+html.dark .cal-mes-celda.es-hoy   { background: #1a2f55; }
+
+.cal-mes-num {
+  font-size: .8125rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: .3rem;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.cal-mes-num.hoy-num {
+  background: var(--primary);
+  color: #fff;
+}
+
+.cal-mes-eventos {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+
+/* Eventos del calendario */
+.cal-evento {
+  border-radius: 4px;
+  padding: .2rem .45rem;
+  font-size: .75rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow: hidden;
+}
+
+.ev-pendiente {
+  background: var(--primary-light);
+  color: var(--primary-text);
+  border-left: 3px solid var(--primary);
+}
+
+.ev-aviso {
+  background: var(--warning-light);
+  color: var(--warning-text);
+  border-left: 3px solid var(--warning);
+}
+
+.ev-vencido {
+  background: var(--danger-light);
+  color: var(--danger-text);
+  border-left: 3px solid var(--danger);
+}
+
+.ev-completado {
+  opacity: .5;
+  text-decoration: line-through;
+}
+
+.ev-desc {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ev-causa {
+  display: block;
+  font-size: .6875rem;
+  opacity: .75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Pendientes cards ────────────────────────────── */
+.form-grid-causas {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+@media (max-width: 860px) {
+  .form-grid-causas { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .form-grid-causas { grid-template-columns: 1fr; }
+}
+
+.label-opt {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: .75rem;
+}
+
+.aviso-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.aviso-label {
+  font-size: .875rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.aviso-fecha-calc {
+  margin-top: .35rem;
+  font-size: .8125rem;
+  color: var(--primary-text);
+  min-height: 1.2em;
+}
+
+.form-actions {
+  margin-top: 1.25rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pendiente-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: .875rem 0;
+  border-bottom: 1px solid var(--border);
+  transition: opacity .15s;
+}
+
+.pendiente-card:last-child { border-bottom: none; }
+.pendiente-card.completado { opacity: .65; }
+
+.pendiente-card-left { flex-shrink: 0; padding-top: .125rem; }
+
+.pendiente-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.pendiente-card-top {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-bottom: .35rem;
+}
+
+.pend-desc {
+  font-size: .9375rem;
+  font-weight: 500;
+}
+
+.pend-desc.tachado { text-decoration: line-through; color: var(--text-muted); }
+
+.pend-causa {
+  font-family: ui-monospace, monospace;
+  font-size: .75rem;
+  background: var(--primary-light);
+  color: var(--primary-text);
+  padding: .1rem .45rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.pend-meta {
+  font-size: .8125rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: .625rem;
+  flex-wrap: wrap;
+}
+
+.pend-aviso-fecha { color: var(--warning-text); }
+
+.pend-nota {
+  margin-top: .375rem;
+  font-size: .8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.pendiente-card-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+/* ── Notificaciones ──────────────────────────────── */
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+  transition: background .1s;
+}
+
+.notif-item:last-child { border-bottom: none; }
+.notif-item.leida { opacity: .7; }
+
+.notif-indicador {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+  margin-top: .4rem;
+}
+
+.notif-indicador.activo { background: var(--danger); }
+
+.notif-body { flex: 1; min-width: 0; }
+
+.notif-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-bottom: .35rem;
+}
+
+.notif-causa {
+  font-family: ui-monospace, monospace;
+  font-size: .8125rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.notif-fecha {
+  font-size: .8125rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.notif-desc {
+  font-size: .875rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.notif-acciones {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}

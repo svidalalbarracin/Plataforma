@@ -12,40 +12,15 @@
 <body class="has-sidebar">
 
 <nav class="navbar">
-  <a href="causas.html" class="navbar-brand">Causas</a>
+  <a href="index.html" class="navbar-brand">Causas</a>
   <div class="navbar-links">
-    <a href="causas.html" class="active" data-nav="">Todas</a>
-    <a href="#" data-nav="notificaciones">
+    <a href="index.html">Calendario</a>
+    <a href="pendientes.html">Pendientes</a>
+    <a href="notificaciones.html">
       Notificaciones
       <span class="navbar-badge navbar-badge-danger" id="badge-notif">3</span>
     </a>
-    <a href="#" data-nav="vencimientos">
-      Vencimientos
-      <span class="navbar-badge navbar-badge-warning" id="badge-venc">0</span>
-    </a>
-    <a href="#" data-nav="sin-movimiento">Sin movimiento</a>
-
-    <div class="navbar-dropdown" id="dd-tipo">
-      <button class="navbar-dropdown-toggle">
-        Por tipo <span class="chevron">▾</span>
-      </button>
-      <div class="navbar-dropdown-menu">
-        <button class="navbar-dropdown-item" data-nav="tipo-pjn">Poder Judicial</button>
-        <button class="navbar-dropdown-item" data-nav="tipo-aduana">Aduanero</button>
-        <button class="navbar-dropdown-item" data-nav="tipo-fisica">Carpetas físicas</button>
-      </div>
-    </div>
-
-    <div class="navbar-dropdown" id="dd-estado">
-      <button class="navbar-dropdown-toggle">
-        Estado <span class="chevron">▾</span>
-      </button>
-      <div class="navbar-dropdown-menu">
-        <button class="navbar-dropdown-item" data-nav="tramite">En trámite</button>
-        <button class="navbar-dropdown-item" data-nav="cerrada">Cerradas</button>
-        <button class="navbar-dropdown-item" data-nav="archivada">Archivadas</button>
-      </div>
-    </div>
+    <a href="causas.html" class="active">Causas</a>
   </div>
   <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
   <button class="btn-theme" id="btn-theme">☾</button>
@@ -131,98 +106,14 @@
     setTimeout(() => el.remove(), 3000);
   }
 
-  // ── Dropdowns ─────────────────────────────────────
-  document.querySelectorAll('.navbar-dropdown').forEach(dd => {
-    dd.querySelector('.navbar-dropdown-toggle').addEventListener('click', e => {
-      e.stopPropagation();
-      const isOpen = dd.classList.contains('open');
-      document.querySelectorAll('.navbar-dropdown').forEach(d => d.classList.remove('open'));
-      if (!isOpen) dd.classList.add('open');
-    });
-  });
-
-  document.addEventListener('click', () => {
-    document.querySelectorAll('.navbar-dropdown').forEach(d => d.classList.remove('open'));
-  });
-
-  // ── Navegación ────────────────────────────────────
-  const TITULOS = {
-    '':              'Todas las causas',
-    'notificaciones':'Notificaciones',
-    'vencimientos':  'Vencimientos próximos',
-    'sin-movimiento':'Sin movimiento',
-    'tipo-pjn':      'Poder Judicial',
-    'tipo-aduana':   'Aduanero',
-    'tipo-fisica':   'Carpetas físicas',
-    'tramite':       'En trámite',
-    'cerrada':       'Cerradas',
-    'archivada':     'Archivadas',
-  };
-
-  const NAV_A_FILTROTAB = {
-    '':              '',
-    'notificaciones':'',
-    'vencimientos':  'vencimiento',
-    'sin-movimiento':'sin-movimiento',
-    'tipo-pjn':      '',
-    'tipo-aduana':   '',
-    'tipo-fisica':   '',
-    'tramite':       'tramite',
-    'cerrada':       'cerrada',
-    'archivada':     'cerrada',
-  };
-
-  const NAV_A_TIPO = {
-    'tipo-pjn':    'PJN',
-    'tipo-aduana': 'Aduana',
-    'tipo-fisica': 'Fisica',
-  };
-
-  function aplicarNav(nav) {
-    document.getElementById('titulo-seccion').textContent = TITULOS[nav] ?? 'Causas';
-
-    // Actualizar estado activo en navbar-links
-    document.querySelectorAll('.navbar-links [data-nav]').forEach(el => {
-      el.classList.toggle('active', el.dataset.nav === nav);
-    });
-    document.querySelectorAll('.navbar-dropdown-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.nav === nav);
-    });
-
-    // Sincronizar filter-tabs
-    const tabFiltro = NAV_A_FILTROTAB[nav] ?? '';
-    document.querySelectorAll('.filter-tab').forEach(b => {
-      b.classList.toggle('active', b.dataset.filtro === tabFiltro);
-    });
-
-    // Aplicar filtro
-    const busqueda = (document.getElementById('buscador')?.value ?? '').trim();
-    const tipoBuscado = NAV_A_TIPO[nav] ?? null;
-    let resultado = filtrarCausas(CAUSAS, tabFiltro, busqueda);
-    if (tipoBuscado) resultado = resultado.filter(c => c.tipo === tipoBuscado);
-    renderTabla(resultado);
-
-    document.querySelectorAll('.navbar-dropdown').forEach(d => d.classList.remove('open'));
-  }
-
-  document.querySelectorAll('[data-nav]').forEach(el => {
-    el.addEventListener('click', e => {
-      e.preventDefault();
-      aplicarNav(el.dataset.nav);
-    });
-  });
-
-  // filter-tabs también actualizan el nav
   document.querySelectorAll('.filter-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      document.querySelectorAll('.navbar-links [data-nav]').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.navbar-dropdown-item').forEach(el => el.classList.remove('active'));
       const busqueda = (document.getElementById('buscador')?.value ?? '').trim();
       renderTabla(filtrarCausas(CAUSAS, btn.dataset.filtro, busqueda));
-      document.getElementById('titulo-seccion').textContent =
-        btn.dataset.filtro === '' ? 'Todas las causas' : btn.textContent.trim();
+      const titulo = btn.dataset.filtro === '' ? 'Todas las causas' : btn.textContent.trim();
+      document.getElementById('titulo-seccion').textContent = titulo;
     });
   });
 
