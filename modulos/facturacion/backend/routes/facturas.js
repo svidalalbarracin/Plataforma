@@ -22,7 +22,7 @@ router.get('/', (req, res) => {
   const { cliente_id, estado } = req.query;
   let sql = `
     SELECT f.*, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit,
-      (SELECT SUM(retencion) FROM pagos WHERE factura_id = f.id) AS retencion_total,
+      (SELECT retencion FROM pagos WHERE factura_id = f.id ORDER BY id DESC LIMIT 1) AS retencion_total,
       (SELECT COALESCE(SUM(nc.monto_total), 0) FROM facturas nc
        WHERE nc.factura_asociada_numero = f.numero) AS monto_nc_asociado
     FROM facturas f
@@ -43,7 +43,7 @@ router.get('/', (req, res) => {
 function buildExportQuery({ cliente_id, estado, mes, anio }) {
   let sql = `
     SELECT f.*, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit,
-      (SELECT SUM(retencion) FROM pagos WHERE factura_id = f.id) AS retencion_total
+      (SELECT retencion FROM pagos WHERE factura_id = f.id ORDER BY id DESC LIMIT 1) AS retencion_total
     FROM facturas f
     JOIN clientes c ON c.id = f.cliente_id
   `;
