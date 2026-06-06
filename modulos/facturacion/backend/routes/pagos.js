@@ -36,7 +36,9 @@ router.post('/', (req, res) => {
   const factura = db.prepare('SELECT id, monto_total FROM facturas WHERE id = ?').get(factura_id);
   if (!factura) return res.status(400).json({ error: 'factura_id no existe' });
 
-  const retencion = Math.round((factura.monto_total - Number(monto)) * 100) / 100;
+  const pagado   = db.prepare('SELECT COALESCE(SUM(monto), 0) AS total FROM pagos WHERE factura_id = ?').get(factura_id).total;
+  const saldo    = Math.round((factura.monto_total - pagado) * 100) / 100;
+  const retencion = Math.round(Math.max(0, saldo - Number(monto)) * 100) / 100;
 
   const { lastInsertRowid } = db.prepare(
     'INSERT INTO pagos (factura_id, fecha, monto, retencion, nota) VALUES (?, ?, ?, ?, ?)'
