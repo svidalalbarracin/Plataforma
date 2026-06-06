@@ -146,6 +146,32 @@
     setTimeout(() => el.remove(), 3000);
   }
 
+  const FILTROS_KEY = 'facturacion_filtros';
+
+  function guardarFiltros() {
+    const estado = {
+      cliente: document.getElementById('f-cliente').value,
+      mes:     document.getElementById('f-mes').value,
+      anio:    document.getElementById('f-anio').value,
+      estado:  document.getElementById('f-estado').value,
+    };
+    sessionStorage.setItem(FILTROS_KEY, JSON.stringify(estado));
+  }
+
+  function restaurarFiltros() {
+    try {
+      const raw = sessionStorage.getItem(FILTROS_KEY);
+      if (!raw) return false;
+      sessionStorage.removeItem(FILTROS_KEY);
+      const { cliente, mes, anio, estado } = JSON.parse(raw);
+      if (cliente) document.getElementById('f-cliente').value = cliente;
+      if (mes)     document.getElementById('f-mes').value     = mes;
+      if (anio)    document.getElementById('f-anio').value    = anio;
+      if (estado)  document.getElementById('f-estado').value  = estado;
+      return true;
+    } catch { return false; }
+  }
+
   let todasLasFacturas = [];
 
   function estadoBadge(estado) {
@@ -277,7 +303,9 @@
         selAnio.appendChild(o);
       });
 
-      renderTabla(facturas);
+      const hayFiltroGuardado = restaurarFiltros();
+      if (hayFiltroGuardado) aplicarFiltros();
+      else renderTabla(facturas);
 
     } catch (e) {
       document.getElementById('facturas-body').innerHTML =
@@ -342,6 +370,10 @@
 
   document.getElementById('btn-exportar-excel').addEventListener('click', () => exportar('excel'));
   document.getElementById('btn-exportar-pdf').addEventListener('click',   () => exportar('pdf'));
+
+  document.getElementById('facturas-body').addEventListener('click', e => {
+    if (e.target.closest('a[href^="detalle-factura.html"]')) guardarFiltros();
+  });
 
   document.getElementById('btn-filtrar').addEventListener('click', aplicarFiltros);
 
