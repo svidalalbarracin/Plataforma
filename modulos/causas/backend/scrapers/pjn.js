@@ -84,13 +84,14 @@ async function login(page) {
 // ── Cambiar resultados por página ─────────────────────────────────────────────
 
 async function cambiarResultadosPorPagina(page, cantidad = 30) {
-  const select = page.locator('select').filter({ hasText: /\b(10|20|30|50)\b/ }).first();
+  const select = page.locator('select[aria-label*="Filas por página"]');
   if ((await select.count()) === 0) {
     console.log('  Selector de resultados por página no encontrado, usando default');
     return;
   }
   await select.selectOption(String(cantidad));
-  await esperarSPA(page);
+  // Esperar que la tabla recargue con la nueva cantidad
+  await page.waitForFunction(() => !document.querySelector('table .MuiSkeleton-root'), { timeout: 30000 });
   console.log(`  Resultados por página: ${cantidad}`);
 }
 
@@ -127,29 +128,28 @@ async function extraerFilas(page) {
 
 // ── Paginación ────────────────────────────────────────────────────────────────
 
+const SELECTOR_SIGUIENTE = 'button[aria-label="Ir a la siguiente página del listado"]';
+
 async function hayPaginaSiguiente(page) {
-  const selector = [
-    'a:has-text("Siguiente")',
-    'a:has-text("siguiente")',
-    'button:has-text("Siguiente")',
-    'li.next:not(.disabled) a',
-    '[aria-label="Next"]:not([disabled])',
-    'a[rel="next"]',
-  ].join(', ');
-  return (await page.locator(selector).count()) > 0;
+  const btn = page.locator(SELECTOR_SIGUIENTE);
+  if ((await btn.count()) === 0) return false;
+
+  // MUI deshabilita via .disabled Y clase Mui-disabled
+  const inhabilitado = await btn.evaluate(el => el.disabled || el.classList.contains('Mui-disabled'));
+  if (inhabilitado) return false;
+
+  // Respaldo: texto de paginación "X–Y de Z" → si Y >= Z estamos en la última página
+  const m = await page.evaluate(() =>
+    document.body.innerText.match(/(\d+)[–\-](\d+)\s+de\s+(\d+)/)
+  );
+  if (m && parseInt(m[2]) >= parseInt(m[3])) return false;
+
+  return true;
 }
 
 async function irAPaginaSiguiente(page) {
-  const selector = [
-    'a:has-text("Siguiente")',
-    'a:has-text("siguiente")',
-    'button:has-text("Siguiente")',
-    'li.next:not(.disabled) a',
-    '[aria-label="Next"]:not([disabled])',
-    'a[rel="next"]',
-  ].join(', ');
-  await page.locator(selector).first().click();
-  await page.waitForSelector('table tbody tr', { timeout: 30000 });
+  await page.locator(SELECTOR_SIGUIENTE).click();
+  await page.waitForFunction(() => !document.querySelector('table .MuiSkeleton-root'), { timeout: 30000 });
 }
 
 // ── Función principal exportable ──────────────────────────────────────────────
