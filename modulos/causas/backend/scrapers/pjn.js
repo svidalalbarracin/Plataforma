@@ -17,6 +17,10 @@ function guardar({ numero, numero_expediente, caratula, autor, destinatario, fec
   `).run(numero, numero_expediente, caratula, autor, destinatario, fecha_envio);
 }
 
+function guardarMeta(key, value) {
+  db.prepare('INSERT OR REPLACE INTO scraper_meta (key, value) VALUES (?, ?)').run(key, value);
+}
+
 const MESES_CORTO = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12 };
 
 function isoFecha(str) {
@@ -246,8 +250,12 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
       pagina++;
     }
 
+    const ahora = new Date().toISOString();
+    if (modoAuto) guardarMeta('pjn_ultima_auto', ahora);
+
     console.log('\n══ Resultado ═════════════════════════════════════════════════');
     console.log(`  ${nuevas} nueva(s)`);
+    if (modoAuto) console.log(`  Última actualización automática: ${ahora}`);
     return nuevas;
 
   } finally {

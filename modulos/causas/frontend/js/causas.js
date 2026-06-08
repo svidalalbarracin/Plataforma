@@ -110,8 +110,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const badge = document.getElementById('badge-notif');
   if (!badge) return;
   try {
-    const notifs = await fetch('/api/causas/notificaciones').then(r => r.json());
-    badge.textContent = notifs.filter(n => !n.leida).length || '';
+    const { notificaciones } = await fetch('/api/causas/notificaciones').then(r => r.json());
+    badge.textContent = notificaciones.filter(n => !n.leida).length || '';
   } catch {}
 });
 

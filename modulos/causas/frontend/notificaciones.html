@@ -34,6 +34,7 @@
              style="width:9rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:.875rem">
       <button class="btn btn-ghost btn-sm" id="btn-ejecutar" onclick="ejecutarScraper()">↻ Actualizar ahora</button>
       <span id="scraper-estado" class="text-muted" style="font-size:.8125rem"></span>
+      <span class="text-muted" style="font-size:.8125rem">Auto: <span id="ultima-auto">—</span></span>
       <button class="btn btn-ghost btn-sm" onclick="marcarTodasLeidas()">Marcar todas como leídas</button>
     </div>
   </div>
@@ -74,6 +75,7 @@
 <script>
   let notificaciones = [];
   let filtroActivo   = 'todas';
+  let ultimaAuto     = null;
 
   function toast(msg, tipo = 'success') {
     const el = document.createElement('div');
@@ -87,6 +89,18 @@
     if (!iso) return '';
     const [y, m, d] = iso.split('-');
     return `${d}/${m}/${y}`;
+  }
+
+  function formatUltimaAuto(iso) {
+    if (!iso) return 'Sin datos';
+    const d = new Date(iso);
+    return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      + ' ' + d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function mostrarUltimaAuto() {
+    const el = document.getElementById('ultima-auto');
+    if (el) el.textContent = formatUltimaAuto(ultimaAuto);
   }
 
   function origenBadge(origen) {
@@ -193,7 +207,10 @@
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
 
       estado.textContent = `${data.nuevas} nueva(s)`;
-      notificaciones = await fetch('/api/causas/notificaciones').then(r => r.json());
+      const resp = await fetch('/api/causas/notificaciones').then(r => r.json());
+      notificaciones = resp.notificaciones;
+      ultimaAuto = resp.ultima_auto;
+      mostrarUltimaAuto();
       actualizarContadores();
       renderNotificaciones(filtroActivo);
       toast(`${data.nuevas} notificación(es) nueva(s)`, 'success');
@@ -211,7 +228,10 @@
     document.getElementById('lista-notificaciones').innerHTML =
       '<div class="empty">Cargando…</div>';
     try {
-      notificaciones = await fetch('/api/causas/notificaciones').then(r => r.json());
+      const resp = await fetch('/api/causas/notificaciones').then(r => r.json());
+      notificaciones = resp.notificaciones;
+      ultimaAuto = resp.ultima_auto;
+      mostrarUltimaAuto();
       actualizarContadores();
       renderNotificaciones(filtroActivo);
     } catch (e) {

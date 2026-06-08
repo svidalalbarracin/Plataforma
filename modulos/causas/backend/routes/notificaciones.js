@@ -10,17 +10,22 @@ router.get('/', (req, res) => {
     ORDER BY fecha_envio DESC, id DESC
   `).all();
 
-  res.json(rows.map(r => ({
-    id:           r.id,
-    numero:       r.numero,
-    expediente:   r.numero_expediente,
-    caratula:     r.caratula,
-    autor:        r.autor,
-    destinatario: r.destinatario,
-    fecha:        r.fecha_envio,
-    origen:       'PJN',
-    leida:        r.leida === 1,
-  })));
+  const metaAuto = db.prepare("SELECT value FROM scraper_meta WHERE key = 'pjn_ultima_auto'").get();
+
+  res.json({
+    ultima_auto: metaAuto?.value ?? null,
+    notificaciones: rows.map(r => ({
+      id:           r.id,
+      numero:       r.numero,
+      expediente:   r.numero_expediente,
+      caratula:     r.caratula,
+      autor:        r.autor,
+      destinatario: r.destinatario,
+      fecha:        r.fecha_envio,
+      origen:       'PJN',
+      leida:        r.leida === 1,
+    })),
+  });
 });
 
 // PATCH /api/causas/notificaciones/marcar-todas  (debe ir ANTES de /:id)
