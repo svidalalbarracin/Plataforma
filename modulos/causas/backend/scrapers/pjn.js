@@ -17,11 +17,30 @@ function guardar({ numero, numero_expediente, caratula, autor, destinatario, fec
   `).run(numero, numero_expediente, caratula, autor, destinatario, fecha_envio);
 }
 
+const MESES_CORTO = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12 };
+
 function isoFecha(str) {
   if (!str) return null;
-  const [d, m, a] = str.trim().split('/');
-  if (!d || !m || !a) return str.trim();
-  return `${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  const s = str.trim();
+
+  // dd/mm/aaaa
+  const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m1) return `${m1[3]}-${m1[2]}-${m1[1]}`;
+
+  // "03 jun", "28 may" — PJN usa día + mes abreviado en español
+  const m2 = s.match(/^(\d{1,2})\s+([a-záéíóú]{3})$/i);
+  if (m2) {
+    const mes = MESES_CORTO[m2[2].toLowerCase()];
+    if (mes) {
+      const anio = new Date().getFullYear();
+      return `${anio}-${String(mes).padStart(2,'0')}-${m2[1].padStart(2,'0')}`;
+    }
+  }
+
+  // Solo hora "14:05" → notificación de hoy
+  if (/^\d{1,2}:\d{2}$/.test(s)) return new Date().toISOString().slice(0, 10);
+
+  return s;
 }
 
 function parsearExpediente(texto) {
@@ -34,26 +53,32 @@ function parsearExpediente(texto) {
   };
 }
 
-// ── Login ─────────────────────────────────────────────────────────────────────
+// ── Esperar a que la SPA termine de renderizar ────────────────────────────────
+
+async function esperarSPA(page, timeout = 30000) {
+  await page.waitForFunction(
+    () => { const t = document.body?.innerText?.trim(); return t && t !== 'Iniciando...'; },
+    { timeout }
+  );
+}
+
+// ── Login (SSO Keycloak en sso.pjn.gov.ar) ───────────────────────────────────
 
 async function login(page) {
-  console.log('  Ingresando usuario...');
-  await page.fill(
-    'input[name="usuario"], input[id*="usuario"], input[placeholder*="suario"], input[type="text"]:first-of-type',
-    process.env.PJN_USUARIO
-  );
-  console.log('  Ingresando contraseña...');
-  await page.fill(
-    'input[name="clave"], input[name="password"], input[id*="clave"], input[id*="password"], input[type="password"]',
-    process.env.PJN_CLAVE
-  );
-  await page.click('button[type="submit"], input[type="submit"]');
-  await page.waitForLoadState('load');
+  console.log('  Esperando formulario SSO...');
+  await page.waitForSelector('input[name="username"]', { timeout: 15000 });
 
-  if (!page.url().includes('recibidas')) {
-    throw new Error(`Login fallido. URL actual: ${page.url()}`);
-  }
-  console.log('  Login OK');
+  console.log('  Ingresando usuario...');
+  await page.fill('input[name="username"]', process.env.PJN_USUARIO);
+
+  console.log('  Ingresando contraseña...');
+  await page.fill('input[name="password"]', process.env.PJN_CLAVE);
+
+  await page.click('input[type="submit"], #kc-login, button[type="submit"]');
+
+  console.log('  Esperando redirección post-login...');
+  await page.waitForURL('**/notif.pjn.gov.ar/recibidas**', { timeout: 30000 });
+  console.log('  Login OK →', page.url());
 }
 
 // ── Cambiar resultados por página ─────────────────────────────────────────────
@@ -65,25 +90,34 @@ async function cambiarResultadosPorPagina(page, cantidad = 30) {
     return;
   }
   await select.selectOption(String(cantidad));
-  await page.waitForLoadState('load');
+  await esperarSPA(page);
   console.log(`  Resultados por página: ${cantidad}`);
 }
 
 // ── Extraer filas de la tabla ─────────────────────────────────────────────────
 
 async function extraerFilas(page) {
+  // Esperar que los MuiSkeleton desaparezcan (tabla en estado de carga)
+  await page.waitForFunction(
+    () => !document.querySelector('table .MuiSkeleton-root'),
+    { timeout: 30000 }
+  );
+
   return page.evaluate(() => {
+    const limpiar = s => s.replace(/\s+/g, ' ').trim();
     const filas = [];
+
+    // Estructura PJN (8 columnas):
+    // [0] icono | [1] número | [2] expediente | [3] autor | [4] destinatario | [5] fecha | [6][7] acciones
     document.querySelectorAll('table tbody tr').forEach(tr => {
-      const celdas = [...tr.querySelectorAll('td')].map(td => td.innerText.trim());
-      // Al menos 5 columnas y la primera debe contener algún dígito (número de notif)
-      if (celdas.length >= 5 && /\d/.test(celdas[0])) {
+      const celdas = [...tr.querySelectorAll('td')].map(td => limpiar(td.innerText));
+      if (celdas.length >= 6 && /^\d+$/.test(celdas[1].replace(/\s/g, ''))) {
         filas.push({
-          numero:       celdas[0],
-          expediente:   celdas[1],
-          autor:        celdas[2],
-          destinatario: celdas[3],
-          fecha_envio:  celdas[4],
+          numero:       celdas[1].replace(/\s/g, ''),
+          expediente:   celdas[2],
+          autor:        celdas[3],
+          destinatario: celdas[4],
+          fecha_envio:  celdas[5],
         });
       }
     });
@@ -115,7 +149,7 @@ async function irAPaginaSiguiente(page) {
     'a[rel="next"]',
   ].join(', ');
   await page.locator(selector).first().click();
-  await page.waitForLoadState('load');
+  await page.waitForSelector('table tbody tr', { timeout: 30000 });
 }
 
 // ── Función principal exportable ──────────────────────────────────────────────
@@ -133,16 +167,19 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
   try {
     console.log('1. Navegando al portal...');
     await page.goto(URL_NOTIFICACIONES, { waitUntil: 'load', timeout: 60000 });
+    await esperarSPA(page);
     console.log('  URL:', page.url());
 
-    if (!page.url().includes('recibidas')) {
-      console.log('\n2. Login requerido...');
+    if (page.url().includes('sso.pjn.gov.ar')) {
+      console.log('\n2. Login requerido (SSO)...');
       await login(page);
     } else {
       console.log('  Sesión activa, sin necesidad de login');
     }
 
-    console.log('\n3. Configurando vista...');
+    console.log('\n3. Esperando carga de notificaciones...');
+    await page.waitForSelector('table tbody tr', { timeout: 30000 });
+    console.log('  Tabla cargada');
     await cambiarResultadosPorPagina(page, 30);
 
     console.log('\n4. Procesando notificaciones...');
