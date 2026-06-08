@@ -8,12 +8,12 @@ function yaExiste(numero) {
   return !!db.prepare('SELECT id FROM notificaciones_sicnea WHERE numero = ?').get(numero);
 }
 
-function guardar({ numero, cuit, razon_social, motivo, fecha_envio, fecha_vencimiento, estado }) {
+function guardar({ numero, cuit, razon_social, motivo, fecha_envio, fecha_vencimiento }) {
   db.prepare(`
     INSERT INTO notificaciones_sicnea
-      (numero, aduana, dependencia, razon_social, motivo, documento_ref, fecha_alta, estado)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(numero, null, null, razon_social, motivo, cuit, fecha_envio, estado || 'ENVIADA');
+      (numero, aduana, dependencia, razon_social, motivo, documento_ref, fecha_alta, fecha_vencimiento, estado)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NOTIFICADA')
+  `).run(numero, null, null, razon_social, motivo, cuit, fecha_envio, fecha_vencimiento);
 }
 
 function guardarMeta(key, value) {
@@ -93,16 +93,17 @@ async function extraerFilas(frame) {
     const filas = [];
     document.querySelectorAll('table tbody tr').forEach(tr => {
       const celdas = [...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\s+/g, ' ').trim());
-      // Columnas: [0]=numero [1]=cuit [2]=razon_social [3]=motivo [4]=enviada [5]=vencimiento [6]=notif_auto [7]=Ver
-      // Los números de notificación tienen formato: YYNNNNOTINNNNNNX (ej: 23001NOTI128511P)
-      if (celdas.length >= 6 && /^\d{5}NOTI/i.test(celdas[0])) {
+      // Columnas: [0]=numero [1]=cuit [2]=razon_social [3]=motivo [4]=enviada [5]=notif_auto [6]=vencimiento [7]=Ver
+      // Solo incluir notificaciones con estado NOTIFICADO (vencimiento ya pasó)
+      if (celdas.length >= 7 && /^\d{5}NOTI/i.test(celdas[0])) {
         filas.push({
           numero:             celdas[0],
           cuit:               celdas[1] || null,
           razon_social:       celdas[2] || null,
           motivo:             celdas[3] || null,
           fecha_envio:        celdas[4] || null,
-          fecha_vencimiento:  celdas[5] || null,
+          notif_auto:         celdas[5] || null,
+          fecha_vencimiento:  celdas[6] || null,
         });
       }
     });
@@ -180,6 +181,14 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
         const numero = fila.numero?.trim();
         if (!numero) continue;
 
+        // Solo procesar notificaciones ya notificadas (vencimiento pasado o con fecha auto)
+        const venc = isoFecha(fila.fecha_vencimiento);
+        const hoy  = new Date().toISOString().slice(0, 10);
+        if (!fila.notif_auto && (!venc || venc >= hoy)) {
+          console.log(`  [>>] ${numero}  ENVIADA (vence ${venc}) → ignorando`);
+          continue;
+        }
+
         if (yaExiste(numero)) {
           if (modoAuto) {
             console.log(`  [>>] ${numero}  última registrada → deteniendo`);
@@ -199,7 +208,6 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
           motivo:            fila.motivo,
           fecha_envio:       isoFecha(fila.fecha_envio),
           fecha_vencimiento: isoFecha(fila.fecha_vencimiento),
-          estado:            'ENVIADA',
         });
 
         console.log(`  [OK] ${numero}  ${fila.razon_social ?? '-'}  ${fila.fecha_envio ?? '-'}`);

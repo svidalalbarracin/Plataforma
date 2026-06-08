@@ -61,7 +61,7 @@
         <button class="filter-tab active" data-filtro="todas">Todas</button>
         <button class="filter-tab" data-filtro="sin-leer">Sin leer</button>
         <button class="filter-tab" data-filtro="PJN">PJN</button>
-        <button class="filter-tab" data-filtro="Aduana">Aduana</button>
+        <button class="filter-tab" data-filtro="SICNEA">Aduana</button>
       </div>
     </div>
     <div id="lista-notificaciones"></div>
@@ -117,14 +117,14 @@
 
   function origenBadge(origen) {
     if (origen === 'PJN')    return '<span class="badge badge-tipo badge-tipo-pjn">PJN</span>';
-    if (origen === 'Aduana') return '<span class="badge badge-tipo badge-tipo-aduana">Aduana</span>';
+    if (origen === 'SICNEA') return '<span class="badge badge-tipo badge-tipo-aduana">Aduana</span>';
     return `<span class="badge badge-tipo">${origen}</span>`;
   }
 
   function actualizarContadores() {
     const sinLeer = notificaciones.filter(n => !n.leida).length;
     const pjn     = notificaciones.filter(n => n.origen === 'PJN').length;
-    const aduana  = notificaciones.filter(n => n.origen === 'Aduana').length;
+    const aduana  = notificaciones.filter(n => n.origen === 'SICNEA').length;
 
     document.getElementById('stat-sin-leer').textContent = sinLeer;
     document.getElementById('stat-pjn').textContent      = pjn;
@@ -137,7 +137,7 @@
 
     if (filtro === 'sin-leer') lista = lista.filter(n => !n.leida);
     if (filtro === 'PJN')      lista = lista.filter(n => n.origen === 'PJN');
-    if (filtro === 'Aduana')   lista = lista.filter(n => n.origen === 'Aduana');
+    if (filtro === 'SICNEA')   lista = lista.filter(n => n.origen === 'SICNEA');
 
     const el = document.getElementById('lista-notificaciones');
 
@@ -160,16 +160,16 @@
         </div>
         <div class="notif-acciones">
           ${!n.leida
-            ? `<button class="btn btn-ghost btn-sm" onclick="marcarLeida(${n.id})">Marcar leída</button>`
+            ? `<button class="btn btn-ghost btn-sm" onclick="marcarLeida(${n.id}, '${n.origen}')">Marcar leída</button>`
             : '<span class="text-muted" style="font-size:.8125rem">Leída</span>'}
         </div>
       </div>`
     ).join('');
   }
 
-  async function marcarLeida(id) {
+  async function marcarLeida(id, origen = 'PJN') {
     try {
-      await fetch(`/api/causas/notificaciones/${id}/leida`, { method: 'PATCH' });
+      await fetch(`/api/causas/notificaciones/${id}/leida?origen=${origen}`, { method: 'PATCH' });
       const n = notificaciones.find(x => x.id === id);
       if (n) n.leida = true;
       actualizarContadores();

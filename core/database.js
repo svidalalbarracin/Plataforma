@@ -189,4 +189,10 @@ db.exec(`
   );
 `);
 
+// Migración: agregar fecha_vencimiento a notificaciones_sicnea
+const sicneaCols = db.prepare('PRAGMA table_info(notificaciones_sicnea)').all().map(c => c.name);
+if (!sicneaCols.includes('fecha_vencimiento')) {
+  db.exec('ALTER TABLE notificaciones_sicnea ADD COLUMN fecha_vencimiento TEXT');
+}
+
 module.exports = db;
