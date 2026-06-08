@@ -154,25 +154,4 @@ if (!clientesCols.includes('concepto_facturacion')) {
   db.exec('ALTER TABLE clientes ADD COLUMN concepto_facturacion TEXT');
 }
 
-// ── Causas — PJN ─────────────────────────────────────────────────────────────
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS notificaciones_pjn (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    numero            TEXT    NOT NULL UNIQUE,
-    numero_expediente TEXT,
-    caratula          TEXT,
-    autor             TEXT,
-    destinatario      TEXT,
-    fecha_envio       TEXT,
-    leida             INTEGER NOT NULL DEFAULT 0,
-    created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS scraper_meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-  );
-`);
-
 module.exports = db;

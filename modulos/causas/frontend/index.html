@@ -3,204 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Calendario — Causas</title>
+  <title>Causas — Plataforma Memo</title>
   <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
   <script src="/js/theme.js"></script>
   <link rel="stylesheet" href="/css/layout.css">
-  <link rel="stylesheet" href="css/causas.css">
 </head>
 <body class="has-sidebar">
 
 <nav class="navbar">
-  <a href="index.html" class="navbar-brand">Causas</a>
-  <div class="navbar-links">
-    <a href="index.html" class="active">Calendario</a>
-    <a href="pendientes.html">Pendientes</a>
-    <a href="notificaciones.html">
-      Notificaciones
-      <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
-    </a>
-    <a href="causas.html">Causas</a>
-  </div>
-  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <a href="/" class="navbar-brand">Causas</a>
   <button class="btn-theme" id="btn-theme">☾</button>
 </nav>
 
-<div class="container">
-  <div class="page-header">
-    <h1 class="page-title">Calendario</h1>
-    <div class="flex gap-2 items-center">
-      <div class="toggle-vista">
-        <button class="toggle-btn active" id="btn-semanal" onclick="setVista('semanal')">Semana</button>
-        <button class="toggle-btn" id="btn-mensual" onclick="setVista('mensual')">Mes</button>
-      </div>
-      <button class="btn btn-ghost btn-sm" id="btn-hoy" onclick="irHoy()">Hoy</button>
-      <div class="nav-fecha">
-        <button class="btn btn-ghost btn-sm btn-icon" id="btn-prev" onclick="navegar(-1)">‹</button>
-        <span class="nav-label" id="nav-label"></span>
-        <button class="btn btn-ghost btn-sm btn-icon" id="btn-next" onclick="navegar(1)">›</button>
-      </div>
-      <a href="pendientes.html" class="btn btn-primary btn-sm">+ Nuevo pendiente</a>
-    </div>
-  </div>
-
-  <div class="leyenda">
-    <span class="leyenda-item"><span class="leyenda-dot dot-pendiente"></span>Pendiente</span>
-    <span class="leyenda-item"><span class="leyenda-dot dot-aviso"></span>Aviso</span>
-    <span class="leyenda-item"><span class="leyenda-dot dot-vencido"></span>Vencido</span>
-  </div>
-
-  <div id="cal-semanal" class="cal-wrapper">
-    <div class="cal-semana" id="cal-semana-grid"></div>
-  </div>
-
-  <div id="cal-mensual" class="cal-wrapper" style="display:none">
-    <div class="cal-mes-header" id="cal-mes-header"></div>
-    <div class="cal-mes-grid" id="cal-mes-grid"></div>
+<div class="container" style="display:flex;align-items:center;justify-content:center;min-height:60vh">
+  <div style="text-align:center">
+    <div style="font-size:3rem;margin-bottom:1rem">✓</div>
+    <h1 style="font-size:1.5rem;font-weight:700;margin:0 0 .5rem">Actualizado OK</h1>
+    <p style="color:var(--text-muted);margin:0">El módulo de Causas está en desarrollo.</p>
   </div>
 </div>
 
-<script src="js/causas.js"></script>
 <script src="/js/layout.js"></script>
-<script>
-  let CAUSAS     = [];
-  let PENDIENTES = (() => {
-    try { return JSON.parse(localStorage.getItem('causas_pendientes') || '[]'); } catch { return []; }
-  })();
-
-  const DIAS_NOMBRE = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-  const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-                        'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-
-  let vista   = 'semanal';
-  let anchorFecha = new Date();
-  anchorFecha.setHours(0,0,0,0);
-
-  function setVista(v) {
-    vista = v;
-    document.getElementById('btn-semanal').classList.toggle('active', v === 'semanal');
-    document.getElementById('btn-mensual').classList.toggle('active', v === 'mensual');
-    document.getElementById('cal-semanal').style.display = v === 'semanal' ? '' : 'none';
-    document.getElementById('cal-mensual').style.display = v === 'mensual' ? '' : 'none';
-    render();
-  }
-
-  function irHoy() {
-    anchorFecha = new Date(); anchorFecha.setHours(0,0,0,0);
-    render();
-  }
-
-  function navegar(dir) {
-    if (vista === 'semanal') {
-      anchorFecha = new Date(anchorFecha.getTime() + dir * 7 * 86400000);
-    } else {
-      anchorFecha = new Date(anchorFecha.getFullYear(), anchorFecha.getMonth() + dir, 1);
-    }
-    render();
-  }
-
-  function isoFecha(d) {
-    return d.toISOString().slice(0, 10);
-  }
-
-  function eventosDelDia(fechaIso) {
-    const hoy = isoFecha(new Date());
-    return PENDIENTES.map(p => {
-      const esFechaLimite  = p.fechaLimite === fechaIso;
-      const esFechaAviso   = p.fechaAviso  === fechaIso;
-      if (!esFechaLimite && !esFechaAviso) return null;
-      const tipo    = esFechaAviso && !esFechaLimite ? 'aviso' : 'pendiente';
-      const vencido = fechaIso < hoy && !p.completado;
-      return { ...p, tipo: vencido && tipo === 'pendiente' ? 'vencido' : tipo };
-    }).filter(Boolean);
-  }
-
-  function htmlEvento(ev) {
-    const causa = ev.causaId ? CAUSAS.find(c => c.id === ev.causaId) : null;
-    const causaLabel = causa ? `<span class="ev-causa">${causa.expediente}</span>` : '';
-    const tipoClass = `ev-${ev.tipo}`;
-    const completadaClass = ev.completado ? 'ev-completado' : '';
-    return `
-      <div class="cal-evento ${tipoClass} ${completadaClass}">
-        <span class="ev-desc">${ev.descripcion}</span>
-        ${causaLabel}
-      </div>`;
-  }
-
-  function renderSemanal() {
-    const dow = anchorFecha.getDay();
-    const lunes = new Date(anchorFecha.getTime() - ((dow === 0 ? 6 : dow - 1)) * 86400000);
-
-    const dias = [];
-    for (let i = 0; i < 7; i++) {
-      dias.push(new Date(lunes.getTime() + i * 86400000));
-    }
-
-    const inicioStr = `${dias[0].getDate()} ${MESES_NOMBRE[dias[0].getMonth()].slice(0,3)}`;
-    const finStr    = `${dias[6].getDate()} ${MESES_NOMBRE[dias[6].getMonth()].slice(0,3)} ${dias[6].getFullYear()}`;
-    document.getElementById('nav-label').textContent = `${inicioStr} – ${finStr}`;
-
-    const hoyIso = isoFecha(new Date());
-    const grid = document.getElementById('cal-semana-grid');
-    grid.innerHTML = dias.map(d => {
-      const iso    = isoFecha(d);
-      const esHoy  = iso === hoyIso;
-      const esFinde = d.getDay() === 0 || d.getDay() === 6;
-      const eventos = eventosDelDia(iso);
-      return `
-        <div class="cal-dia-col ${esHoy ? 'es-hoy' : ''} ${esFinde ? 'es-finde' : ''}">
-          <div class="cal-dia-header">
-            <span class="cal-dia-nombre">${DIAS_NOMBRE[d.getDay()]}</span>
-            <span class="cal-dia-num ${esHoy ? 'hoy-num' : ''}">${d.getDate()}</span>
-          </div>
-          <div class="cal-dia-eventos">
-            ${eventos.length ? eventos.map(htmlEvento).join('') : ''}
-          </div>
-        </div>`;
-    }).join('');
-  }
-
-  function renderMensual() {
-    const year  = anchorFecha.getFullYear();
-    const month = anchorFecha.getMonth();
-    document.getElementById('nav-label').textContent = `${MESES_NOMBRE[month]} ${year}`;
-
-    const header = document.getElementById('cal-mes-header');
-    header.innerHTML = DIAS_NOMBRE.map(n => `<div class="cal-mes-dia-nombre">${n}</div>`).join('');
-
-    const primerDia = new Date(year, month, 1);
-    const ultimoDia = new Date(year, month + 1, 0);
-    const inicioOffset = (primerDia.getDay() + 6) % 7; // lunes=0
-
-    const hoyIso = isoFecha(new Date());
-    const celdas = [];
-
-    for (let i = 0; i < inicioOffset; i++) celdas.push('<div class="cal-mes-celda vacia"></div>');
-
-    for (let dia = 1; dia <= ultimoDia.getDate(); dia++) {
-      const d      = new Date(year, month, dia);
-      const iso    = isoFecha(d);
-      const esHoy  = iso === hoyIso;
-      const esFinde = d.getDay() === 0 || d.getDay() === 6;
-      const eventos = eventosDelDia(iso);
-      celdas.push(`
-        <div class="cal-mes-celda ${esHoy ? 'es-hoy' : ''} ${esFinde ? 'es-finde' : ''}">
-          <div class="cal-mes-num ${esHoy ? 'hoy-num' : ''}">${dia}</div>
-          <div class="cal-mes-eventos">
-            ${eventos.map(htmlEvento).join('')}
-          </div>
-        </div>`);
-    }
-
-    document.getElementById('cal-mes-grid').innerHTML = celdas.join('');
-  }
-
-  function render() {
-    if (vista === 'semanal') renderSemanal();
-    else renderMensual();
-  }
-
-  render();
-</script>
 </body>
 </html>

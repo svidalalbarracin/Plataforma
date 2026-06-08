@@ -14,9 +14,8 @@ app.use('/api/clientes',      require('../modulos/facturacion/backend/routes/cli
 app.use('/api/facturas',      require('../modulos/facturacion/backend/routes/facturas'));
 app.use('/api/pagos',         require('../modulos/facturacion/backend/routes/pagos'));
 app.use('/api/recurrentes',   require('../modulos/facturacion/backend/routes/recurrentes'));
-app.use('/api/estadisticas',           require('../modulos/facturacion/backend/routes/estadisticas'));
-app.use('/api/configuracion',         require('../core/configuracion/backend/routes'));
-app.use('/api/causas/notificaciones', require('../modulos/causas/backend/routes/notificaciones'));
+app.use('/api/estadisticas',  require('../modulos/facturacion/backend/routes/estadisticas'));
+app.use('/api/configuracion', require('../core/configuracion/backend/routes'));
 
 app.post('/api/importar', async (req, res) => {
   try {
@@ -51,7 +50,6 @@ app.use('/configuracion', express.static(path.join(__dirname, '../core/configura
 app.use('/pdfs',          express.static(path.join(__dirname, '../modulos/facturacion/storage/facturas')));
 
 require('../modulos/facturacion/backend/scheduler');
-require('../modulos/causas/backend/scheduler');
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
