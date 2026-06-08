@@ -154,10 +154,18 @@ async function irAPaginaSiguiente(page) {
 
 // ── Función principal exportable ──────────────────────────────────────────────
 
-// limite: máximo de filas a examinar en total (útil para pruebas). null = sin límite.
+// limite: número máximo de filas a guardar (solo modo manual). null = modo automático.
+// Modo automático: para al encontrar la primera notificación ya registrada.
+// Modo manual (limite != null): recorre hasta guardar `limite` filas sin parar por duplicados.
 async function obtenerNotificacionesPJN({ headless = true, limite = null } = {}) {
+  const modoAuto = limite === null;
+
   console.log('\n══ Scraper PJN ═══════════════════════════════════════════════');
-  if (limite) console.log(`  Modo prueba: límite de ${limite} notificación(es)\n`);
+  if (modoAuto) {
+    console.log('  Modo: automático (para al encontrar la última registrada)\n');
+  } else {
+    console.log(`  Modo: manual — límite de ${limite} notificación(es)\n`);
+  }
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext();
@@ -184,11 +192,9 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
 
     console.log('\n4. Procesando notificaciones...');
 
-    let pagina     = 1;
-    let nuevas     = 0;
-    let omitidas   = 0;
-    let examinadas = 0;
-    let detener    = false;
+    let pagina  = 1;
+    let nuevas  = 0;
+    let detener = false;
 
     while (!detener) {
       console.log(`\n  ── Página ${pagina} ───────────────────────────────────────`);
@@ -196,14 +202,16 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
       console.log(`  ${filas.length} fila(s) encontradas`);
 
       for (const fila of filas) {
-        if (limite !== null && examinadas >= limite) { detener = true; break; }
-        examinadas++;
-
         if (!fila.numero) continue;
 
         if (yaExiste(fila.numero)) {
+          if (modoAuto) {
+            // Llegamos a la última ya registrada: todo lo siguiente también existe
+            console.log(`  [>>] ${fila.numero}  última registrada → deteniendo`);
+            detener = true;
+            break;
+          }
           console.log(`  [--] ${fila.numero}  ya existe`);
-          omitidas++;
           continue;
         }
 
@@ -219,6 +227,12 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
 
         console.log(`  [OK] ${fila.numero}  ${numero_expediente ?? '-'}  ${fila.fecha_envio}`);
         nuevas++;
+
+        if (!modoAuto && nuevas >= limite) {
+          console.log(`  Límite de ${limite} alcanzado`);
+          detener = true;
+          break;
+        }
       }
 
       if (detener) break;
@@ -229,7 +243,7 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
     }
 
     console.log('\n══ Resultado ═════════════════════════════════════════════════');
-    console.log(`  ${nuevas} nueva(s) · ${omitidas} ya existían`);
+    console.log(`  ${nuevas} nueva(s)`);
     return nuevas;
 
   } finally {
