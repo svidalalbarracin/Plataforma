@@ -1,5 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
-const { obtenerNotificacionesPJN } = require('./scrapers/pjn');
+const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
+const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
 
 const INTERVALO_MIN = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
 
@@ -8,6 +9,12 @@ async function ejecutarScrapers() {
     await obtenerNotificacionesPJN();
   } catch (err) {
     console.error(`[${new Date().toISOString()}] [causas/pjn] Error:`, err.message);
+  }
+
+  try {
+    await obtenerNotificacionesSICNEA();
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] [causas/sicnea] Error:`, err.message);
   }
 }
 
