@@ -173,6 +173,20 @@ db.exec(`
     key   TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS notificaciones_sicnea (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero        TEXT    NOT NULL UNIQUE,
+    aduana        TEXT,
+    dependencia   TEXT,
+    razon_social  TEXT,
+    motivo        TEXT,
+    documento_ref TEXT,
+    fecha_alta    TEXT,
+    estado        TEXT,
+    leida         INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 module.exports = db;
