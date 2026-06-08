@@ -18,7 +18,7 @@
     <a href="pendientes.html">Pendientes</a>
     <a href="notificaciones.html" class="active">
       Notificaciones
-      <span class="navbar-badge navbar-badge-danger" id="badge-notif">3</span>
+      <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
     </a>
     <a href="causas.html">Causas</a>
   </div>
@@ -29,9 +29,13 @@
 <div class="container">
   <div class="page-header">
     <h1 class="page-title">Notificaciones</h1>
-    <button class="btn btn-ghost btn-sm" id="btn-marcar-todas" onclick="marcarTodasLeidas()">
-      Marcar todas como leídas
-    </button>
+    <div class="flex gap-2 items-center flex-wrap">
+      <input type="number" id="inp-limite" min="1" placeholder="Límite (opcional)"
+             style="width:9rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:.875rem">
+      <button class="btn btn-ghost btn-sm" id="btn-ejecutar" onclick="ejecutarScraper()">↻ Actualizar ahora</button>
+      <span id="scraper-estado" class="text-muted" style="font-size:.8125rem"></span>
+      <button class="btn btn-ghost btn-sm" onclick="marcarTodasLeidas()">Marcar todas como leídas</button>
+    </div>
   </div>
 
   <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px,1fr))">
@@ -68,17 +72,15 @@
 <script src="js/causas.js"></script>
 <script src="/js/layout.js"></script>
 <script>
-  let filtroActivo = 'todas';
+  let notificaciones = [];
+  let filtroActivo   = 'todas';
 
-  function actualizarContadores() {
-    const sinLeer = NOTIFICACIONES.filter(n => !n.leida).length;
-    const pjn     = NOTIFICACIONES.filter(n => n.origen === 'PJN').length;
-    const aduana  = NOTIFICACIONES.filter(n => n.origen === 'Aduana').length;
-
-    document.getElementById('stat-sin-leer').textContent = sinLeer;
-    document.getElementById('stat-pjn').textContent      = pjn;
-    document.getElementById('stat-aduana').textContent   = aduana;
-    document.getElementById('badge-notif').textContent   = sinLeer;
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => el.remove(), 3000);
   }
 
   function formatFechaNotif(iso) {
@@ -87,8 +89,25 @@
     return `${d}/${m}/${y}`;
   }
 
+  function origenBadge(origen) {
+    if (origen === 'PJN')    return '<span class="badge badge-tipo badge-tipo-pjn">PJN</span>';
+    if (origen === 'Aduana') return '<span class="badge badge-tipo badge-tipo-aduana">Aduana</span>';
+    return `<span class="badge badge-tipo">${origen}</span>`;
+  }
+
+  function actualizarContadores() {
+    const sinLeer = notificaciones.filter(n => !n.leida).length;
+    const pjn     = notificaciones.filter(n => n.origen === 'PJN').length;
+    const aduana  = notificaciones.filter(n => n.origen === 'Aduana').length;
+
+    document.getElementById('stat-sin-leer').textContent = sinLeer;
+    document.getElementById('stat-pjn').textContent      = pjn;
+    document.getElementById('stat-aduana').textContent   = aduana;
+    document.getElementById('badge-notif').textContent   = sinLeer || '';
+  }
+
   function renderNotificaciones(filtro) {
-    let lista = [...NOTIFICACIONES].sort((a, b) => b.fecha.localeCompare(a.fecha));
+    let lista = [...notificaciones].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
     if (filtro === 'sin-leer') lista = lista.filter(n => !n.leida);
     if (filtro === 'PJN')      lista = lista.filter(n => n.origen === 'PJN');
@@ -101,45 +120,49 @@
       return;
     }
 
-    el.innerHTML = lista.map(n => {
-      const causa      = CAUSAS.find(c => c.id === n.causaId);
-      const causaNombre = causa ? causa.expediente : '—';
-      const origenBadge = n.origen === 'PJN'
-        ? '<span class="badge badge-tipo badge-tipo-pjn">PJN</span>'
-        : '<span class="badge badge-tipo badge-tipo-aduana">Aduana</span>';
-
-      return `
-        <div class="notif-item ${n.leida ? 'leida' : 'no-leida'}">
-          <div class="notif-indicador ${n.leida ? '' : 'activo'}"></div>
-          <div class="notif-body">
-            <div class="notif-top">
-              <span class="notif-causa">${causaNombre}</span>
-              ${origenBadge}
-              <span class="notif-fecha">${formatFechaNotif(n.fecha)}</span>
-            </div>
-            <div class="notif-desc">${n.descripcion}</div>
+    el.innerHTML = lista.map(n => `
+      <div class="notif-item ${n.leida ? 'leida' : 'no-leida'}">
+        <div class="notif-indicador ${n.leida ? '' : 'activo'}"></div>
+        <div class="notif-body">
+          <div class="notif-top">
+            <span class="notif-causa">${n.expediente || n.numero || '—'}</span>
+            ${origenBadge(n.origen)}
+            <span class="notif-fecha">${formatFechaNotif(n.fecha)}</span>
           </div>
-          <div class="notif-acciones">
-            ${!n.leida ? `<button class="btn btn-ghost btn-sm" onclick="marcarLeida(${n.id})">Marcar leída</button>` : '<span class="text-muted" style="font-size:.8125rem">Leída</span>'}
-          </div>
-        </div>`;
-    }).join('');
+          <div class="notif-desc">${n.caratula || n.autor || '—'}</div>
+        </div>
+        <div class="notif-acciones">
+          ${!n.leida
+            ? `<button class="btn btn-ghost btn-sm" onclick="marcarLeida(${n.id})">Marcar leída</button>`
+            : '<span class="text-muted" style="font-size:.8125rem">Leída</span>'}
+        </div>
+      </div>`
+    ).join('');
   }
 
-  function marcarLeida(id) {
-    const n = NOTIFICACIONES.find(x => x.id === id);
-    if (!n) return;
-    n.leida = true;
-    actualizarContadores();
-    renderNotificaciones(filtroActivo);
-    toast('Marcada como leída', 'success');
+  async function marcarLeida(id) {
+    try {
+      await fetch(`/api/causas/notificaciones/${id}/leida`, { method: 'PATCH' });
+      const n = notificaciones.find(x => x.id === id);
+      if (n) n.leida = true;
+      actualizarContadores();
+      renderNotificaciones(filtroActivo);
+      toast('Marcada como leída', 'success');
+    } catch (e) {
+      toast('Error al marcar como leída', 'error');
+    }
   }
 
-  function marcarTodasLeidas() {
-    NOTIFICACIONES.forEach(n => n.leida = true);
-    actualizarContadores();
-    renderNotificaciones(filtroActivo);
-    toast('Todas marcadas como leídas', 'success');
+  async function marcarTodasLeidas() {
+    try {
+      await fetch('/api/causas/notificaciones/marcar-todas', { method: 'PATCH' });
+      notificaciones.forEach(n => n.leida = true);
+      actualizarContadores();
+      renderNotificaciones(filtroActivo);
+      toast('Todas marcadas como leídas', 'success');
+    } catch (e) {
+      toast('Error al marcar como leídas', 'error');
+    }
   }
 
   document.querySelectorAll('.filter-tab').forEach(btn => {
@@ -151,16 +174,54 @@
     });
   });
 
-  function toast(msg, tipo = 'success') {
-    const el = document.createElement('div');
-    el.className = `toast toast-${tipo}`;
-    el.textContent = msg;
-    document.getElementById('toast-container').appendChild(el);
-    setTimeout(() => el.remove(), 3000);
+  async function ejecutarScraper() {
+    const limite = parseInt(document.getElementById('inp-limite').value) || null;
+    const btn    = document.getElementById('btn-ejecutar');
+    const estado = document.getElementById('scraper-estado');
+
+    btn.disabled    = true;
+    btn.textContent = '↻ Ejecutando…';
+    estado.textContent = '';
+
+    try {
+      const res  = await fetch('/api/causas/notificaciones/ejecutar', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(limite ? { limite } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+
+      estado.textContent = `${data.nuevas} nueva(s)`;
+      notificaciones = await fetch('/api/causas/notificaciones').then(r => r.json());
+      actualizarContadores();
+      renderNotificaciones(filtroActivo);
+      toast(`${data.nuevas} notificación(es) nueva(s)`, 'success');
+    } catch (e) {
+      estado.textContent = 'Error';
+      toast('Error al ejecutar el scraper', 'error');
+      console.error(e);
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = '↻ Actualizar ahora';
+    }
   }
 
-  actualizarContadores();
-  renderNotificaciones(filtroActivo);
+  async function init() {
+    document.getElementById('lista-notificaciones').innerHTML =
+      '<div class="empty">Cargando…</div>';
+    try {
+      notificaciones = await fetch('/api/causas/notificaciones').then(r => r.json());
+      actualizarContadores();
+      renderNotificaciones(filtroActivo);
+    } catch (e) {
+      document.getElementById('lista-notificaciones').innerHTML =
+        '<div class="empty">Error al cargar notificaciones</div>';
+      console.error(e);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>

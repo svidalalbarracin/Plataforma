@@ -593,6 +593,8 @@ textarea { resize: vertical; min-height: 100px; }
 .navbar-badge-danger  { background: rgba(220,38,38,.85);  color: #fff; }
 .navbar-badge-warning { background: rgba(217,119,6,.85);  color: #fff; }
 
+.navbar-badge:empty { display: none; }
+
 /* ── Navbar dropdown ─────────────────────────────── */
 .navbar-dropdown {
   position: relative;

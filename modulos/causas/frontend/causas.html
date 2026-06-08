@@ -18,7 +18,7 @@
     <a href="pendientes.html">Pendientes</a>
     <a href="notificaciones.html">
       Notificaciones
-      <span class="navbar-badge navbar-badge-danger" id="badge-notif">3</span>
+      <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
     </a>
     <a href="causas.html" class="active">Causas</a>
   </div>
@@ -98,6 +98,9 @@
 <script src="js/causas.js"></script>
 <script src="/js/layout.js"></script>
 <script>
+  let CAUSAS = [];
+  let filtroActivo = '';
+
   function toast(msg, tipo = 'success') {
     const el = document.createElement('div');
     el.className = `toast toast-${tipo}`;
@@ -110,17 +113,30 @@
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      filtroActivo = btn.dataset.filtro;
       const busqueda = (document.getElementById('buscador')?.value ?? '').trim();
-      renderTabla(filtrarCausas(CAUSAS, btn.dataset.filtro, busqueda));
-      const titulo = btn.dataset.filtro === '' ? 'Todas las causas' : btn.textContent.trim();
+      renderTabla(filtrarCausas(CAUSAS, filtroActivo, busqueda));
+      const titulo = filtroActivo === '' ? 'Todas las causas' : btn.textContent.trim();
       document.getElementById('titulo-seccion').textContent = titulo;
     });
   });
 
   document.getElementById('buscador').addEventListener('input', e => {
-    const filtroActivo = document.querySelector('.filter-tab.active')?.dataset.filtro ?? '';
     renderTabla(filtrarCausas(CAUSAS, filtroActivo, e.target.value.trim()));
   });
+
+  async function init() {
+    renderTabla([]);
+    try {
+      const notifs = await fetch('/api/causas/notificaciones').then(r => r.json());
+      const sinLeer = notifs.filter(n => !n.leida).length;
+      actualizarMetricas(CAUSAS, sinLeer);
+    } catch (e) {
+      console.error('Error cargando notificaciones:', e);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>

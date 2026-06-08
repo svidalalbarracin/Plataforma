@@ -17,7 +17,7 @@
     <a href="causas.html">Todas</a>
     <a href="causas.html?nav=notificaciones">
       Notificaciones
-      <span class="navbar-badge navbar-badge-danger">3</span>
+      <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
     </a>
     <a href="causas.html?nav=vencimientos">
       Vencimientos
@@ -169,6 +169,8 @@
 
 <script src="js/causas.js"></script>
 <script>
+  let CAUSAS = [];
+
   // ── Datos de detalle de ejemplo ───────────────────
   const DETALLES = {
     1: {

@@ -18,7 +18,7 @@
     <a href="pendientes.html">Pendientes</a>
     <a href="notificaciones.html">
       Notificaciones
-      <span class="navbar-badge navbar-badge-danger" id="badge-notif">3</span>
+      <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
     </a>
     <a href="causas.html">Causas</a>
   </div>
@@ -63,6 +63,11 @@
 <script src="js/causas.js"></script>
 <script src="/js/layout.js"></script>
 <script>
+  let CAUSAS     = [];
+  let PENDIENTES = (() => {
+    try { return JSON.parse(localStorage.getItem('causas_pendientes') || '[]'); } catch { return []; }
+  })();
+
   const DIAS_NOMBRE = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
   const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                         'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
