@@ -192,9 +192,10 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
 
     console.log('\n4. Procesando notificaciones...');
 
-    let pagina  = 1;
-    let nuevas  = 0;
-    let detener = false;
+    let pagina    = 1;
+    let nuevas    = 0;
+    let examinadas = 0;
+    let detener   = false;
 
     while (!detener) {
       console.log(`\n  ── Página ${pagina} ───────────────────────────────────────`);
@@ -212,6 +213,8 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
             break;
           }
           console.log(`  [--] ${fila.numero}  ya existe`);
+          examinadas++;
+          if (examinadas >= limite) { detener = true; break; }
           continue;
         }
 
@@ -227,9 +230,10 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
 
         console.log(`  [OK] ${fila.numero}  ${numero_expediente ?? '-'}  ${fila.fecha_envio}`);
         nuevas++;
+        examinadas++;
 
-        if (!modoAuto && nuevas >= limite) {
-          console.log(`  Límite de ${limite} alcanzado`);
+        if (examinadas >= limite) {
+          console.log(`  Límite de ${limite} examinadas alcanzado`);
           detener = true;
           break;
         }
