@@ -37,32 +37,36 @@ function parsearExpediente(texto) {
 // ── Login ─────────────────────────────────────────────────────────────────────
 
 async function login(page) {
-  console.log('  [PJN] Completando formulario de login...');
+  console.log('  Ingresando usuario...');
   await page.fill(
     'input[name="usuario"], input[id*="usuario"], input[placeholder*="suario"], input[type="text"]:first-of-type',
     process.env.PJN_USUARIO
   );
+  console.log('  Ingresando contraseña...');
   await page.fill(
     'input[name="clave"], input[name="password"], input[id*="clave"], input[id*="password"], input[type="password"]',
     process.env.PJN_CLAVE
   );
   await page.click('button[type="submit"], input[type="submit"]');
   await page.waitForLoadState('load');
-  console.log('  [PJN] Login enviado →', page.url());
+
+  if (!page.url().includes('recibidas')) {
+    throw new Error(`Login fallido. URL actual: ${page.url()}`);
+  }
+  console.log('  Login OK');
 }
 
 // ── Cambiar resultados por página ─────────────────────────────────────────────
 
 async function cambiarResultadosPorPagina(page, cantidad = 30) {
-  // Busca cualquier <select> que tenga opciones numéricas (10, 20, 30, 50...)
   const select = page.locator('select').filter({ hasText: /\b(10|20|30|50)\b/ }).first();
   if ((await select.count()) === 0) {
-    console.log('  [PJN] Selector de resultados por página no encontrado, usando default');
+    console.log('  Selector de resultados por página no encontrado, usando default');
     return;
   }
   await select.selectOption(String(cantidad));
   await page.waitForLoadState('load');
-  console.log(`  [PJN] Resultados por página: ${cantidad}`);
+  console.log(`  Resultados por página: ${cantidad}`);
 }
 
 // ── Extraer filas de la tabla ─────────────────────────────────────────────────
@@ -118,8 +122,8 @@ async function irAPaginaSiguiente(page) {
 
 // limite: máximo de filas a examinar en total (útil para pruebas). null = sin límite.
 async function obtenerNotificacionesPJN({ headless = true, limite = null } = {}) {
-  console.log('\n══ Scraper PJN — Notificaciones ══════════════════════════════');
-  if (limite) console.log(`  Modo prueba: límite de ${limite} notificación(es)`);
+  console.log('\n══ Scraper PJN ═══════════════════════════════════════════════');
+  if (limite) console.log(`  Modo prueba: límite de ${limite} notificación(es)\n`);
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext();
@@ -127,37 +131,44 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
   page.setDefaultTimeout(45000);
 
   try {
-    console.log('1. Navegando a notificaciones...');
+    console.log('1. Navegando al portal...');
     await page.goto(URL_NOTIFICACIONES, { waitUntil: 'load', timeout: 60000 });
+    console.log('  URL:', page.url());
 
     if (!page.url().includes('recibidas')) {
-      console.log('2. Redirigido a login...');
+      console.log('\n2. Login requerido...');
       await login(page);
-
-      if (!page.url().includes('recibidas')) {
-        console.log('  Navegando manualmente a recibidas post-login...');
-        await page.goto(URL_NOTIFICACIONES, { waitUntil: 'load', timeout: 60000 });
-      }
+    } else {
+      console.log('  Sesión activa, sin necesidad de login');
     }
 
-    console.log('  URL actual:', page.url());
+    console.log('\n3. Configurando vista...');
     await cambiarResultadosPorPagina(page, 30);
 
-    let pagina    = 1;
-    let nuevas    = 0;
+    console.log('\n4. Procesando notificaciones...');
+
+    let pagina     = 1;
+    let nuevas     = 0;
+    let omitidas   = 0;
     let examinadas = 0;
-    let detener   = false;
+    let detener    = false;
 
     while (!detener) {
-      console.log(`\n── Página ${pagina} ─────────────────────────────────────────`);
+      console.log(`\n  ── Página ${pagina} ───────────────────────────────────────`);
       const filas = await extraerFilas(page);
-      console.log(`  ${filas.length} notificación(es) en esta página`);
+      console.log(`  ${filas.length} fila(s) encontradas`);
 
       for (const fila of filas) {
         if (limite !== null && examinadas >= limite) { detener = true; break; }
         examinadas++;
 
-        if (!fila.numero || yaExiste(fila.numero)) continue;
+        if (!fila.numero) continue;
+
+        if (yaExiste(fila.numero)) {
+          console.log(`  [--] ${fila.numero}  ya existe`);
+          omitidas++;
+          continue;
+        }
 
         const { numero_expediente, caratula } = parsearExpediente(fila.expediente);
         guardar({
@@ -175,12 +186,13 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
 
       if (detener) break;
       if (!(await hayPaginaSiguiente(page))) break;
+      console.log('  Navegando a página siguiente...');
       await irAPaginaSiguiente(page);
       pagina++;
     }
 
     console.log('\n══ Resultado ═════════════════════════════════════════════════');
-    console.log(`  ${nuevas} notificación(es) nueva(s) guardadas`);
+    console.log(`  ${nuevas} nueva(s) · ${omitidas} ya existían`);
     return nuevas;
 
   } finally {

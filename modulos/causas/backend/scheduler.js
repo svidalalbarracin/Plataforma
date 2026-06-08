@@ -4,12 +4,10 @@ const { obtenerNotificacionesPJN } = require('./scrapers/pjn');
 const INTERVALO_MIN = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
 
 async function ejecutarScrapers() {
-  console.log(`[${new Date().toISOString()}] [causas] Ejecutando scrapers de notificaciones...`);
   try {
-    const nuevas = await obtenerNotificacionesPJN();
-    console.log(`[${new Date().toISOString()}] [causas] PJN: ${nuevas} notificación(es) nueva(s)`);
+    await obtenerNotificacionesPJN();
   } catch (err) {
-    console.error(`[${new Date().toISOString()}] [causas] Error PJN:`, err.message);
+    console.error(`[${new Date().toISOString()}] [causas/pjn] Error:`, err.message);
   }
 }
 
