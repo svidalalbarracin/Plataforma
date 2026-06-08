@@ -10,10 +10,12 @@ router.get('/', (req, res) => {
     ORDER BY fecha_envio DESC, id DESC
   `).all();
 
-  const metaAuto = db.prepare("SELECT value FROM scraper_meta WHERE key = 'pjn_ultima_auto'").get();
+  const metaAuto    = db.prepare("SELECT value FROM scraper_meta WHERE key = 'pjn_ultima_auto'").get();
+  const intervaloMin = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
 
   res.json({
-    ultima_auto: metaAuto?.value ?? null,
+    ultima_auto:   metaAuto?.value ?? null,
+    intervalo_min: intervaloMin,
     notificaciones: rows.map(r => ({
       id:           r.id,
       numero:       r.numero,

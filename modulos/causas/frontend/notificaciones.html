@@ -34,7 +34,7 @@
              style="width:9rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:.875rem">
       <button class="btn btn-ghost btn-sm" id="btn-ejecutar" onclick="ejecutarScraper()">↻ Actualizar ahora</button>
       <span id="scraper-estado" class="text-muted" style="font-size:.8125rem"></span>
-      <span class="text-muted" style="font-size:.8125rem">Auto: <span id="ultima-auto">—</span></span>
+      <span class="text-muted" style="font-size:.8125rem">Próxima auto: <span id="ultima-auto">—</span></span>
       <button class="btn btn-ghost btn-sm" onclick="marcarTodasLeidas()">Marcar todas como leídas</button>
     </div>
   </div>
@@ -73,9 +73,11 @@
 <script src="js/causas.js"></script>
 <script src="/js/layout.js"></script>
 <script>
-  let notificaciones = [];
-  let filtroActivo   = 'todas';
-  let ultimaAuto     = null;
+  let notificaciones  = [];
+  let filtroActivo    = 'todas';
+  let ultimaAuto      = null;
+  let intervaloMin    = 30;
+  let countdownTimer  = null;
 
   function toast(msg, tipo = 'success') {
     const el = document.createElement('div');
@@ -91,16 +93,26 @@
     return `${d}/${m}/${y}`;
   }
 
-  function formatUltimaAuto(iso) {
-    if (!iso) return 'Sin datos';
-    const d = new Date(iso);
-    return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-      + ' ' + d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-  }
-
-  function mostrarUltimaAuto() {
+  function iniciarCountdown() {
+    if (countdownTimer) clearInterval(countdownTimer);
     const el = document.getElementById('ultima-auto');
-    if (el) el.textContent = formatUltimaAuto(ultimaAuto);
+    if (!el) return;
+
+    function tick() {
+      if (!ultimaAuto) { el.textContent = '—'; return; }
+      const proxima = new Date(ultimaAuto).getTime() + intervaloMin * 60 * 1000;
+      const restMs  = proxima - Date.now();
+      if (restMs <= 0) {
+        el.textContent = 'ahora';
+        return;
+      }
+      const m = Math.floor(restMs / 60000);
+      const s = Math.floor((restMs % 60000) / 1000);
+      el.textContent = `en ${m}m ${String(s).padStart(2, '0')}s`;
+    }
+
+    tick();
+    countdownTimer = setInterval(tick, 1000);
   }
 
   function origenBadge(origen) {
@@ -209,8 +221,9 @@
       estado.textContent = `${data.nuevas} nueva(s)`;
       const resp = await fetch('/api/causas/notificaciones').then(r => r.json());
       notificaciones = resp.notificaciones;
-      ultimaAuto = resp.ultima_auto;
-      mostrarUltimaAuto();
+      ultimaAuto     = resp.ultima_auto;
+      intervaloMin   = resp.intervalo_min ?? 30;
+      iniciarCountdown();
       actualizarContadores();
       renderNotificaciones(filtroActivo);
       toast(`${data.nuevas} notificación(es) nueva(s)`, 'success');
@@ -230,8 +243,9 @@
     try {
       const resp = await fetch('/api/causas/notificaciones').then(r => r.json());
       notificaciones = resp.notificaciones;
-      ultimaAuto = resp.ultima_auto;
-      mostrarUltimaAuto();
+      ultimaAuto     = resp.ultima_auto;
+      intervaloMin   = resp.intervalo_min ?? 30;
+      iniciarCountdown();
       actualizarContadores();
       renderNotificaciones(filtroActivo);
     } catch (e) {
