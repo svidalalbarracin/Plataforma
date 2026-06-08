@@ -5,27 +5,26 @@ const db      = require('../../../../core/database');
 // GET /api/causas/notificaciones
 router.get('/', (req, res) => {
   const rows = db.prepare(`
-    SELECT id, numero, numero_expediente, caratula, autor, destinatario, fecha_envio, leida, created_at
+    SELECT id, numero, numero_expediente, caratula, autor, fecha_envio, leida
     FROM notificaciones_pjn
     ORDER BY fecha_envio DESC, id DESC
   `).all();
 
-  const metaAuto    = db.prepare("SELECT value FROM scraper_meta WHERE key = 'pjn_ultima_auto'").get();
+  const metaAuto     = db.prepare("SELECT value FROM scraper_meta WHERE key = 'pjn_ultima_auto'").get();
   const intervaloMin = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
 
   res.json({
-    ultima_auto:   metaAuto?.value ?? null,
-    intervalo_min: intervaloMin,
+    ultima_auto:    metaAuto?.value ?? null,
+    intervalo_min:  intervaloMin,
     notificaciones: rows.map(r => ({
-      id:           r.id,
-      numero:       r.numero,
-      expediente:   r.numero_expediente,
-      caratula:     r.caratula,
-      autor:        r.autor,
-      destinatario: r.destinatario,
-      fecha:        r.fecha_envio,
-      origen:       'PJN',
-      leida:        r.leida === 1,
+      id:         r.id,
+      numero:     r.numero,
+      expediente: r.numero_expediente,
+      caratula:   r.caratula,
+      autor:      r.autor,
+      fecha:      r.fecha_envio,
+      origen:     'PJN',
+      leida:      r.leida === 1,
     })),
   });
 });

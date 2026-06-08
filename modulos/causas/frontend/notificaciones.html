@@ -155,7 +155,8 @@
             ${origenBadge(n.origen)}
             <span class="notif-fecha">${formatFechaNotif(n.fecha)}</span>
           </div>
-          <div class="notif-desc">${n.caratula || n.autor || '—'}</div>
+          ${n.caratula ? `<div class="notif-desc">${n.caratula}</div>` : ''}
+          ${n.autor    ? `<div class="notif-autor">${n.autor}</div>`   : ''}
         </div>
         <div class="notif-acciones">
           ${!n.leida

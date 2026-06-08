@@ -10,11 +10,11 @@ function yaExiste(numero) {
   return !!db.prepare('SELECT id FROM notificaciones_pjn WHERE numero = ?').get(numero);
 }
 
-function guardar({ numero, numero_expediente, caratula, autor, destinatario, fecha_envio }) {
+function guardar({ numero, numero_expediente, caratula, autor, fecha_envio }) {
   db.prepare(`
-    INSERT INTO notificaciones_pjn (numero, numero_expediente, caratula, autor, destinatario, fecha_envio)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(numero, numero_expediente, caratula, autor, destinatario, fecha_envio);
+    INSERT INTO notificaciones_pjn (numero, numero_expediente, caratula, autor, fecha_envio)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(numero, numero_expediente, caratula, autor, fecha_envio);
 }
 
 function guardarMeta(key, value) {
@@ -227,9 +227,8 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
           numero: fila.numero,
           numero_expediente,
           caratula,
-          autor:        fila.autor        || null,
-          destinatario: fila.destinatario || null,
-          fecha_envio:  isoFecha(fila.fecha_envio),
+          autor:       fila.autor || null,
+          fecha_envio: isoFecha(fila.fecha_envio),
         });
 
         console.log(`  [OK] ${fila.numero}  ${numero_expediente ?? '-'}  ${fila.fecha_envio}`);

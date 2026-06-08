@@ -1123,6 +1123,12 @@ html.dark .cal-mes-celda.es-hoy   { background: #1a2f55; }
   line-height: 1.5;
 }
 
+.notif-autor {
+  font-size: .8125rem;
+  color: var(--text-muted);
+  margin-top: .15rem;
+}
+
 .notif-acciones {
   flex-shrink: 0;
   display: flex;
