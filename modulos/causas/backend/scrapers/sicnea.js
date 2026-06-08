@@ -8,11 +8,12 @@ function yaExiste(numero) {
   return !!db.prepare('SELECT id FROM notificaciones_sicnea WHERE numero = ?').get(numero);
 }
 
-function guardar({ numero, aduana, dependencia, razon_social, motivo, documento_ref, fecha_alta, estado }) {
+function guardar({ numero, cuit, razon_social, motivo, fecha_envio, fecha_vencimiento, estado }) {
   db.prepare(`
-    INSERT INTO notificaciones_sicnea (numero, aduana, dependencia, razon_social, motivo, documento_ref, fecha_alta, estado)
+    INSERT INTO notificaciones_sicnea
+      (numero, aduana, dependencia, razon_social, motivo, documento_ref, fecha_alta, estado)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(numero, aduana, dependencia, razon_social, motivo, documento_ref, fecha_alta, estado);
+  `).run(numero, null, null, razon_social, motivo, cuit, fecha_envio, estado || 'ENVIADA');
 }
 
 function guardarMeta(key, value) {
@@ -21,162 +22,87 @@ function guardarMeta(key, value) {
 
 function isoFecha(str) {
   if (!str) return null;
-  const s = str.trim();
-  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const m = str.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  return s || null;
+  return str.trim() || null;
 }
 
-// Extrae el valor de un campo de un popup AFIP buscando etiquetas conocidas
-// en tablas de dos columnas (label | valor)
-function extraerCampo(texto, etiquetas) {
-  for (const etiq of etiquetas) {
-    const re = new RegExp(etiq + '[:\\s]*([^\\n\\r]{1,120})', 'i');
-    const m = texto.match(re);
-    if (m) return m[1].trim() || null;
-  }
-  return null;
-}
-
-// ── Login AFIP / Clave Fiscal ─────────────────────────────────────────────────
+// ── Login AFIP ────────────────────────────────────────────────────────────────
 
 async function login(context) {
   const page = await context.newPage();
   page.setDefaultTimeout(60000);
-
-  console.log('  Navegando a afip.gob.ar...');
-  await page.goto('https://www.afip.gob.ar/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-  let authPage;
-  try {
-    [authPage] = await Promise.all([
-      context.waitForEvent('page', { timeout: 20000 }),
-      page.locator('a:has-text("Ingresar con Clave Fiscal"), a:has-text("ingresar")').first().click(),
-    ]);
-  } catch {
-    console.log('  Fallback: navegando directo al login...');
-    await page.goto('https://auth.afip.gob.ar/contribuyente_/login.xhtml', { waitUntil: 'networkidle', timeout: 60000 });
-    authPage = page;
-  }
-
-  authPage.setDefaultTimeout(60000);
-  await authPage.waitForLoadState('networkidle');
-
-  console.log('  Ingresando CUIT...');
-  await authPage.fill('[id="F1:username"]', process.env.CUIT);
-  await authPage.click('[id="F1:btnSiguiente"]');
-  await authPage.waitForLoadState('networkidle');
-
-  console.log('  Ingresando clave fiscal...');
-  await authPage.fill('[id="F1:password"]', process.env.CLAVE_FISCAL);
-  await authPage.click('[id="F1:btnIngresar"]');
-  await authPage.waitForLoadState('networkidle');
-
-  if (!authPage.url().includes('portalcf')) {
-    throw new Error(`Login fallido. URL actual: ${authPage.url()}`);
-  }
-  console.log('  Login OK →', authPage.url());
-  return authPage;
+  await page.goto('https://auth.afip.gob.ar/contribuyente_/login.xhtml', { waitUntil: 'networkidle', timeout: 60000 });
+  await page.fill('[id="F1:username"]', process.env.CUIT);
+  await page.click('[id="F1:btnSiguiente"]');
+  await page.waitForLoadState('networkidle');
+  await page.fill('[id="F1:password"]', process.env.CLAVE_FISCAL);
+  await page.click('[id="F1:btnIngresar"]');
+  await page.waitForLoadState('networkidle');
+  if (!page.url().includes('portalcf')) throw new Error(`Login fallido. URL: ${page.url()}`);
+  console.log('  Login OK');
+  return page;
 }
 
-// ── Abrir SICNEA Abogados (abre popup desde el portal) ───────────────────────
+// ── Abrir SICNEA y llegar al frameset principal ───────────────────────────────
 
 async function abrirSICNEA(context, portalPage) {
-  console.log('  Buscando "SICNEA Abogados" en el portal...');
+  const popups = [];
+  context.on('page', p => popups.push(p));
 
-  const [sicneaPopup] = await Promise.all([
-    context.waitForEvent('page', { timeout: 30000 }),
-    portalPage.locator('text=SICNEA Abogados').first().click(),
-  ]);
+  await portalPage.locator('text=SICNEA Abogados').first().click();
+  await new Promise(r => setTimeout(r, 10000));
 
-  sicneaPopup.setDefaultTimeout(90000);
-  await sicneaPopup.waitForLoadState('networkidle', { timeout: 90000 });
-  console.log('  Popup SICNEA abierto:', sicneaPopup.url());
-  return sicneaPopup;
+  // El segundo popup es mgenEntradaUsuarioExterno.aspx (abierto automáticamente)
+  const usuarioPage = popups.find(p => p.url().includes('UsuarioExterno')) ?? popups[popups.length - 1];
+  if (!usuarioPage) throw new Error('No se abrió popup de SICNEA');
+
+  usuarioPage.setDefaultTimeout(120000);
+  await usuarioPage.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+  console.log('  Popup:', usuarioPage.url());
+
+  await usuarioPage.click('input#cmdAceptar');
+  await new Promise(r => setTimeout(r, 5000));
+  await usuarioPage.waitForLoadState('networkidle', { timeout: 90000 }).catch(() => {});
+  await new Promise(r => setTimeout(r, 3000));
+  console.log('  Frameset cargado');
+
+  return usuarioPage;
 }
 
-// ── Ingresar con el usuario ───────────────────────────────────────────────────
+// ── Navegar a Bandeja de Entrada ──────────────────────────────────────────────
 
-async function ingresarConUsuario(context, sicneaPopup) {
-  console.log('  Haciendo click en "Ingresar"...');
+async function irABandeja(mainPage) {
+  const inicioFrame = mainPage.frames().find(f => f.url().includes('mgenInicioGen') || f.url().includes('mgenMarcoPpal'));
+  if (!inicioFrame) throw new Error('No se encontró frame de contenido');
 
-  // Puede abrir otro popup o navegar en el mismo
-  let targetPage;
-  try {
-    [targetPage] = await Promise.all([
-      context.waitForEvent('page', { timeout: 15000 }),
-      sicneaPopup.locator('a:has-text("Ingresar"), button:has-text("Ingresar"), input[value*="ngresar"]').first().click(),
-    ]);
-    targetPage.setDefaultTimeout(90000);
-    await targetPage.waitForLoadState('networkidle', { timeout: 90000 });
-  } catch {
-    // No abrió nuevo popup — navegó en la misma página
-    await sicneaPopup.locator('a:has-text("Ingresar"), button:has-text("Ingresar"), input[value*="ngresar"]').first().click({ timeout: 30000 });
-    await sicneaPopup.waitForLoadState('networkidle', { timeout: 90000 });
-    targetPage = sicneaPopup;
-  }
-
-  console.log('  Dentro de SICNEA:', targetPage.url());
-  return targetPage;
+  const url = 'https://serviciosadu2.afip.gob.ar/DIAV2/Sicnea.Web/Sicnea.WebApp/formularios/csicneaAboBandejaEntrada.aspx';
+  const resp = await inicioFrame.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+  if (!resp || resp.status() >= 400) throw new Error(`BandejaEntrada devolvió status ${resp?.status()}`);
+  console.log('  Bandeja cargada:', inicioFrame.url());
+  return inicioFrame;
 }
 
-// ── Navegar a Consultas (hover sobre el menú) ─────────────────────────────────
+// ── Extraer filas de la tabla ─────────────────────────────────────────────────
 
-async function irAConsultas(page) {
-  console.log('  Abriendo menú...');
+async function extraerFilas(frame) {
+  // Esperar que la tabla tenga al menos una fila de datos
+  await frame.waitForSelector('table tbody tr', { timeout: 30000 }).catch(() => {});
 
-  // Pasar el mouse por encima del ítem de menú que contiene "Consultas"
-  const menuContenedor = page.locator([
-    'nav li:has(a:has-text("Consultas"))',
-    'ul li:has(a:has-text("Consultas"))',
-    '[class*="menu"] li:has(a:has-text("Consultas"))',
-    'td:has(a:has-text("Consultas"))',
-  ].join(', ')).first();
-
-  if (await menuContenedor.count() > 0) {
-    await menuContenedor.hover({ timeout: 15000 });
-    await page.waitForTimeout(800);
-  }
-
-  console.log('  Haciendo click en "Consultas"...');
-  await page.locator('a:has-text("Consultas")').first().click({ timeout: 30000 });
-  await page.waitForLoadState('networkidle', { timeout: 90000 });
-  console.log('  En Consultas:', page.url());
-}
-
-// ── Buscar con filtros vacíos ─────────────────────────────────────────────────
-
-async function buscar(page) {
-  console.log('  Ejecutando búsqueda con filtros vacíos...');
-
-  await page.locator([
-    'input[type="submit"][value*="uscar"]',
-    'button:has-text("Buscar")',
-    'input[value="Buscar"]',
-    'a:has-text("Buscar")',
-  ].join(', ')).first().click({ timeout: 30000 });
-
-  // SICNEA es lento — esperar con timeout generoso
-  await page.waitForLoadState('networkidle', { timeout: 120000 });
-  console.log('  Búsqueda completada');
-}
-
-// ── Extraer filas visibles de la tabla ───────────────────────────────────────
-
-async function extraerFilas(page) {
-  await page.waitForSelector('table tbody tr', { timeout: 60000 });
-
-  return page.evaluate(() => {
+  return frame.evaluate(() => {
     const filas = [];
     document.querySelectorAll('table tbody tr').forEach(tr => {
-      const celdas = [...tr.querySelectorAll('td')].map(td => td.innerText.trim());
-      // Necesitamos al menos número, motivo, fecha, estado; ignorar filas vacías/header
-      if (celdas.length >= 4 && celdas[0]) {
+      const celdas = [...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\s+/g, ' ').trim());
+      // Columnas: [0]=numero [1]=cuit [2]=razon_social [3]=motivo [4]=enviada [5]=vencimiento [6]=notif_auto [7]=Ver
+      // Los números de notificación tienen formato: YYNNNNOTINNNNNNX (ej: 23001NOTI128511P)
+      if (celdas.length >= 6 && /^\d{5}NOTI/i.test(celdas[0])) {
         filas.push({
-          numero:      celdas[0],
-          motivo:      celdas[1] || null,
-          fecha_notif: celdas[2] || null,
-          estado:      celdas[3] || null,
+          numero:             celdas[0],
+          cuit:               celdas[1] || null,
+          razon_social:       celdas[2] || null,
+          motivo:             celdas[3] || null,
+          fecha_envio:        celdas[4] || null,
+          fecha_vencimiento:  celdas[5] || null,
         });
       }
     });
@@ -184,83 +110,32 @@ async function extraerFilas(page) {
   });
 }
 
-// ── Extraer detalle desde el popup "Ver" ─────────────────────────────────────
-
-async function extraerDetalle(page, context, numero) {
-  // Buscar el botón/link "Ver" en la fila que corresponde al número
-  const verBtn = page.locator([
-    `tr:has-text("${numero}") a:has-text("Ver")`,
-    `tr:has-text("${numero}") button:has-text("Ver")`,
-    `tr:has-text("${numero}") input[value="Ver"]`,
-  ].join(', ')).first();
-
-  let detallePage;
-  let esPopup = false;
-
-  try {
-    [detallePage] = await Promise.all([
-      context.waitForEvent('page', { timeout: 20000 }),
-      verBtn.click(),
-    ]);
-    esPopup = true;
-    detallePage.setDefaultTimeout(90000);
-    await detallePage.waitForLoadState('networkidle', { timeout: 90000 });
-  } catch {
-    // No abrió popup — puede navegar en la misma página
-    await verBtn.click({ timeout: 30000 });
-    await page.waitForLoadState('networkidle', { timeout: 90000 });
-    detallePage = page;
-  }
-
-  const texto = await detallePage.evaluate(() => document.body.innerText);
-
-  const detalle = {
-    numero:       extraerCampoLocal('número|numero|nro\\.?\\s*notif', texto),
-    aduana:       extraerCampoLocal('aduana', texto),
-    dependencia:  extraerCampoLocal('dependencia', texto),
-    razon_social: extraerCampoLocal('razón social|razon social|denominación|razón', texto),
-    motivo:       extraerCampoLocal('motivo', texto),
-    documento_ref:extraerCampoLocal('documento ref|doc\\.?\\s*ref|documento', texto),
-    fecha_alta:   extraerCampoLocal('fecha de alta|fecha alta', texto),
-    estado:       extraerCampoLocal('estado', texto),
-  };
-
-  function extraerCampoLocal(patron, txt) {
-    const re = new RegExp('(?:' + patron + ')[:\\s]+([^\\n\\r]{1,120})', 'i');
-    const m = txt.match(re);
-    return m ? m[1].trim() || null : null;
-  }
-
-  if (esPopup) {
-    await detallePage.close();
-  }
-
-  return detalle;
-}
-
 // ── Paginación ────────────────────────────────────────────────────────────────
 
-const SELECTOR_SIGUIENTE_SICNEA = [
-  'a:has-text("Siguiente")',
-  'button:has-text("Siguiente")',
-  'input[value="Siguiente"]',
-  'a[rel="next"]',
-].join(', ');
-
-async function hayPaginaSiguiente(page) {
-  const btn = page.locator(SELECTOR_SIGUIENTE_SICNEA);
-  if ((await btn.count()) === 0) return false;
-  const inhabilitado = await btn.first().evaluate(el =>
-    el.disabled ||
-    el.classList.contains('disabled') ||
-    el.getAttribute('disabled') !== null
-  ).catch(() => false);
-  return !inhabilitado;
+async function hayPaginaSiguiente(frame) {
+  const info = await frame.evaluate(() => {
+    const pagina = parseInt(document.getElementById('txtNroPagina')?.value, 10);
+    const total  = parseInt(document.getElementById('txtCantPaginas')?.value, 10);
+    if (!pagina || !total || isNaN(pagina) || isNaN(total)) return null;
+    return { pagina, total };
+  });
+  if (!info || info.pagina >= info.total) return false;
+  // Verificar que el botón siguiente existe y está habilitado
+  const btn = frame.locator('input[name="btnSiguiente"], input[value="Siguiente"], a:has-text("Siguiente")').first();
+  if (await btn.count() === 0) return false;
+  const disabled = await btn.evaluate(el => el.disabled || el.classList.contains('disabled')).catch(() => true);
+  return !disabled;
 }
 
-async function irAPaginaSiguiente(page) {
-  await page.locator(SELECTOR_SIGUIENTE_SICNEA).first().click({ timeout: 30000 });
-  await page.waitForLoadState('networkidle', { timeout: 120000 });
+async function irAPaginaSiguiente(frame) {
+  // SICNEA usa PostBack vía hidden field txtNroPagina
+  await frame.evaluate(() => {
+    const n = document.getElementById('txtNroPagina');
+    if (n) n.value = String(parseInt(n.value, 10) + 1);
+  });
+  const btn = frame.locator('input[name="btnSiguiente"], input[value="Siguiente"], a:has-text("Siguiente")').first();
+  await btn.click({ timeout: 30000 });
+  await frame.waitForLoadState('networkidle', { timeout: 120000 });
 }
 
 // ── Función principal exportable ──────────────────────────────────────────────
@@ -269,43 +144,37 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
   const modoAuto = limite === null;
 
   console.log('\n══ Scraper SICNEA ════════════════════════════════════════════');
-  if (modoAuto) {
-    console.log('  Modo: automático (para al encontrar la última registrada)\n');
-  } else {
-    console.log(`  Modo: manual — límite de ${limite} notificación(es)\n`);
-  }
+  console.log(modoAuto
+    ? '  Modo: automático (para al encontrar la última registrada)'
+    : `  Modo: manual — límite de ${limite} notificación(es)`
+  );
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext();
-  context.setDefaultTimeout(90000);
+  context.setDefaultTimeout(120000);
 
   try {
-    console.log('1. Login en ARCA...');
+    console.log('\n1. Login ARCA...');
     const portalPage = await login(context);
 
-    console.log('\n2. Abriendo SICNEA Abogados...');
-    const sicneaPopup = await abrirSICNEA(context, portalPage);
+    console.log('\n2. Abriendo SICNEA...');
+    const mainPage = await abrirSICNEA(context, portalPage);
 
-    console.log('\n3. Ingresando con el usuario...');
-    const sicneaPage = await ingresarConUsuario(context, sicneaPopup);
+    console.log('\n3. Navegando a Bandeja de Entrada...');
+    const bandejaFrame = await irABandeja(mainPage);
 
-    console.log('\n4. Navegando a Consultas...');
-    await irAConsultas(sicneaPage);
-
-    console.log('\n5. Buscando notificaciones...');
-    await buscar(sicneaPage);
-
-    console.log('\n6. Procesando notificaciones...');
-
+    console.log('\n4. Procesando notificaciones...');
     let pagina    = 1;
     let nuevas    = 0;
     let examinadas = 0;
     let detener   = false;
 
     while (!detener) {
-      console.log(`\n  ── Página ${pagina} ───────────────────────────────────────`);
-      const filas = await extraerFilas(sicneaPage);
+      console.log(`\n  ── Página ${pagina} ──────────────────────────────────────`);
+      const filas = await extraerFilas(bandejaFrame);
       console.log(`  ${filas.length} fila(s) encontradas`);
+
+      if (filas.length === 0) break;
 
       for (const fila of filas) {
         const numero = fila.numero?.trim();
@@ -323,26 +192,17 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
           continue;
         }
 
-        console.log(`  [→]  ${numero}  abriendo detalle...`);
-        let detalle = {};
-        try {
-          detalle = await extraerDetalle(sicneaPage, context, numero);
-        } catch (e) {
-          console.warn(`  [warn] No se pudo obtener detalle de ${numero}: ${e.message}`);
-        }
-
         guardar({
           numero,
-          aduana:        detalle.aduana        || null,
-          dependencia:   detalle.dependencia   || null,
-          razon_social:  detalle.razon_social  || null,
-          motivo:        detalle.motivo        || fila.motivo || null,
-          documento_ref: detalle.documento_ref || null,
-          fecha_alta:    isoFecha(detalle.fecha_alta),
-          estado:        detalle.estado        || fila.estado || null,
+          cuit:              fila.cuit,
+          razon_social:      fila.razon_social,
+          motivo:            fila.motivo,
+          fecha_envio:       isoFecha(fila.fecha_envio),
+          fecha_vencimiento: isoFecha(fila.fecha_vencimiento),
+          estado:            'ENVIADA',
         });
 
-        console.log(`  [OK] ${numero}  ${detalle.aduana ?? '-'}  ${fila.fecha_notif ?? '-'}`);
+        console.log(`  [OK] ${numero}  ${fila.razon_social ?? '-'}  ${fila.fecha_envio ?? '-'}`);
         nuevas++;
         examinadas++;
 
@@ -354,9 +214,9 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
       }
 
       if (detener) break;
-      if (!(await hayPaginaSiguiente(sicneaPage))) break;
+      if (!(await hayPaginaSiguiente(bandejaFrame))) break;
       console.log('  Navegando a página siguiente...');
-      await irAPaginaSiguiente(sicneaPage);
+      await irAPaginaSiguiente(bandejaFrame);
       pagina++;
     }
 
@@ -365,7 +225,6 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
 
     console.log('\n══ Resultado ═════════════════════════════════════════════════');
     console.log(`  ${nuevas} nueva(s)`);
-    if (modoAuto) console.log(`  Última actualización automática: ${ahora}`);
     return nuevas;
 
   } finally {
@@ -375,9 +234,8 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
 
 module.exports = { obtenerNotificacionesSICNEA };
 
-// Ejecución directa: node sicnea.js
 if (require.main === module) {
-  obtenerNotificacionesSICNEA({ headless: false }).catch(e => {
+  obtenerNotificacionesSICNEA({ headless: true }).catch(e => {
     console.error('\nError fatal:', e.message);
     process.exit(1);
   });
