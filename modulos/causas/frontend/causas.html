@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Causas — Plataforma Memo</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="css/causas.css">
+</head>
+<body class="has-sidebar">
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">Causas</a>
+  <div class="navbar-links">
+    <a href="index.html">Calendario</a>
+    <a href="pendientes.html">Pendientes</a>
+    <a href="notificaciones.html">
+      Notificaciones
+      <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
+    </a>
+    <a href="causas.html" class="active">Causas</a>
+  </div>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h1 class="page-title" id="titulo-seccion">Todas las causas</h1>
+    <div class="flex gap-2">
+      <button class="btn btn-ghost btn-sm" onclick="toast('Importación desde Google Sheets próximamente', 'info')">
+        ↑ Importar desde Sheets
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="toast('Exportación próximamente', 'info')">
+        ↓ Exportar
+      </button>
+      <button class="btn btn-primary" onclick="toast('Alta de causas próximamente', 'info')">
+        + Nueva causa
+      </button>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total causas</div>
+      <div class="stat-value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Notificaciones sin leer</div>
+      <div class="stat-value is-danger" id="stat-notif">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Vencimientos próximos 7 días</div>
+      <div class="stat-value is-warning" id="stat-venc">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Sin movimiento +30 días</div>
+      <div class="stat-value is-muted" id="stat-sin-mov">—</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="quick-filters">
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filtro="">Todas</button>
+        <button class="filter-tab" data-filtro="tramite">En trámite</button>
+        <button class="filter-tab" data-filtro="cerrada">Cerradas</button>
+        <button class="filter-tab" data-filtro="vencimiento">Con vencimiento</button>
+        <button class="filter-tab" data-filtro="sin-movimiento">Sin movimiento</button>
+      </div>
+      <div class="search-box">
+        <input type="text" id="buscador" placeholder="Buscar por expediente o cliente…">
+      </div>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Expediente</th>
+            <th>Cliente / Carátula</th>
+            <th>Tribunal</th>
+            <th>Estado</th>
+            <th>Último movimiento</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="causas-body">
+          <tr><td colspan="6" class="empty">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="js/causas.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+  let CAUSAS = [];
+  let filtroActivo = '';
+
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  document.querySelectorAll('.filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filtroActivo = btn.dataset.filtro;
+      const busqueda = (document.getElementById('buscador')?.value ?? '').trim();
+      renderTabla(filtrarCausas(CAUSAS, filtroActivo, busqueda));
+      const titulo = filtroActivo === '' ? 'Todas las causas' : btn.textContent.trim();
+      document.getElementById('titulo-seccion').textContent = titulo;
+    });
+  });
+
+  document.getElementById('buscador').addEventListener('input', e => {
+    renderTabla(filtrarCausas(CAUSAS, filtroActivo, e.target.value.trim()));
+  });
+
+  async function init() {
+    renderTabla([]);
+    try {
+      const notifs = await fetch('/api/causas/notificaciones').then(r => r.json());
+      const sinLeer = notifs.filter(n => !n.leida).length;
+      actualizarMetricas(CAUSAS, sinLeer);
+    } catch (e) {
+      console.error('Error cargando notificaciones:', e);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
