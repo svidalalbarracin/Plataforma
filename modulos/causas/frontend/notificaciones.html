@@ -73,6 +73,17 @@
   </div>
 </div>
 
+<!-- Modal documentos -->
+<div id="modal-docs" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-box-header">
+      <span class="modal-box-titulo" id="modal-docs-titulo"></span>
+      <button class="modal-box-cerrar" id="modal-docs-cerrar">✕</button>
+    </div>
+    <div id="modal-docs-lista" class="doc-lista"></div>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 
 <script src="js/causas.js"></script>
@@ -294,15 +305,5 @@
   document.addEventListener('DOMContentLoaded', init);
 </script>
 
-<!-- Modal documentos -->
-<div id="modal-docs" class="modal-overlay">
-  <div class="modal-box">
-    <div class="modal-box-header">
-      <span class="modal-box-titulo" id="modal-docs-titulo"></span>
-      <button class="modal-box-cerrar" id="modal-docs-cerrar">✕</button>
-    </div>
-    <div id="modal-docs-lista" class="doc-lista"></div>
-  </div>
-</div>
 </body>
 </html>
