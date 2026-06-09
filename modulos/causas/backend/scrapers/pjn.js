@@ -1,8 +1,11 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env') });
 const { chromium } = require('playwright');
-const db = require('../../../../core/database');
+const path = require('path');
+const fs   = require('fs');
+const db   = require('../../../../core/database');
 
 const URL_NOTIFICACIONES = 'https://notif.pjn.gov.ar/recibidas';
+const STORAGE_DIR = path.join(__dirname, '../../storage/pjn/notificaciones');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -10,11 +13,11 @@ function yaExiste(numero) {
   return !!db.prepare('SELECT id FROM notificaciones_pjn WHERE numero = ?').get(numero);
 }
 
-function guardar({ numero, numero_expediente, caratula, autor, fecha_envio }) {
+function guardar({ numero, numero_expediente, caratula, autor, fecha_envio, archivo_path = null }) {
   db.prepare(`
-    INSERT INTO notificaciones_pjn (numero, numero_expediente, caratula, autor, fecha_envio)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(numero, numero_expediente, caratula, autor, fecha_envio);
+    INSERT INTO notificaciones_pjn (numero, numero_expediente, caratula, autor, fecha_envio, archivo_path)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(numero, numero_expediente, caratula, autor, fecha_envio, archivo_path);
 }
 
 function guardarMeta(key, value) {
@@ -94,7 +97,6 @@ async function cambiarResultadosPorPagina(page, cantidad = 30) {
     return;
   }
   await select.selectOption(String(cantidad));
-  // Esperar que la tabla recargue con la nueva cantidad
   await page.waitForFunction(() => !document.querySelector('table .MuiSkeleton-root'), { timeout: 30000 });
   console.log(`  Resultados por página: ${cantidad}`);
 }
@@ -102,7 +104,6 @@ async function cambiarResultadosPorPagina(page, cantidad = 30) {
 // ── Extraer filas de la tabla ─────────────────────────────────────────────────
 
 async function extraerFilas(page) {
-  // Esperar que los MuiSkeleton desaparezcan (tabla en estado de carga)
   await page.waitForFunction(
     () => !document.querySelector('table .MuiSkeleton-root'),
     { timeout: 30000 }
@@ -114,10 +115,11 @@ async function extraerFilas(page) {
 
     // Estructura PJN (8 columnas):
     // [0] icono | [1] número | [2] expediente | [3] autor | [4] destinatario | [5] fecha | [6][7] acciones
-    document.querySelectorAll('table tbody tr').forEach(tr => {
+    document.querySelectorAll('table tbody tr').forEach((tr, index) => {
       const celdas = [...tr.querySelectorAll('td')].map(td => limpiar(td.innerText));
       if (celdas.length >= 6 && /^\d+$/.test(celdas[1].replace(/\s/g, ''))) {
         filas.push({
+          rowIndex:     index,
           numero:       celdas[1].replace(/\s/g, ''),
           expediente:   celdas[2],
           autor:        celdas[3],
@@ -130,6 +132,56 @@ async function extraerFilas(page) {
   });
 }
 
+// ── Descargar adjunto de una fila ─────────────────────────────────────────────
+
+async function descargarAdjunto(page, rowIndex, numero) {
+  fs.mkdirSync(STORAGE_DIR, { recursive: true });
+
+  const filePath = path.join(STORAGE_DIR, `${numero}.pdf`);
+  if (fs.existsSync(filePath)) return filePath;
+
+  try {
+    const fila = page.locator('table tbody tr').nth(rowIndex);
+
+    // Selectores para botón de descarga en MUI/React
+    const selectores = [
+      '[aria-label*="escargar"]',
+      '[title*="escargar"]',
+      '[aria-label*="ownload"]',
+      'a[href*=".pdf"]',
+    ];
+
+    let clickTarget = null;
+    for (const sel of selectores) {
+      const el = fila.locator(sel);
+      if ((await el.count()) > 0) { clickTarget = el.first(); break; }
+    }
+
+    if (!clickTarget) {
+      // Fallback: último link o último botón de la fila
+      const links = fila.locator('a');
+      const btns  = fila.locator('button');
+      const linkCount = await links.count();
+      const btnCount  = await btns.count();
+      if (linkCount > 0)       clickTarget = links.last();
+      else if (btnCount > 0)   clickTarget = btns.last();
+      else { console.log(`  [!] Sin botón de descarga en fila ${rowIndex}`); return null; }
+    }
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 20000 }),
+      clickTarget.click(),
+    ]);
+    await download.saveAs(filePath);
+    console.log(`  [PDF] ${numero} → ${path.basename(filePath)}`);
+    return filePath;
+
+  } catch (e) {
+    console.log(`  [!] Descarga fallida para ${numero}: ${e.message}`);
+    return null;
+  }
+}
+
 // ── Paginación ────────────────────────────────────────────────────────────────
 
 const SELECTOR_SIGUIENTE = 'button[aria-label="Ir a la siguiente página del listado"]';
@@ -138,11 +190,9 @@ async function hayPaginaSiguiente(page) {
   const btn = page.locator(SELECTOR_SIGUIENTE);
   if ((await btn.count()) === 0) return false;
 
-  // MUI deshabilita via .disabled Y clase Mui-disabled
   const inhabilitado = await btn.evaluate(el => el.disabled || el.classList.contains('Mui-disabled'));
   if (inhabilitado) return false;
 
-  // Respaldo: texto de paginación "X–Y de Z" → si Y >= Z estamos en la última página
   const m = await page.evaluate(() =>
     document.body.innerText.match(/(\d+)[–\-](\d+)\s+de\s+(\d+)/)
   );
@@ -159,14 +209,15 @@ async function irAPaginaSiguiente(page) {
 // ── Función principal exportable ──────────────────────────────────────────────
 
 // limite: número máximo de filas a guardar (solo modo manual). null = modo automático.
-// Modo automático: para al encontrar la primera notificación ya registrada.
+// Modo automático: para al encontrar 3 notificaciones consecutivas ya registradas.
 // Modo manual (limite != null): recorre hasta guardar `limite` filas sin parar por duplicados.
 async function obtenerNotificacionesPJN({ headless = true, limite = null } = {}) {
   const modoAuto = limite === null;
+  const MAX_DUPLICADOS_CONSECUTIVOS = 3;
 
   console.log('\n══ Scraper PJN ═══════════════════════════════════════════════');
   if (modoAuto) {
-    console.log('  Modo: automático (para al encontrar la última registrada)\n');
+    console.log(`  Modo: automático (para al encontrar ${MAX_DUPLICADOS_CONSECUTIVOS} duplicados consecutivos)\n`);
   } else {
     console.log(`  Modo: manual — límite de ${limite} notificación(es)\n`);
   }
@@ -196,10 +247,11 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
 
     console.log('\n4. Procesando notificaciones...');
 
-    let pagina    = 1;
-    let nuevas    = 0;
-    let examinadas = 0;
-    let detener   = false;
+    let pagina                = 1;
+    let nuevas                = 0;
+    let examinadas            = 0;
+    let duplicadosConsecutivos = 0;
+    let detener               = false;
 
     while (!detener) {
       console.log(`\n  ── Página ${pagina} ───────────────────────────────────────`);
@@ -211,10 +263,14 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
 
         if (yaExiste(fila.numero)) {
           if (modoAuto) {
-            // Llegamos a la última ya registrada: todo lo siguiente también existe
-            console.log(`  [>>] ${fila.numero}  última registrada → deteniendo`);
-            detener = true;
-            break;
+            duplicadosConsecutivos++;
+            console.log(`  [--] ${fila.numero}  ya existe (${duplicadosConsecutivos}/${MAX_DUPLICADOS_CONSECUTIVOS})`);
+            if (duplicadosConsecutivos >= MAX_DUPLICADOS_CONSECUTIVOS) {
+              console.log(`  [>>] ${MAX_DUPLICADOS_CONSECUTIVOS} duplicados consecutivos → deteniendo`);
+              detener = true;
+              break;
+            }
+            continue;
           }
           console.log(`  [--] ${fila.numero}  ya existe`);
           examinadas++;
@@ -222,20 +278,26 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
           continue;
         }
 
+        // Notificación nueva: resetear contador y descargar adjunto
+        duplicadosConsecutivos = 0;
+
         const { numero_expediente, caratula } = parsearExpediente(fila.expediente);
+        const archivo_path = await descargarAdjunto(page, fila.rowIndex, fila.numero);
+
         guardar({
           numero: fila.numero,
           numero_expediente,
           caratula,
           autor:       fila.autor || null,
           fecha_envio: isoFecha(fila.fecha_envio),
+          archivo_path,
         });
 
         console.log(`  [OK] ${fila.numero}  ${numero_expediente ?? '-'}  ${fila.fecha_envio}`);
         nuevas++;
         examinadas++;
 
-        if (examinadas >= limite) {
+        if (limite !== null && examinadas >= limite) {
           console.log(`  Límite de ${limite} examinadas alcanzado`);
           detener = true;
           break;

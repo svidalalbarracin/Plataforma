@@ -2,10 +2,19 @@ const express = require('express');
 const router  = express.Router();
 const db      = require('../../../../core/database');
 
+function pathAUrl(p, base) {
+  if (!p) return null;
+  const normalized = p.replace(/\\/g, '/');
+  const match = normalized.match(new RegExp(`storage/${base}/(.+)$`));
+  if (!match) return null;
+  const segments = match[1].split('/');
+  return `/causas/storage/${base}/${segments.map(encodeURIComponent).join('/')}`;
+}
+
 // GET /api/causas/notificaciones
 router.get('/', (req, res) => {
   const pjn = db.prepare(`
-    SELECT id, numero, numero_expediente, caratula, autor, fecha_envio, leida
+    SELECT id, numero, numero_expediente, caratula, autor, fecha_envio, leida, archivo_path
     FROM notificaciones_pjn
     ORDER BY fecha_envio DESC, id DESC
   `).all();
@@ -25,35 +34,34 @@ router.get('/', (req, res) => {
   const intervaloMin = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
 
   const notificaciones = [
-    ...pjn.map(r => ({
-      id:         r.id,
-      numero:     r.numero,
-      expediente: r.numero_expediente,
-      caratula:   r.caratula,
-      autor:      r.autor,
-      fecha:      r.fecha_envio,
-      origen:     'PJN',
-      leida:      r.leida === 1,
-    })),
-    ...tad.map(r => {
-      const storageBase = '/causas/storage/tad';
-
-      const pathAUrl = (p) => {
-        if (!p) return null;
-        const match = p.match(/storage[\\/]tad[\\/](.+)$/);
-        return match ? `${storageBase}/${match[1].replace(/\\/g, '/')}` : null;
-      };
-
+    ...pjn.map(r => {
       const archivos = [];
       if (r.archivo_path) {
-        archivos.push({ nombre: 'Notificación', url: pathAUrl(r.archivo_path) });
+        archivos.push({ nombre: 'Notificación', url: pathAUrl(r.archivo_path, 'pjn') });
+      }
+      return {
+        id:         r.id,
+        numero:     r.numero,
+        expediente: r.numero_expediente,
+        caratula:   r.caratula,
+        autor:      r.autor,
+        fecha:      r.fecha_envio,
+        origen:     'PJN',
+        leida:      r.leida === 1,
+        archivos,
+      };
+    }),
+    ...tad.map(r => {
+      const archivos = [];
+      if (r.archivo_path) {
+        archivos.push({ nombre: 'Notificación', url: pathAUrl(r.archivo_path, 'tad') });
       }
       docsExternos
         .filter(d => d.numero_tramite === r.numero_tramite)
         .forEach(d => {
           const paths = JSON.parse(d.archivos_paths || '[]');
           paths.forEach((p, i) => {
-            archivos.push({ nombre: `Doc. Externo ${i + 1} (${d.fecha_envio || ''})`, url: pathAUrl(p) });
+            archivos.push({ nombre: `Doc. Externo ${i + 1} (${d.fecha_envio || ''})`, url: pathAUrl(p, 'tad') });
           });
         });
 
@@ -98,14 +106,14 @@ router.post('/ejecutar', async (req, res) => {
   }
 });
 
-// PATCH /api/causas/notificaciones/:id/leida
-// ?origen=PJN (default) | ?origen=SICNEA
+// PATCH /api/causas/notificaciones/:id/leida — alterna leida/no leida
 router.patch('/:id/leida', (req, res) => {
   const origen = req.query.origen || 'PJN';
   const table  = origen === 'TAD' ? 'notificaciones_tad' : 'notificaciones_pjn';
-  const result = db.prepare(`UPDATE ${table} SET leida = 1 WHERE id = ?`).run(req.params.id);
+  const result = db.prepare(`UPDATE ${table} SET leida = 1 - leida WHERE id = ?`).run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Notificación no encontrada' });
-  res.json({ ok: true });
+  const row = db.prepare(`SELECT leida FROM ${table} WHERE id = ?`).get(req.params.id);
+  res.json({ ok: true, leida: row.leida === 1 });
 });
 
 module.exports = router;

@@ -171,11 +171,12 @@
         </div>
         <div class="notif-acciones">
           ${n.archivos?.length
-            ? `<button class="btn btn-ghost btn-sm" onclick="verDocumentos(${n.id})">Ver</button>`
+            ? `<button class="btn-adjunto" onclick="verDocumentos(${n.id})" title="Ver adjuntos">${n.archivos.length} adj.</button>`
             : ''}
-          ${!n.leida
-            ? `<button class="btn btn-ghost btn-sm" onclick="marcarLeida(${n.id}, '${n.origen}')">Marcar leída</button>`
-            : '<span class="text-muted" style="font-size:.8125rem">Leída</span>'}
+          <button class="btn-toggle-leida ${n.leida ? 'es-leida' : ''}"
+                  onclick="marcarLeida(${n.id}, '${n.origen}')">
+            ${n.leida ? 'Desmarcar' : 'Marcar leída'}
+          </button>
         </div>
       </div>`
     ).join('');
@@ -183,14 +184,15 @@
 
   async function marcarLeida(id, origen = 'PJN') {
     try {
-      await fetch(`/api/causas/notificaciones/${id}/leida?origen=${origen}`, { method: 'PATCH' });
+      const res  = await fetch(`/api/causas/notificaciones/${id}/leida?origen=${origen}`, { method: 'PATCH' });
+      const data = await res.json();
       const n = notificaciones.find(x => x.id === id);
-      if (n) n.leida = true;
+      if (n) n.leida = data.leida;
       actualizarContadores();
       renderNotificaciones(filtroActivo);
-      toast('Marcada como leída', 'success');
+      toast(data.leida ? 'Marcada como leída' : 'Desmarcada', 'success');
     } catch (e) {
-      toast('Error al marcar como leída', 'error');
+      toast('Error al actualizar', 'error');
     }
   }
 
