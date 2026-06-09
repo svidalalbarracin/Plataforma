@@ -195,4 +195,30 @@ if (!sicneaCols.includes('fecha_vencimiento')) {
   db.exec('ALTER TABLE notificaciones_sicnea ADD COLUMN fecha_vencimiento TEXT');
 }
 
+// ── Causas — TAD ──────────────────────────────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS notificaciones_tad (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha          TEXT,
+    nombre         TEXT,
+    mensaje        TEXT,
+    numero_tramite TEXT    NOT NULL,
+    archivo_path   TEXT,
+    leida          INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS documentos_externos_tad (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_envio    TEXT,
+    nombre         TEXT,
+    numero_tramite TEXT    NOT NULL,
+    motivo         TEXT,
+    archivos_paths TEXT,
+    leida          INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
 module.exports = db;
