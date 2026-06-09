@@ -133,6 +133,8 @@ async function extraerFilas(page) {
 }
 
 // ── Descargar adjunto de una fila ─────────────────────────────────────────────
+// La columna Acciones (última) tiene dos botones; el primero es "Ver Notificacion"
+// que dispara la descarga del PDF.
 
 async function descargarAdjunto(page, rowIndex, numero) {
   fs.mkdirSync(STORAGE_DIR, { recursive: true });
@@ -141,36 +143,18 @@ async function descargarAdjunto(page, rowIndex, numero) {
   if (fs.existsSync(filePath)) return filePath;
 
   try {
-    const fila = page.locator('table tbody tr').nth(rowIndex);
+    const fila        = page.locator('table tbody tr').nth(rowIndex);
+    const ultimaCelda = fila.locator('td').last();
+    const btnVer      = ultimaCelda.locator('button').first();
 
-    // Selectores para botón de descarga en MUI/React
-    const selectores = [
-      '[aria-label*="escargar"]',
-      '[title*="escargar"]',
-      '[aria-label*="ownload"]',
-      'a[href*=".pdf"]',
-    ];
-
-    let clickTarget = null;
-    for (const sel of selectores) {
-      const el = fila.locator(sel);
-      if ((await el.count()) > 0) { clickTarget = el.first(); break; }
-    }
-
-    if (!clickTarget) {
-      // Fallback: último link o último botón de la fila
-      const links = fila.locator('a');
-      const btns  = fila.locator('button');
-      const linkCount = await links.count();
-      const btnCount  = await btns.count();
-      if (linkCount > 0)       clickTarget = links.last();
-      else if (btnCount > 0)   clickTarget = btns.last();
-      else { console.log(`  [!] Sin botón de descarga en fila ${rowIndex}`); return null; }
+    if ((await btnVer.count()) === 0) {
+      console.log(`  [!] Sin botón de descarga en fila ${rowIndex}`);
+      return null;
     }
 
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 20000 }),
-      clickTarget.click(),
+      btnVer.click(),
     ]);
     await download.saveAs(filePath);
     console.log(`  [PDF] ${numero} → ${path.basename(filePath)}`);
