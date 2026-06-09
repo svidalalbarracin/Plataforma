@@ -343,7 +343,7 @@
       ['Tribunal', causa.tribunal],
       ['Juzgado / División', detalle.juzgado],
       ['Fecha de inicio', formatFechaLocal(detalle.fechaInicio)],
-      ['Tipo', { PJN: 'Poder Judicial Nacional', Aduana: 'Aduanero (SICNEA)', Fisica: 'Carpeta física' }[causa.tipo] ?? causa.tipo],
+      ['Tipo', { PJN: 'Poder Judicial Nacional', Aduana: 'Aduanero', Fisica: 'Carpeta física' }[causa.tipo] ?? causa.tipo],
     ];
 
     if (detalle.carpetaFisica) {

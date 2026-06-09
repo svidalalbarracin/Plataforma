@@ -166,7 +166,6 @@ tbody td { padding: .75rem 1rem; vertical-align: middle; }
 }
 
 .badge-tipo-pjn    { background: var(--primary-light); color: var(--primary-text); }
-.badge-tipo-aduana { background: var(--warning-light); color: var(--warning-text); }
 .badge-tipo-tad    { background: var(--success-light); color: var(--success-text); }
 .badge-tipo-fisica { background: var(--muted-light);   color: var(--muted-text); }
 

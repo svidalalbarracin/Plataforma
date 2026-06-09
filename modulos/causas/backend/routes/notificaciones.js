@@ -10,12 +10,6 @@ router.get('/', (req, res) => {
     ORDER BY fecha_envio DESC, id DESC
   `).all();
 
-  const sicnea = db.prepare(`
-    SELECT id, numero, razon_social, motivo, fecha_alta, fecha_vencimiento, leida
-    FROM notificaciones_sicnea
-    ORDER BY fecha_alta DESC, id DESC
-  `).all();
-
   const tad = db.prepare(`
     SELECT id, fecha, nombre, mensaje, numero_tramite, archivo_path, leida
     FROM notificaciones_tad
@@ -40,17 +34,6 @@ router.get('/', (req, res) => {
       fecha:      r.fecha_envio,
       origen:     'PJN',
       leida:      r.leida === 1,
-    })),
-    ...sicnea.map(r => ({
-      id:                r.id,
-      numero:            r.numero,
-      expediente:        null,
-      caratula:          r.razon_social,
-      autor:             r.motivo,
-      fecha:             r.fecha_alta,
-      fecha_vencimiento: r.fecha_vencimiento,
-      origen:            'SICNEA',
-      leida:             r.leida === 1,
     })),
     ...tad.map(r => {
       const storageBase = '/causas/storage/tad';
@@ -97,9 +80,8 @@ router.get('/', (req, res) => {
 
 // PATCH /api/causas/notificaciones/marcar-todas  (debe ir ANTES de /:id)
 router.patch('/marcar-todas', (req, res) => {
-  db.prepare('UPDATE notificaciones_pjn    SET leida = 1').run();
-  db.prepare('UPDATE notificaciones_sicnea SET leida = 1').run();
-  db.prepare('UPDATE notificaciones_tad    SET leida = 1').run();
+  db.prepare('UPDATE notificaciones_pjn SET leida = 1').run();
+  db.prepare('UPDATE notificaciones_tad SET leida = 1').run();
   res.json({ ok: true });
 });
 
@@ -120,9 +102,7 @@ router.post('/ejecutar', async (req, res) => {
 // ?origen=PJN (default) | ?origen=SICNEA
 router.patch('/:id/leida', (req, res) => {
   const origen = req.query.origen || 'PJN';
-  const table  = origen === 'SICNEA' ? 'notificaciones_sicnea'
-               : origen === 'TAD'    ? 'notificaciones_tad'
-               :                       'notificaciones_pjn';
+  const table  = origen === 'TAD' ? 'notificaciones_tad' : 'notificaciones_pjn';
   const result = db.prepare(`UPDATE ${table} SET leida = 1 WHERE id = ?`).run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Notificación no encontrada' });
   res.json({ ok: true });
