@@ -106,6 +106,18 @@ router.post('/ejecutar', async (req, res) => {
   }
 });
 
+// POST /api/causas/notificaciones/backfill-pjn — descarga PDFs faltantes
+router.post('/backfill-pjn', async (req, res) => {
+  try {
+    const { backfillAdjuntosPJN } = require('../scrapers/pjn');
+    const descargados = await backfillAdjuntosPJN();
+    res.json({ descargados });
+  } catch (e) {
+    console.error('[causas/backfill-pjn]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // PATCH /api/causas/notificaciones/:id/leida — alterna leida/no leida
 router.patch('/:id/leida', (req, res) => {
   const origen = req.query.origen || 'PJN';

@@ -24,6 +24,11 @@ function guardarMeta(key, value) {
   db.prepare('INSERT OR REPLACE INTO scraper_meta (key, value) VALUES (?, ?)').run(key, value);
 }
 
+function actualizarArchivo(numero, archivo_path) {
+  db.prepare('UPDATE notificaciones_pjn SET archivo_path = ? WHERE numero = ? AND archivo_path IS NULL')
+    .run(archivo_path, numero);
+}
+
 const MESES_CORTO = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12 };
 
 function isoFecha(str) {
@@ -307,7 +312,72 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
   }
 }
 
-module.exports = { obtenerNotificacionesPJN };
+// ── Backfill: descargar PDFs de notificaciones ya guardadas sin archivo ────────
+
+async function backfillAdjuntosPJN({ headless = true } = {}) {
+  const pendientes = new Set(
+    db.prepare('SELECT numero FROM notificaciones_pjn WHERE archivo_path IS NULL').all().map(r => r.numero)
+  );
+
+  if (pendientes.size === 0) {
+    console.log('  Backfill PJN: sin notificaciones pendientes');
+    return 0;
+  }
+
+  console.log(`\n══ Backfill PJN — ${pendientes.size} notificación(es) sin PDF ════`);
+
+  const browser = await chromium.launch({ headless });
+  const context = await browser.newContext();
+  const page    = await context.newPage();
+  page.setDefaultTimeout(45000);
+
+  let descargados = 0;
+
+  try {
+    await page.goto(URL_NOTIFICACIONES, { waitUntil: 'load', timeout: 60000 });
+    await esperarSPA(page);
+
+    if (page.url().includes('sso.pjn.gov.ar')) await login(page);
+
+    await page.waitForSelector('table tbody tr', { timeout: 30000 });
+    await cambiarResultadosPorPagina(page, 30);
+
+    let pagina = 1;
+
+    while (pendientes.size > 0) {
+      console.log(`\n  ── Página ${pagina} (quedan ${pendientes.size}) ───────────────`);
+      const filas = await extraerFilas(page);
+
+      for (const fila of filas) {
+        if (!pendientes.has(fila.numero)) continue;
+
+        const archivo_path = await descargarAdjunto(page, fila.rowIndex, fila.numero);
+        if (archivo_path) {
+          actualizarArchivo(fila.numero, archivo_path);
+          descargados++;
+        }
+        pendientes.delete(fila.numero);
+      }
+
+      if (pendientes.size === 0) break;
+      if (!(await hayPaginaSiguiente(page))) break;
+      await irAPaginaSiguiente(page);
+      pagina++;
+    }
+
+    if (pendientes.size > 0) {
+      console.log(`\n  [!] No encontradas en portal: ${[...pendientes].join(', ')}`);
+    }
+
+  } finally {
+    await browser.close();
+  }
+
+  console.log(`\n══ Backfill completo — ${descargados} PDF(s) descargado(s) ════`);
+  return descargados;
+}
+
+module.exports = { obtenerNotificacionesPJN, backfillAdjuntosPJN };
 
 // Ejecución directa: node pjn.js
 if (require.main === module) {

@@ -566,7 +566,7 @@ textarea { resize: vertical; min-height: 100px; }
 .modal-overlay.open { display: flex; }
 
 .modal-box {
-  background: var(--surface);
+  background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1.5rem;
