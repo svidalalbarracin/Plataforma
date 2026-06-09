@@ -566,7 +566,7 @@ textarea { resize: vertical; min-height: 100px; }
 .modal-overlay.open { display: flex; }
 
 .modal-box {
-  background: var(--surface);
+  background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1.5rem;
@@ -1191,4 +1191,46 @@ html.dark .cal-mes-celda.es-hoy   { background: #1a2f55; }
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: .4rem;
+}
+
+.btn-adjunto {
+  display: inline-flex;
+  align-items: center;
+  padding: .2rem .55rem;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: .75rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s, color .15s;
+}
+.btn-adjunto:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-toggle-leida {
+  padding: .2rem .55rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: .75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.btn-toggle-leida:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+.btn-toggle-leida.es-leida {
+  color: var(--success-text);
+}
+.btn-toggle-leida.es-leida:hover {
+  background: var(--success-light);
 }

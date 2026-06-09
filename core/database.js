@@ -178,6 +178,12 @@ db.exec(`
 // Eliminar tabla SICNEA si existe (datos y estructura)
 db.exec('DROP TABLE IF EXISTS notificaciones_sicnea');
 
+// Migración: agregar archivo_path a notificaciones_pjn
+const pjnCols = db.prepare('PRAGMA table_info(notificaciones_pjn)').all().map(c => c.name);
+if (!pjnCols.includes('archivo_path')) {
+  db.exec('ALTER TABLE notificaciones_pjn ADD COLUMN archivo_path TEXT');
+}
+
 // ── Causas — TAD ──────────────────────────────────────────────────────────────
 
 db.exec(`
