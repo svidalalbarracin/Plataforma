@@ -17,9 +17,14 @@ router.get('/', (req, res) => {
   `).all();
 
   const tad = db.prepare(`
-    SELECT id, fecha, nombre, mensaje, numero_tramite, leida
+    SELECT id, fecha, nombre, mensaje, numero_tramite, archivo_path, leida
     FROM notificaciones_tad
     ORDER BY fecha DESC, id DESC
+  `).all();
+
+  const docsExternos = db.prepare(`
+    SELECT numero_tramite, fecha_envio, motivo, archivos_paths
+    FROM documentos_externos_tad
   `).all();
 
   const metaAuto     = db.prepare("SELECT value FROM scraper_meta WHERE key = 'pjn_ultima_auto'").get();
@@ -47,16 +52,40 @@ router.get('/', (req, res) => {
       origen:            'SICNEA',
       leida:             r.leida === 1,
     })),
-    ...tad.map(r => ({
-      id:         r.id,
-      numero:     r.numero_tramite,
-      expediente: r.numero_tramite,
-      caratula:   r.mensaje,
-      autor:      r.nombre,
-      fecha:      r.fecha,
-      origen:     'TAD',
-      leida:      r.leida === 1,
-    })),
+    ...tad.map(r => {
+      const storageBase = '/causas/storage/tad';
+
+      const pathAUrl = (p) => {
+        if (!p) return null;
+        const match = p.match(/storage[\\/]tad[\\/](.+)$/);
+        return match ? `${storageBase}/${match[1].replace(/\\/g, '/')}` : null;
+      };
+
+      const archivos = [];
+      if (r.archivo_path) {
+        archivos.push({ nombre: 'Notificación', url: pathAUrl(r.archivo_path) });
+      }
+      docsExternos
+        .filter(d => d.numero_tramite === r.numero_tramite)
+        .forEach(d => {
+          const paths = JSON.parse(d.archivos_paths || '[]');
+          paths.forEach((p, i) => {
+            archivos.push({ nombre: `Doc. Externo ${i + 1} (${d.fecha_envio || ''})`, url: pathAUrl(p) });
+          });
+        });
+
+      return {
+        id:         r.id,
+        numero:     r.numero_tramite,
+        expediente: r.numero_tramite,
+        caratula:   r.mensaje,
+        autor:      r.nombre,
+        fecha:      r.fecha,
+        origen:     'TAD',
+        leida:      r.leida === 1,
+        archivos,
+      };
+    }),
   ];
 
   res.json({

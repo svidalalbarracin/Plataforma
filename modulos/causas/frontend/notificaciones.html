@@ -168,6 +168,9 @@
           ${n.autor    ? `<div class="notif-autor">${n.autor}</div>`   : ''}
         </div>
         <div class="notif-acciones">
+          ${n.archivos?.length
+            ? `<button class="btn btn-ghost btn-sm" onclick="verDocumentos(${n.id})">Ver</button>`
+            : ''}
           ${!n.leida
             ? `<button class="btn btn-ghost btn-sm" onclick="marcarLeida(${n.id}, '${n.origen}')">Marcar leída</button>`
             : '<span class="text-muted" style="font-size:.8125rem">Leída</span>'}
@@ -265,7 +268,41 @@
     }
   }
 
+  function verDocumentos(id) {
+    const n = notificaciones.find(x => x.id === id);
+    if (!n?.archivos?.length) return;
+
+    document.getElementById('modal-docs-titulo').textContent = n.expediente || n.numero || '—';
+    document.getElementById('modal-docs-lista').innerHTML = n.archivos.map(a => `
+      <a href="${a.url}" target="_blank" rel="noopener" class="doc-link">
+        <span class="doc-link-icono">📄</span>
+        <span>${a.nombre}</span>
+      </a>
+    `).join('');
+
+    document.getElementById('modal-docs').classList.add('open');
+  }
+
+  document.getElementById('modal-docs-cerrar').addEventListener('click', () => {
+    document.getElementById('modal-docs').classList.remove('open');
+  });
+
+  document.getElementById('modal-docs').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+  });
+
   document.addEventListener('DOMContentLoaded', init);
 </script>
+
+<!-- Modal documentos -->
+<div id="modal-docs" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-box-header">
+      <span class="modal-box-titulo" id="modal-docs-titulo"></span>
+      <button class="modal-box-cerrar" id="modal-docs-cerrar">✕</button>
+    </div>
+    <div id="modal-docs-lista" class="doc-lista"></div>
+  </div>
+</div>
 </body>
 </html>

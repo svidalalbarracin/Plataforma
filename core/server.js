@@ -49,6 +49,7 @@ app.use('/facturacion',   express.static(path.join(__dirname, '../modulos/factur
 app.use('/causas',        express.static(path.join(__dirname, '../modulos/causas/frontend')));
 app.use('/configuracion', express.static(path.join(__dirname, '../core/configuracion/frontend')));
 app.use('/pdfs',          express.static(path.join(__dirname, '../modulos/facturacion/storage/facturas')));
+app.use('/causas/storage', express.static(path.join(__dirname, '../modulos/causas/storage')));
 
 require('../modulos/facturacion/backend/scheduler');
 require('../modulos/causas/backend/scheduler');
