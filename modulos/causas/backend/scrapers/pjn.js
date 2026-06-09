@@ -143,9 +143,8 @@ async function descargarAdjunto(page, rowIndex, numero) {
   if (fs.existsSync(filePath)) return filePath;
 
   try {
-    const fila        = page.locator('table tbody tr').nth(rowIndex);
-    const ultimaCelda = fila.locator('td').last();
-    const btnVer      = ultimaCelda.locator('button').first();
+    const fila   = page.locator('table tbody tr').nth(rowIndex);
+    const btnVer = fila.locator('button[aria-label*="PDF"]');
 
     if ((await btnVer.count()) === 0) {
       console.log(`  [!] Sin botón de descarga en fila ${rowIndex}`);
