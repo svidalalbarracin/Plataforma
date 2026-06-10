@@ -25,13 +25,21 @@ router.get('/', (req, res) => {
     ORDER BY fecha DESC, id DESC
   `).all();
 
+  const sicnea = db.prepare(`
+    SELECT id, numero, dependencia, razon_social, motivo,
+           documento_ref, fecha_alta, estado, archivos_paths, leida, aduana
+    FROM notificaciones_sicnea
+    ORDER BY fecha_alta DESC, id DESC
+  `).all();
+
   const docsExternos = db.prepare(`
     SELECT numero_tramite, fecha_envio, motivo, archivos_paths
     FROM documentos_externos_tad
   `).all();
 
-  const metaAuto     = db.prepare("SELECT value FROM scraper_meta WHERE key = 'pjn_ultima_auto'").get();
-  const intervaloMin = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
+  const metaAuto       = db.prepare("SELECT value FROM scraper_meta WHERE key = 'pjn_ultima_auto'").get();
+  const metaAutoSicnea = db.prepare("SELECT value FROM scraper_meta WHERE key = 'sicnea_ultima_auto'").get();
+  const intervaloMin   = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
 
   const notificaciones = [
     ...pjn.map(r => {
@@ -64,7 +72,6 @@ router.get('/', (req, res) => {
             archivos.push({ nombre: `Doc. Externo ${i + 1} (${d.fecha_envio || ''})`, url: pathAUrl(p, 'tad') });
           });
         });
-
       return {
         id:         r.id,
         numero:     r.numero_tramite,
@@ -77,19 +84,39 @@ router.get('/', (req, res) => {
         archivos,
       };
     }),
+    ...sicnea.map(r => {
+      const paths    = JSON.parse(r.archivos_paths || '[]');
+      const archivos = paths.map((p, i) => ({ nombre: `Adjunto ${i + 1}`, url: pathAUrl(p, 'sicnea') }));
+      return {
+        id:          r.id,
+        numero:      r.numero,
+        expediente:  r.documento_ref,
+        caratula:    r.motivo,
+        autor:       r.razon_social,
+        fecha:       r.fecha_alta,
+        origen:      'SICNEA',
+        leida:       r.leida === 1,
+        archivos,
+        dependencia: r.dependencia,
+        aduana:      r.aduana,
+        estado:      r.estado,
+      };
+    }),
   ];
 
   res.json({
-    ultima_auto:    metaAuto?.value ?? null,
-    intervalo_min:  intervaloMin,
+    ultima_auto:        metaAuto?.value       ?? null,
+    ultima_auto_sicnea: metaAutoSicnea?.value ?? null,
+    intervalo_min:      intervaloMin,
     notificaciones,
   });
 });
 
 // PATCH /api/causas/notificaciones/marcar-todas  (debe ir ANTES de /:id)
 router.patch('/marcar-todas', (req, res) => {
-  db.prepare('UPDATE notificaciones_pjn SET leida = 1').run();
-  db.prepare('UPDATE notificaciones_tad SET leida = 1').run();
+  db.prepare('UPDATE notificaciones_pjn    SET leida = 1').run();
+  db.prepare('UPDATE notificaciones_tad    SET leida = 1').run();
+  db.prepare('UPDATE notificaciones_sicnea SET leida = 1').run();
   res.json({ ok: true });
 });
 
@@ -121,7 +148,9 @@ router.post('/backfill-pjn', async (req, res) => {
 // PATCH /api/causas/notificaciones/:id/leida — alterna leida/no leida
 router.patch('/:id/leida', (req, res) => {
   const origen = req.query.origen || 'PJN';
-  const table  = origen === 'TAD' ? 'notificaciones_tad' : 'notificaciones_pjn';
+  const table  = origen === 'TAD'    ? 'notificaciones_tad'
+               : origen === 'SICNEA' ? 'notificaciones_sicnea'
+               :                       'notificaciones_pjn';
   const result = db.prepare(`UPDATE ${table} SET leida = 1 - leida WHERE id = ?`).run(req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'Notificación no encontrada' });
   const row = db.prepare(`SELECT leida FROM ${table} WHERE id = ?`).get(req.params.id);

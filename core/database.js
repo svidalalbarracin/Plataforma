@@ -175,8 +175,23 @@ db.exec(`
   );
 `);
 
-// Eliminar tabla SICNEA si existe (datos y estructura)
-db.exec('DROP TABLE IF EXISTS notificaciones_sicnea');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS notificaciones_sicnea (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero         TEXT    NOT NULL UNIQUE,
+    dependencia    TEXT,
+    cuit_cliente   TEXT,
+    razon_social   TEXT,
+    aduana         TEXT,
+    motivo         TEXT,
+    documento_ref  TEXT,
+    fecha_alta     TEXT,
+    estado         TEXT,
+    archivos_paths TEXT    NOT NULL DEFAULT '[]',
+    leida          INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+`);
 
 // Migración: agregar archivo_path a notificaciones_pjn
 const pjnCols = db.prepare('PRAGMA table_info(notificaciones_pjn)').all().map(c => c.name);
