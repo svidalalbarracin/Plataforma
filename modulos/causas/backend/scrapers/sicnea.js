@@ -4,8 +4,9 @@ const path = require('path');
 const fs   = require('fs');
 const db   = require('../../../../core/database');
 
-const STORAGE_DIR = path.join(__dirname, '../../storage/sicnea');
-const DESDE_ISO   = '2026-01-01';
+const STORAGE_DIR   = path.join(__dirname, '../../storage/sicnea');
+const DESDE_DEFAULT = '2026-01-01';
+const URL_CONSULTA  = 'https://serviciosadu2.afip.gob.ar/DIAV2/Sicnea.Web/Sicnea.WebApp/formularios/csicneaAboConsulta.aspx';
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -24,448 +25,363 @@ function guardar({ numero, dependencia, cuit_cliente, razon_social, aduana, moti
          documento_ref, fecha_alta, estado, JSON.stringify(archivos_paths));
 }
 
-// ── Utilidades ────────────────────────────────────────────────────────────────
-
-function pausa(ms = 10000) {
-  return new Promise(r => setTimeout(r, ms));
+function guardarMeta(key, value) {
+  db.prepare('INSERT OR REPLACE INTO scraper_meta (key, value) VALUES (?, ?)').run(key, value);
 }
 
-// "01/02/2026" → "2026-02-01"  |  "2026-02-01" → mismo  |  null → null
 function isoFecha(str) {
   if (!str) return null;
-  const s = str.trim();
-  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const m = str.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  return s;
-}
-
-function esPosteriorADesde(fechaIso) {
-  if (!fechaIso) return true; // si no hay fecha la incluimos
-  return fechaIso >= DESDE_ISO;
-}
-
-// Extrae texto de una celda/campo buscando primero por label aproximado
-function extraerCampo(page, labelTexto) {
-  return page.evaluate((label) => {
-    const limpiar = s => s?.replace(/\s+/g, ' ').trim() || null;
-
-    // Busca th/td pares en tabla
-    for (const th of document.querySelectorAll('th, td, label, dt, .label, [class*="label"]')) {
-      if (th.innerText?.toLowerCase().includes(label.toLowerCase())) {
-        const sib = th.nextElementSibling || th.parentElement?.nextElementSibling?.querySelector('td, dd, span, input');
-        if (sib) return limpiar(sib.innerText || sib.value);
-      }
-    }
-    return null;
-  }, labelTexto);
+  return str.trim() || null;
 }
 
 // ── Login AFIP ────────────────────────────────────────────────────────────────
 
-async function loginAFIP(context) {
-  const mainPage = await context.newPage();
-  console.log('  Navegando a AFIP...');
-  await mainPage.goto('https://www.afip.gob.ar/', { waitUntil: 'load', timeout: 60000 });
-  await pausa(4000);
-
-  // Botón "Ingresar con Clave Fiscal" abre nueva pestaña
-  console.log('  Clickeando Ingresar con Clave Fiscal...');
-  const [loginPage] = await Promise.all([
-    context.waitForEvent('page', { timeout: 30000 }),
-    mainPage.locator('text=Ingresar con Clave Fiscal').first().click(),
-  ]);
-  await loginPage.waitForLoadState('load', { timeout: 60000 });
-  await pausa(4000);
-
-  // CUIT
-  console.log('  Ingresando CUIT...');
-  await loginPage.waitForSelector('[id="F1:username"]', { timeout: 30000 });
-  await loginPage.fill('[id="F1:username"]', process.env.CUIT);
-  await pausa(1000);
-  await loginPage.click('[id="F1:btnSiguiente"]');
-  await pausa(5000);
-
-  // Clave fiscal
-  console.log('  Ingresando clave fiscal...');
-  await loginPage.waitForSelector('[id="F1:password"]', { timeout: 30000 });
-  await loginPage.fill('[id="F1:password"]', process.env.CLAVE_FISCAL);
-  await pausa(1000);
-  await loginPage.click('[id="F1:btnIngresar"]');
-
-  console.log('  Esperando portal AFIP...');
-  await loginPage.waitForURL(url => url.href.includes('portalcf'), { timeout: 60000, waitUntil: 'load' });
-  await pausa(8000);
-
-  console.log('  Login OK →', loginPage.url());
-  return loginPage;
+async function login(context) {
+  const page = await context.newPage();
+  await page.goto('https://auth.afip.gob.ar/contribuyente_/login.xhtml', { waitUntil: 'networkidle', timeout: 60000 });
+  await page.fill('[id="F1:username"]', process.env.CUIT);
+  await page.click('[id="F1:btnSiguiente"]');
+  await page.waitForLoadState('networkidle');
+  await page.fill('[id="F1:password"]', process.env.CLAVE_FISCAL);
+  await page.click('[id="F1:btnIngresar"]');
+  await page.waitForLoadState('networkidle');
+  if (!page.url().includes('portalcf')) throw new Error(`Login fallido. URL: ${page.url()}`);
+  console.log('  Login OK →', page.url());
+  return page;
 }
 
-// ── Abrir SICNEA Abogados ─────────────────────────────────────────────────────
+// ── Abrir SICNEA ──────────────────────────────────────────────────────────────
 
-async function abrirSICNEA(portalPage) {
-  console.log('  Buscando SICNEA Abogados en el portal...');
-  await portalPage.waitForSelector('text=SICNEA Abogados', { timeout: 30000 });
-  await pausa(2000);
+async function abrirSICNEA(context, portalPage) {
+  const popups = [];
+  context.on('page', p => popups.push(p));
 
-  // Clic abre un Pop Up (window.open)
-  const [sicneaPopup] = await Promise.all([
-    portalPage.waitForEvent('popup', { timeout: 30000 }),
-    portalPage.locator('text=SICNEA Abogados').first().click(),
-  ]);
-  await sicneaPopup.waitForLoadState('load', { timeout: 60000 });
-  await pausa(10000);
-  console.log('  Popup SICNEA abierto:', sicneaPopup.url());
+  await portalPage.locator('text=SICNEA Abogados').first().click();
+  console.log('  Click en SICNEA, esperando páginas...');
+  await new Promise(r => setTimeout(r, 10000));
 
-  // Click en "Ingresar" dentro del popup
-  console.log('  Clickeando Ingresar...');
-  await sicneaPopup.waitForSelector('text=Ingresar', { timeout: 20000 });
+  // El portal abre varias páginas — buscar la de UsuarioExterno (tiene el botón Ingresar)
+  const usuarioPage = popups.find(p => p.url().includes('UsuarioExterno')) ?? popups[popups.length - 1];
+  if (!usuarioPage) throw new Error('No se abrió página de SICNEA');
 
-  // "Ingresar" puede navegar en el mismo popup o abrir una nueva ventana
-  let sicneaPage;
-  try {
-    [sicneaPage] = await Promise.all([
-      sicneaPopup.context().waitForEvent('page', { timeout: 15000 }),
-      sicneaPopup.locator('text=Ingresar').first().click(),
-    ]);
-    await sicneaPage.waitForLoadState('load', { timeout: 60000 });
-  } catch {
-    sicneaPage = sicneaPopup;
-    await sicneaPage.waitForLoadState('load', { timeout: 60000 });
-  }
+  usuarioPage.setDefaultTimeout(120000);
+  await usuarioPage.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+  console.log('  Página SICNEA:', usuarioPage.url());
 
-  await pausa(10000);
-  console.log('  SICNEA cargado:', sicneaPage.url());
-  return sicneaPage;
+  // Botón de ingreso al sistema
+  await usuarioPage.click('input#cmdAceptar');
+  console.log('  cmdAceptar clickeado, esperando frameset...');
+  await new Promise(r => setTimeout(r, 5000));
+  await usuarioPage.waitForLoadState('networkidle', { timeout: 90000 }).catch(() => {});
+  await new Promise(r => setTimeout(r, 3000));
+
+  console.log('  Frameset SICNEA cargado');
+  return usuarioPage;
 }
 
-// ── Navegar al listado de notificaciones ──────────────────────────────────────
+// ── Navegar al frame de Consulta ──────────────────────────────────────────────
 
-async function navegarANotificaciones(sicneaPage) {
-  console.log('  Buscando menú de navegación...');
+async function irAConsulta(mainPage) {
+  const frame = mainPage.frames().find(f => f.url().includes('mgenInicioGen') || f.name() === 'iframeAreaCargaDatos');
+  if (!frame) throw new Error('No se encontró frame de contenido');
 
-  // Hover sobre el primer ítem del menú principal para desplegarlo
-  const menuItems = sicneaPage.locator('nav li, ul.menu > li, .navbar li, [class*="menu"] > li, [class*="nav"] > li');
-  const count = await menuItems.count();
-  if (count > 0) {
-    await menuItems.first().hover();
-    await pausa(3000);
-  }
-
-  // Si no apareció, intentar hover en un <a> del menú
-  const navLinks = sicneaPage.locator('nav a, [class*="menu"] a, [class*="nav"] a');
-  const linkCount = await navLinks.count();
-  for (let i = 0; i < Math.min(linkCount, 5); i++) {
-    await navLinks.nth(i).hover();
-    await pausa(1500);
-    const verVisible = await sicneaPage.locator('text=Ver Notificaciones').isVisible().catch(() => false);
-    if (verVisible) break;
-  }
-
-  console.log('  Clickeando Ver Notificaciones...');
-  await sicneaPage.waitForSelector('text=Ver Notificaciones', { timeout: 20000 });
-  await sicneaPage.locator('text=Ver Notificaciones').first().click();
-  await pausa(10000);
-
-  await sicneaPage.waitForSelector('table, [class*="tabla"], [class*="grid"]', { timeout: 30000 });
-  console.log('  Tabla de notificaciones visible');
+  await frame.goto(URL_CONSULTA, { waitUntil: 'networkidle', timeout: 60000 });
+  console.log('  Consulta cargada:', frame.url());
+  return frame;
 }
 
-// ── Aplicar filtro de fecha si está disponible ────────────────────────────────
+// ── Búsqueda con filtro de fecha opcional ─────────────────────────────────────
 
-async function aplicarFiltroFecha(sicneaPage) {
-  // Busca inputs de fecha ("Desde", "Fecha Desde", etc.)
-  const inputDesde = sicneaPage.locator('input[placeholder*="esde"], input[name*="esde"], input[id*="esde"]').first();
-  if ((await inputDesde.count()) > 0) {
-    console.log('  Aplicando filtro de fecha desde 01/01/2026...');
-    await inputDesde.fill('01/01/2026');
-    await pausa(2000);
+async function buscar(frame, desde) {
+  // Filtro de fecha: ISO YYYY-MM-DD → DD/MM/YYYY
+  const [y, m, d] = desde.split('-');
+  await frame.fill('#txtFechaNotificacionDesde', `${d}/${m}/${y}`);
+  console.log(`  Filtro de fecha: ${d}/${m}/${y}`);
 
-    // Botón Buscar/Filtrar
-    const btnBuscar = sicneaPage.locator('button:has-text("Buscar"), button:has-text("Filtrar"), input[value="Buscar"]').first();
-    if ((await btnBuscar.count()) > 0) {
-      await btnBuscar.click();
-      await pausa(10000);
+  await frame.click('input#btnBuscar');
+  console.log('  Buscando... (puede tardar hasta 120s)');
+
+  // La búsqueda es asíncrona y puede tardar ~90s. Usamos txtCantidadReg como indicador.
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    const cantReg = await frame.evaluate(() =>
+      document.getElementById('txtCantidadReg')?.value || '0'
+    ).catch(() => '0');
+    if (parseInt(cantReg) > 0) {
+      console.log(`  Resultados listos: ${cantReg} registros (t+${(i + 1) * 5}s)`);
+      return;
     }
-    console.log('  Filtro aplicado');
-    return true;
+    if ((i + 1) % 6 === 0) console.log(`  ... esperando (t+${(i + 1) * 5}s)`);
   }
-  console.log('  Sin filtro de fecha disponible — se filtrará por fecha localmente');
-  return false;
+  throw new Error('Timeout esperando resultados (200s)');
 }
 
-// ── Extraer filas de la tabla de notificaciones ───────────────────────────────
+// ── Extraer filas de la tabla ─────────────────────────────────────────────────
 
-async function extraerFilasTabla(sicneaPage) {
-  return sicneaPage.evaluate(() => {
-    const limpiar = s => s?.replace(/\s+/g, ' ').trim() || '';
+async function extraerFilas(frame) {
+  return frame.evaluate(() => {
+    const limpiar = s => s?.replace(/\s+/g, ' ').trim() || null;
     const filas = [];
+    const table = document.querySelector('table[id*="dgd"], table.dgdTable');
+    if (!table) return filas;
 
-    document.querySelectorAll('table tbody tr, [class*="tabla"] tr, [class*="grid"] tr').forEach((tr, index) => {
+    table.querySelectorAll('tbody tr').forEach((tr, index) => {
       const celdas = [...tr.querySelectorAll('td')].map(td => limpiar(td.innerText));
-      if (celdas.length < 2) return;
-
-      // Buscar botón "Ver" en la fila
-      const btnVer = tr.querySelector('button, a, input[type="button"]');
-      const tieneBoton = !!btnVer;
-
-      filas.push({ index, celdas, tieneBoton });
+      // Columnas típicas: [0]=Numero [1]=Motivo [2]=Fecha [3]=Archivos [4]=Domicilio [5]=Estado [6]=Ver
+      if (celdas.length >= 5 && celdas[0] && /\d/.test(celdas[0])) {
+        filas.push({
+          rowIndex:           index,
+          numero:             celdas[0],
+          motivo:             celdas[1],
+          fecha_notificacion: celdas[2],
+          archivos_adjuntos:  celdas[3],
+          domicilio:          celdas[4],
+          estado:             celdas[5] || null,
+          tieneVer:           !!tr.querySelector('a, input[type=button], button'),
+        });
+      }
     });
     return filas;
   });
 }
 
-// ── Extraer datos del detalle de una notificación ─────────────────────────────
+// ── Abrir detalle de una notificación ─────────────────────────────────────────
+
+async function abrirDetalle(frame, context, rowIndex) {
+  const filas = frame.locator('table[id*="dgd"] tbody tr, table.dgdTable tbody tr');
+  const fila  = filas.nth(rowIndex);
+  const btnVer = fila.locator('a, input[type=button], button').first();
+  if ((await btnVer.count()) === 0) return null;
+
+  try {
+    const pagesBefore = context.pages().length;
+    const [detallePage] = await Promise.all([
+      context.waitForEvent('page', { timeout: 20000 }),
+      btnVer.click(),
+    ]);
+    await detallePage.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 3000));
+    return detallePage;
+  } catch {
+    return null;
+  }
+}
+
+// ── Extraer campos del detalle ────────────────────────────────────────────────
 
 async function extraerDetalle(detallePage) {
   return detallePage.evaluate(() => {
-    const limpiar = s => s?.replace(/\s+/g, ' ').trim() || null;
-
-    // Intentar extraer por pares label/valor de cualquier estructura
-    const datos = {};
-    const mapeo = {
-      numero:       ['número', 'numero', 'nro', 'n°'],
-      dependencia:  ['dependencia'],
-      cuit_cliente: ['cuit'],
-      razon_social: ['razón social', 'razon social', 'denominación', 'denominacion'],
-      aduana:       ['aduana'],
-      motivo:       ['motivo'],
-      documento_ref:['documento', 'doc. ref', 'documento ref'],
-      fecha_alta:   ['fecha de alta', 'fecha alta'],
-      estado:       ['estado'],
+    const val = id => document.getElementById(id)?.value?.trim() || null;
+    return {
+      numero:        val('txtNroCedula'),
+      dependencia:   val('txtDependencia'),
+      cuit_cliente:  val('txtCuit'),
+      razon_social:  val('txtRazonSocial'),
+      aduana:        val('txtDesAduana'),
+      motivo:        val('txtMotivo'),
+      documento_ref: val('txtNroExpediente'),
+      fecha_alta:    val('txtFechaNotificacion'),
+      estado:        val('txtEstado'),
     };
-
-    // Método 1: pares th/td en tabla
-    document.querySelectorAll('tr').forEach(tr => {
-      const celdas = [...tr.querySelectorAll('th, td')].map(c => limpiar(c.innerText));
-      for (let i = 0; i < celdas.length - 1; i++) {
-        const labelLow = celdas[i]?.toLowerCase() || '';
-        for (const [campo, labels] of Object.entries(mapeo)) {
-          if (!datos[campo] && labels.some(l => labelLow.includes(l))) {
-            datos[campo] = celdas[i + 1] || null;
-          }
-        }
-      }
-    });
-
-    // Método 2: pares label/span o dt/dd
-    document.querySelectorAll('label, dt, [class*="label"]').forEach(el => {
-      const labelLow = limpiar(el.innerText)?.toLowerCase() || '';
-      const valor = limpiar(
-        (el.nextElementSibling || el.parentElement?.querySelector('span, dd, input'))?.innerText
-        || el.parentElement?.nextElementSibling?.innerText
-      );
-      for (const [campo, labels] of Object.entries(mapeo)) {
-        if (!datos[campo] && valor && labels.some(l => labelLow.includes(l))) {
-          datos[campo] = valor;
-        }
-      }
-    });
-
-    // Texto plano completo como respaldo
-    datos._textoCompleto = limpiar(document.body.innerText);
-    return datos;
   });
 }
 
-// ── Descargar adjuntos del detalle ────────────────────────────────────────────
+// ── Descargar adjuntos ────────────────────────────────────────────────────────
 
-async function descargarAdjuntos(detallePage, numero) {
+async function descargarAdjuntos(context, detallePage, numero) {
   fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
-  // Selectores típicos de enlaces/botones de descarga
-  const adjuntos = detallePage.locator(
-    'a[href*=".pdf"], a[href*="adjunto"], a[href*="archivo"], ' +
-    'button:has-text("Descargar"), button:has-text("PDF"), ' +
-    'a:has-text("Descargar"), a:has-text("Adjunto")'
-  );
-  const total = await adjuntos.count();
-  const archivos = [];
+  const archivosLista = await detallePage.evaluate(() => {
+    const tabla = document.getElementById('dgdArchivoAdjuntos');
+    if (!tabla) return [];
+    return [...tabla.querySelectorAll('tbody tr')].map(tr => {
+      const celdas = [...tr.querySelectorAll('td')].map(c => c.innerText.trim());
+      return { orden: celdas[0], nombre: celdas[1] };
+    }).filter(r => r.nombre && r.nombre.length > 0);
+  });
 
-  for (let i = 0; i < total; i++) {
+  if (archivosLista.length === 0) return [];
+
+  const archivos = [];
+  for (let i = 0; i < archivosLista.length; i++) {
+    const nombreOriginal = archivosLista[i].nombre;
     const filePath = path.join(STORAGE_DIR, `${numero}_${i + 1}.pdf`);
     if (fs.existsSync(filePath)) { archivos.push(filePath); continue; }
 
     try {
-      const [download] = await Promise.all([
-        detallePage.waitForEvent('download', { timeout: 20000 }),
-        adjuntos.nth(i).click(),
-      ]);
+      // Registrar el listener ANTES del click para no perder el evento
+      const downloadPromise = context.waitForEvent('download', { timeout: 60000 });
+      await detallePage.locator('table#dgdArchivoAdjuntos a:has-text("Ver")').nth(i).click();
+      const download = await downloadPromise;
       await download.saveAs(filePath);
       archivos.push(filePath);
-      console.log(`    [PDF] ${path.basename(filePath)}`);
-      await pausa(3000);
+      console.log(`    [PDF] ${nombreOriginal} → ${path.basename(filePath)}`);
+      // Esperar que la página vuelva al estado estable tras el postback
+      await detallePage.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 1000));
     } catch (e) {
-      console.log(`    [!] Adjunto ${i + 1} no descargado: ${e.message}`);
+      console.log(`    [!] ${nombreOriginal} no descargado (${e.message.split('\n')[0].substring(0, 80)})`);
     }
   }
   return archivos;
 }
 
-// ── Procesar una notificación (abrir detalle, extraer, descargar) ─────────────
-
-async function procesarNotificacion(sicneaPage, rowIndex, context) {
-  const filas = sicneaPage.locator('table tbody tr, [class*="tabla"] tr, [class*="grid"] tr');
-  const fila  = filas.nth(rowIndex);
-
-  const btnVer = fila.locator('button, a, input[type="button"]').first();
-  if ((await btnVer.count()) === 0) return null;
-
-  console.log(`    Abriendo detalle de fila ${rowIndex}...`);
-
-  let detallePage;
-  try {
-    // "Ver" puede abrir popup o navegar
-    [detallePage] = await Promise.all([
-      context.waitForEvent('page', { timeout: 20000 }),
-      btnVer.click(),
-    ]);
-    await detallePage.waitForLoadState('load', { timeout: 60000 });
-  } catch {
-    // Si no abrió nueva página, buscar popup
-    try {
-      [detallePage] = await Promise.all([
-        sicneaPage.waitForEvent('popup', { timeout: 10000 }),
-        btnVer.click(),
-      ]);
-      await detallePage.waitForLoadState('load', { timeout: 60000 });
-    } catch {
-      console.log(`    [!] No se pudo abrir el detalle de fila ${rowIndex}`);
-      return null;
-    }
-  }
-
-  await pausa(10000);
-
-  const datos   = await extraerDetalle(detallePage);
-  const archivos = await descargarAdjuntos(detallePage, datos.numero || `fila${rowIndex}`);
-
-  await detallePage.close();
-  await pausa(3000);
-
-  return { ...datos, archivos_paths: archivos };
-}
-
 // ── Paginación ────────────────────────────────────────────────────────────────
 
-async function hayPaginaSiguiente(sicneaPage) {
-  const btnSig = sicneaPage.locator(
-    'button:has-text("Siguiente"), a:has-text("Siguiente"), ' +
-    'button:has-text(">"), a:has-text(">"), ' +
-    '[aria-label*="iguiente"], [title*="iguiente"]'
-  ).first();
-  if ((await btnSig.count()) === 0) return false;
-  const disabled = await btnSig.evaluate(el => el.disabled || el.classList.contains('disabled')).catch(() => false);
-  return !disabled;
+async function hayPaginaSiguiente(frame) {
+  return frame.evaluate(() => {
+    const link = document.getElementById('lnkSiguiente');
+    return !!(link && !link.classList.contains('disabled') && link.style.display !== 'none');
+  });
 }
 
-async function irAPaginaSiguiente(sicneaPage) {
-  const btnSig = sicneaPage.locator(
-    'button:has-text("Siguiente"), a:has-text("Siguiente"), ' +
-    'button:has-text(">"), a:has-text(">"), ' +
-    '[aria-label*="iguiente"], [title*="iguiente"]'
-  ).first();
-  await btnSig.click();
-  await pausa(10000);
+async function irAPaginaSiguiente(frame) {
+  const antes = await frame.evaluate(() => document.getElementById('lblCantRegistros')?.innerText || '').catch(() => '');
+  await frame.locator('#lnkSiguiente').click({ timeout: 30000 });
+  await frame.waitForFunction(
+    prev => (document.getElementById('lblCantRegistros')?.innerText || '') !== prev,
+    antes, { timeout: 60000 }
+  );
 }
 
 // ── Función principal exportable ──────────────────────────────────────────────
 
-async function obtenerNotificacionesSICNEA({ headless = true } = {}) {
+async function obtenerNotificacionesSICNEA({ headless = true, desde = DESDE_DEFAULT, limite = null } = {}) {
+  const modoAuto = limite === null;
+
   console.log('\n══ Scraper SICNEA ════════════════════════════════════════════');
+  console.log(modoAuto
+    ? `  Modo: automático, desde ${desde}`
+    : `  Modo: prueba — límite ${limite}, desde ${desde}`
+  );
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  context.setDefaultTimeout(120000);
 
   let nuevas = 0;
 
   try {
     console.log('\n1. Login AFIP...');
-    const portalPage = await loginAFIP(context);
+    const portalPage = await login(context);
 
-    console.log('\n2. Abriendo SICNEA Abogados...');
-    const sicneaPage = await abrirSICNEA(portalPage);
+    console.log('\n2. Abriendo SICNEA...');
+    const mainPage = await abrirSICNEA(context, portalPage);
 
-    console.log('\n3. Navegando a notificaciones...');
-    await navegarANotificaciones(sicneaPage);
+    console.log('\n3. Navegando a Consulta...');
+    const consultaFrame = await irAConsulta(mainPage);
 
-    console.log('\n4. Aplicando filtro de fecha...');
-    const filtroAplicado = await aplicarFiltroFecha(sicneaPage);
+    console.log('\n4. Ejecutando búsqueda...');
+    await buscar(consultaFrame, desde);
 
     console.log('\n5. Procesando notificaciones...');
 
-    let pagina = 1;
-    let detener = false;
+    let pagina    = 1;
+    let examinadas = 0;
+    let detener   = false;
 
     while (!detener) {
-      console.log(`\n  ── Página ${pagina} ─────────────────────────────────────`);
-      const filas = await extraerFilasTabla(sicneaPage);
+      console.log(`\n  ── Página ${pagina} ──────────────────────────────────────`);
+      const filas = await extraerFilas(consultaFrame);
       console.log(`  ${filas.length} fila(s) encontradas`);
-
       if (filas.length === 0) break;
 
       for (const fila of filas) {
-        if (!fila.tieneBoton) continue;
+        const numero = fila.numero?.trim();
+        if (!numero) continue;
 
-        // Antes de procesar, intentar leer fecha de la tabla para filtrar
-        // (columna con formato dd/mm/aaaa o similar)
-        const fechaRaw = fila.celdas.find(c => /\d{2}\/\d{2}\/\d{4}/.test(c));
-        const fechaIso = isoFecha(fechaRaw?.match(/\d{2}\/\d{2}\/\d{4}/)?.[0]);
+        const fechaIso = isoFecha(fila.fecha_notificacion);
 
-        if (!filtroAplicado && fechaIso && fechaIso < DESDE_ISO) {
-          console.log(`  [>>] Fecha ${fechaIso} anterior a ${DESDE_ISO} → deteniendo`);
+        // Filtrar por fecha si no hay filtro de UI
+        if (fechaIso && fechaIso < desde) {
+          console.log(`  [>>] Fecha ${fechaIso} < ${desde} → deteniendo`);
           detener = true;
           break;
         }
 
-        const datos = await procesarNotificacion(sicneaPage, fila.index, context);
-        if (!datos) continue;
-
-        const numero = datos.numero || fila.celdas[0] || `sin-numero-${Date.now()}`;
-
         if (yaExiste(numero)) {
-          console.log(`  [--] ${numero}  ya existe`);
+          if (modoAuto) {
+            console.log(`  [>>] ${numero} ya existe → deteniendo`);
+            detener = true;
+            break;
+          }
+          console.log(`  [--] ${numero} ya existe`);
+          examinadas++;
+          if (limite && examinadas >= limite) { detener = true; break; }
           continue;
+        }
+
+        // Abrir detalle para obtener campos completos
+        let detalleDatos = {};
+        let archivosPaths = [];
+        if (fila.tieneVer) {
+          const detallePage = await abrirDetalle(consultaFrame, context, fila.rowIndex);
+          if (detallePage) {
+            detalleDatos  = await extraerDetalle(detallePage);
+            archivosPaths = await descargarAdjuntos(context, detallePage, numero);
+            await detallePage.close();
+            await new Promise(r => setTimeout(r, 2000));
+          }
         }
 
         guardar({
           numero,
-          dependencia:   datos.dependencia || null,
-          cuit_cliente:  datos.cuit_cliente || null,
-          razon_social:  datos.razon_social || null,
-          aduana:        datos.aduana       || null,
-          motivo:        datos.motivo       || null,
-          documento_ref: datos.documento_ref || null,
-          fecha_alta:    isoFecha(datos.fecha_alta),
-          estado:        datos.estado       || null,
-          archivos_paths: datos.archivos_paths || [],
+          dependencia:    detalleDatos.dependencia  || null,
+          cuit_cliente:   detalleDatos.cuit_cliente || null,
+          razon_social:   detalleDatos.razon_social || null,
+          aduana:         detalleDatos.aduana       || null,
+          motivo:         detalleDatos.motivo       || fila.motivo || null,
+          documento_ref:  detalleDatos.documento_ref || null,
+          fecha_alta:     isoFecha(detalleDatos.fecha_alta) || fechaIso,
+          estado:         detalleDatos.estado       || fila.estado || null,
+          archivos_paths: archivosPaths,
         });
 
-        console.log(`  [OK] ${numero}  ${datos.estado || ''}  ${datos.fecha_alta || ''}`);
+        console.log(`  [OK] ${numero}  ${fila.estado || ''}  ${fila.fecha_notificacion || ''}`);
         nuevas++;
+        examinadas++;
+
+        if (limite && examinadas >= limite) {
+          console.log(`  Límite de ${limite} alcanzado`);
+          detener = true;
+          break;
+        }
       }
 
       if (detener) break;
-      if (!(await hayPaginaSiguiente(sicneaPage))) break;
-      console.log('  Navegando a página siguiente...');
-      await irAPaginaSiguiente(sicneaPage);
+      if (!(await hayPaginaSiguiente(consultaFrame))) break;
+      console.log('  Página siguiente...');
+      await irAPaginaSiguiente(consultaFrame);
       pagina++;
     }
+
+    if (modoAuto) guardarMeta('sicnea_ultima_auto', new Date().toISOString());
+
+    console.log('\n══ Resultado ═════════════════════════════════════════════════');
+    console.log(`  ${nuevas} nueva(s)`);
+    return nuevas;
 
   } finally {
     await browser.close();
   }
-
-  console.log('\n══ Resultado SICNEA ══════════════════════════════════════════');
-  console.log(`  ${nuevas} nueva(s)`);
-  return nuevas;
 }
 
 module.exports = { obtenerNotificacionesSICNEA };
 
-// Ejecución directa: node sicnea.js
+// node sicnea.js [--visible] [--desde=2023-01-01] [--limite=3]
 if (require.main === module) {
-  obtenerNotificacionesSICNEA({ headless: false }).catch(e => {
+  const args     = process.argv.slice(2);
+  const headless = !args.includes('--visible');
+  const desde    = args.find(a => a.startsWith('--desde='))?.split('=')[1]  || DESDE_DEFAULT;
+  const limiteA  = args.find(a => a.startsWith('--limite='))?.split('=')[1];
+
+  obtenerNotificacionesSICNEA({
+    headless,
+    desde,
+    limite: limiteA ? parseInt(limiteA, 10) : null,
+  }).catch(e => {
     console.error('\nError fatal:', e.message);
     process.exit(1);
   });
