@@ -228,24 +228,6 @@ async function descargarAdjuntos(context, detallePage, numero) {
   return archivos;
 }
 
-// ── Paginación ────────────────────────────────────────────────────────────────
-
-async function hayPaginaSiguiente(frame) {
-  return frame.evaluate(() => {
-    const link = document.getElementById('lnkSiguiente');
-    return !!(link && !link.classList.contains('disabled') && link.style.display !== 'none');
-  });
-}
-
-async function irAPaginaSiguiente(frame) {
-  const antes = await frame.evaluate(() => document.getElementById('lblCantRegistros')?.innerText || '').catch(() => '');
-  await frame.locator('#lnkSiguiente').click({ timeout: 30000 });
-  await frame.waitForFunction(
-    prev => (document.getElementById('lblCantRegistros')?.innerText || '') !== prev,
-    antes, { timeout: 60000 }
-  );
-}
-
 // ── Función principal exportable ──────────────────────────────────────────────
 
 async function obtenerNotificacionesSICNEA({ headless = true, desde = DESDE_DEFAULT, limite = null } = {}) {
@@ -278,83 +260,61 @@ async function obtenerNotificacionesSICNEA({ headless = true, desde = DESDE_DEFA
 
     console.log('\n5. Procesando notificaciones...');
 
-    let pagina    = 1;
+    const filas = await extraerFilas(consultaFrame);
+    console.log(`  ${filas.length} fila(s) encontradas`);
+
     let examinadas = 0;
-    let detener   = false;
+    for (const fila of filas) {
+      const numero = fila.numero?.trim();
+      if (!numero) continue;
 
-    while (!detener) {
-      console.log(`\n  ── Página ${pagina} ──────────────────────────────────────`);
-      const filas = await extraerFilas(consultaFrame);
-      console.log(`  ${filas.length} fila(s) encontradas`);
-      if (filas.length === 0) break;
+      const fechaIso = isoFecha(fila.fecha_notificacion);
 
-      for (const fila of filas) {
-        const numero = fila.numero?.trim();
-        if (!numero) continue;
-
-        const fechaIso = isoFecha(fila.fecha_notificacion);
-
-        // Filtrar por fecha si no hay filtro de UI
-        if (fechaIso && fechaIso < desde) {
-          console.log(`  [>>] Fecha ${fechaIso} < ${desde} → deteniendo`);
-          detener = true;
+      if (yaExiste(numero)) {
+        if (modoAuto) {
+          console.log(`  [>>] ${numero} ya existe → deteniendo`);
           break;
         }
-
-        if (yaExiste(numero)) {
-          if (modoAuto) {
-            console.log(`  [>>] ${numero} ya existe → deteniendo`);
-            detener = true;
-            break;
-          }
-          console.log(`  [--] ${numero} ya existe`);
-          examinadas++;
-          if (limite && examinadas >= limite) { detener = true; break; }
-          continue;
-        }
-
-        // Abrir detalle para obtener campos completos
-        let detalleDatos = {};
-        let archivosPaths = [];
-        if (fila.tieneVer) {
-          const detallePage = await abrirDetalle(consultaFrame, context, fila.rowIndex);
-          if (detallePage) {
-            detalleDatos  = await extraerDetalle(detallePage);
-            archivosPaths = await descargarAdjuntos(context, detallePage, numero);
-            await detallePage.close();
-            await new Promise(r => setTimeout(r, 2000));
-          }
-        }
-
-        guardar({
-          numero,
-          dependencia:    detalleDatos.dependencia  || null,
-          cuit_cliente:   detalleDatos.cuit_cliente || null,
-          razon_social:   detalleDatos.razon_social || null,
-          aduana:         detalleDatos.aduana       || null,
-          motivo:         detalleDatos.motivo       || fila.motivo || null,
-          documento_ref:  detalleDatos.documento_ref || null,
-          fecha_alta:     isoFecha(detalleDatos.fecha_alta) || fechaIso,
-          estado:         detalleDatos.estado       || fila.estado || null,
-          archivos_paths: archivosPaths,
-        });
-
-        console.log(`  [OK] ${numero}  ${fila.estado || ''}  ${fila.fecha_notificacion || ''}`);
-        nuevas++;
+        console.log(`  [--] ${numero} ya existe`);
         examinadas++;
+        if (limite && examinadas >= limite) break;
+        continue;
+      }
 
-        if (limite && examinadas >= limite) {
-          console.log(`  Límite de ${limite} alcanzado`);
-          detener = true;
-          break;
+      // Abrir detalle para obtener campos completos y PDFs
+      let detalleDatos = {};
+      let archivosPaths = [];
+      if (fila.tieneVer) {
+        const detallePage = await abrirDetalle(consultaFrame, context, fila.rowIndex);
+        if (detallePage) {
+          detalleDatos  = await extraerDetalle(detallePage);
+          archivosPaths = await descargarAdjuntos(context, detallePage, numero);
+          await detallePage.close();
+          await new Promise(r => setTimeout(r, 2000));
         }
       }
 
-      if (detener) break;
-      if (!(await hayPaginaSiguiente(consultaFrame))) break;
-      console.log('  Página siguiente...');
-      await irAPaginaSiguiente(consultaFrame);
-      pagina++;
+      guardar({
+        numero,
+        dependencia:   detalleDatos.dependencia  || null,
+        cuit_cliente:  detalleDatos.cuit_cliente || null,
+        razon_social:  detalleDatos.razon_social || null,
+        aduana:        detalleDatos.aduana       || null,
+        motivo:        detalleDatos.motivo       || fila.motivo || null,
+        documento_ref: detalleDatos.documento_ref || null,
+        fecha_alta:    isoFecha(detalleDatos.fecha_alta) || fechaIso,
+        estado:        detalleDatos.estado       || fila.estado || null,
+        archivos_paths: archivosPaths,
+      });
+
+      console.log(`  [OK] ${numero}  ${fila.estado || ''}  ${fila.fecha_notificacion || ''}`);
+      nuevas++;
+      examinadas++;
+
+      if (limite && examinadas >= limite) {
+        console.log(`  Límite de ${limite} alcanzado`);
+        break;
+      }
     }
 
     if (modoAuto) guardarMeta('sicnea_ultima_auto', new Date().toISOString());
