@@ -1,7 +1,29 @@
+/**
+ * Rutas API para el módulo de notificaciones de causas.
+ *
+ * Agrega notificaciones de PJN, TAD y SICNEA en una sola colección
+ * con esquema normalizado para el frontend.
+ *
+ * GET    /api/causas/notificaciones           → lista todas las notificaciones + metadata
+ * PATCH  /api/causas/notificaciones/marcar-todas → marca todas como leídas
+ * POST   /api/causas/notificaciones/ejecutar  → ejecuta el scraper PJN manualmente
+ * POST   /api/causas/notificaciones/backfill-pjn → descarga PDFs faltantes de PJN
+ * PATCH  /api/causas/notificaciones/:id/leida → alterna leída/no leída
+ *
+ * @module causas/routes/notificaciones
+ */
 const express = require('express');
 const router  = express.Router();
 const db      = require('../../../../core/database');
 
+/**
+ * Convierte una ruta absoluta de archivo en una URL relativa servida por Express.
+ * Extrae el segmento a partir de `storage/<base>/` y lo encoda para uso en URLs.
+ *
+ * @param {string|null} p    - Ruta absoluta del archivo
+ * @param {string}      base - Subdirectorio base ('pjn', 'tad' o 'sicnea')
+ * @returns {string|null} URL relativa o null si la ruta es inválida
+ */
 function pathAUrl(p, base) {
   if (!p) return null;
   const normalized = p.replace(/\\/g, '/');
@@ -11,7 +33,13 @@ function pathAUrl(p, base) {
   return `/causas/storage/${base}/${segments.map(encodeURIComponent).join('/')}`;
 }
 
-// GET /api/causas/notificaciones
+/**
+ * GET /api/causas/notificaciones
+ * Devuelve todas las notificaciones (PJN + TAD + SICNEA) normalizadas al mismo esquema,
+ * junto con la fecha de la última ejecución automática de cada scraper y el intervalo configurado.
+ *
+ * @returns {{ ultima_auto, ultima_auto_sicnea, intervalo_min, notificaciones[] }}
+ */
 router.get('/', (req, res) => {
   const pjn = db.prepare(`
     SELECT id, numero, numero_expediente, caratula, autor, fecha_envio, leida, archivo_path
@@ -32,6 +60,7 @@ router.get('/', (req, res) => {
     ORDER BY fecha_alta DESC, id DESC
   `).all();
 
+  // Documentos externos TAD se adjuntan a la notificación TAD del mismo trámite
   const docsExternos = db.prepare(`
     SELECT numero_tramite, fecha_envio, motivo, archivos_paths
     FROM documentos_externos_tad
@@ -43,10 +72,9 @@ router.get('/', (req, res) => {
 
   const notificaciones = [
     ...pjn.map(r => {
-      const archivos = [];
-      if (r.archivo_path) {
-        archivos.push({ nombre: 'Notificación', url: pathAUrl(r.archivo_path, 'pjn') });
-      }
+      const archivos = r.archivo_path
+        ? [{ nombre: 'Notificación', url: pathAUrl(r.archivo_path, 'pjn') }]
+        : [];
       return {
         id:         r.id,
         numero:     r.numero,
@@ -59,18 +87,19 @@ router.get('/', (req, res) => {
         archivos,
       };
     }),
+
     ...tad.map(r => {
-      const archivos = [];
-      if (r.archivo_path) {
-        archivos.push({ nombre: 'Notificación', url: pathAUrl(r.archivo_path, 'tad') });
-      }
+      const archivos = r.archivo_path
+        ? [{ nombre: 'Notificación', url: pathAUrl(r.archivo_path, 'tad') }]
+        : [];
+      // Adjuntar documentos externos del mismo trámite
       docsExternos
         .filter(d => d.numero_tramite === r.numero_tramite)
         .forEach(d => {
           const paths = JSON.parse(d.archivos_paths || '[]');
-          paths.forEach((p, i) => {
-            archivos.push({ nombre: `Doc. Externo ${i + 1} (${d.fecha_envio || ''})`, url: pathAUrl(p, 'tad') });
-          });
+          paths.forEach((p, i) =>
+            archivos.push({ nombre: `Doc. Externo ${i + 1} (${d.fecha_envio || ''})`, url: pathAUrl(p, 'tad') })
+          );
         });
       return {
         id:         r.id,
@@ -84,6 +113,7 @@ router.get('/', (req, res) => {
         archivos,
       };
     }),
+
     ...sicnea.map(r => {
       const paths    = JSON.parse(r.archivos_paths || '[]');
       const archivos = paths.map((p, i) => ({ nombre: `Adjunto ${i + 1}`, url: pathAUrl(p, 'sicnea') }));
@@ -112,7 +142,11 @@ router.get('/', (req, res) => {
   });
 });
 
-// PATCH /api/causas/notificaciones/marcar-todas  (debe ir ANTES de /:id)
+/**
+ * PATCH /api/causas/notificaciones/marcar-todas
+ * Marca todas las notificaciones de PJN, TAD y SICNEA como leídas.
+ * Debe estar registrada ANTES de /:id para que Express no la interprete como ID.
+ */
 router.patch('/marcar-todas', (req, res) => {
   db.prepare('UPDATE notificaciones_pjn    SET leida = 1').run();
   db.prepare('UPDATE notificaciones_tad    SET leida = 1').run();
@@ -120,7 +154,13 @@ router.patch('/marcar-todas', (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/causas/notificaciones/ejecutar — ejecuta el scraper PJN manualmente
+/**
+ * POST /api/causas/notificaciones/ejecutar
+ * Dispara el scraper de PJN de forma manual.
+ * Acepta `limite` en el body para limitar cuántas notificaciones procesar.
+ *
+ * @returns {{ nuevas: number }}
+ */
 router.post('/ejecutar', async (req, res) => {
   try {
     const { obtenerNotificacionesPJN } = require('../scrapers/pjn');
@@ -133,7 +173,12 @@ router.post('/ejecutar', async (req, res) => {
   }
 });
 
-// POST /api/causas/notificaciones/backfill-pjn — descarga PDFs faltantes
+/**
+ * POST /api/causas/notificaciones/backfill-pjn
+ * Descarga los PDFs de notificaciones PJN que ya están en la base pero no tienen archivo.
+ *
+ * @returns {{ descargados: number }}
+ */
 router.post('/backfill-pjn', async (req, res) => {
   try {
     const { backfillAdjuntosPJN } = require('../scrapers/pjn');
@@ -145,7 +190,15 @@ router.post('/backfill-pjn', async (req, res) => {
   }
 });
 
-// PATCH /api/causas/notificaciones/:id/leida — alterna leida/no leida
+/**
+ * PATCH /api/causas/notificaciones/:id/leida
+ * Alterna el estado leída/no leída de una notificación.
+ * El query param `origen` determina la tabla (PJN, TAD o SICNEA).
+ *
+ * @param {string} req.params.id      - ID de la notificación
+ * @param {string} req.query.origen   - 'PJN' | 'TAD' | 'SICNEA' (default 'PJN')
+ * @returns {{ ok: true, leida: boolean }}
+ */
 router.patch('/:id/leida', (req, res) => {
   const origen = req.query.origen || 'PJN';
   const table  = origen === 'TAD'    ? 'notificaciones_tad'
