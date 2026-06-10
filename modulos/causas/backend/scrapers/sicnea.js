@@ -4,9 +4,8 @@ const path = require('path');
 const fs   = require('fs');
 const db   = require('../../../../core/database');
 
-const STORAGE_DIR   = path.join(__dirname, '../../storage/sicnea');
-const DESDE_DEFAULT = '2026-01-01';
-const URL_CONSULTA  = 'https://serviciosadu2.afip.gob.ar/DIAV2/Sicnea.Web/Sicnea.WebApp/formularios/csicneaAboConsulta.aspx';
+const STORAGE_DIR  = path.join(__dirname, '../../storage/sicnea');
+const URL_BANDEJA  = 'https://serviciosadu2.afip.gob.ar/DIAV2/Sicnea.Web/Sicnea.WebApp/formularios/csicneaAboBandejaEntrada.aspx';
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -81,41 +80,16 @@ async function abrirSICNEA(context, portalPage) {
   return usuarioPage;
 }
 
-// ── Navegar al frame de Consulta ──────────────────────────────────────────────
+// ── Navegar a Bandeja de Entrada ──────────────────────────────────────────────
 
-async function irAConsulta(mainPage) {
+async function irABandeja(mainPage) {
   const frame = mainPage.frames().find(f => f.url().includes('mgenInicioGen') || f.name() === 'iframeAreaCargaDatos');
   if (!frame) throw new Error('No se encontró frame de contenido');
 
-  await frame.goto(URL_CONSULTA, { waitUntil: 'networkidle', timeout: 60000 });
-  console.log('  Consulta cargada:', frame.url());
+  await frame.goto(URL_BANDEJA, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await frame.waitForSelector('table#dgdNotificacion', { timeout: 30000 });
+  console.log('  Bandeja cargada:', frame.url());
   return frame;
-}
-
-// ── Búsqueda con filtro de fecha opcional ─────────────────────────────────────
-
-async function buscar(frame, desde) {
-  // Filtro de fecha: ISO YYYY-MM-DD → DD/MM/YYYY
-  const [y, m, d] = desde.split('-');
-  await frame.fill('#txtFechaNotificacionDesde', `${d}/${m}/${y}`);
-  console.log(`  Filtro de fecha: ${d}/${m}/${y}`);
-
-  await frame.click('input#btnBuscar');
-  console.log('  Buscando... (puede tardar hasta 120s)');
-
-  // La búsqueda es asíncrona y puede tardar ~90s. Usamos txtCantidadReg como indicador.
-  for (let i = 0; i < 40; i++) {
-    await new Promise(r => setTimeout(r, 5000));
-    const cantReg = await frame.evaluate(() =>
-      document.getElementById('txtCantidadReg')?.value || '0'
-    ).catch(() => '0');
-    if (parseInt(cantReg) > 0) {
-      console.log(`  Resultados listos: ${cantReg} registros (t+${(i + 1) * 5}s)`);
-      return;
-    }
-    if ((i + 1) % 6 === 0) console.log(`  ... esperando (t+${(i + 1) * 5}s)`);
-  }
-  throw new Error('Timeout esperando resultados (200s)');
 }
 
 // ── Extraer filas de la tabla ─────────────────────────────────────────────────
@@ -124,22 +98,22 @@ async function extraerFilas(frame) {
   return frame.evaluate(() => {
     const limpiar = s => s?.replace(/\s+/g, ' ').trim() || null;
     const filas = [];
-    const table = document.querySelector('table[id*="dgd"], table.dgdTable');
+    const table = document.getElementById('dgdNotificacion');
     if (!table) return filas;
 
+    // Columnas Bandeja: [0]=Numero [1]=Cuit [2]=Razon Social [3]=Motivo [4]=Enviada [5]=Vencimiento [6]=Notif Auto [7]=Ver
     table.querySelectorAll('tbody tr').forEach((tr, index) => {
       const celdas = [...tr.querySelectorAll('td')].map(td => limpiar(td.innerText));
-      // Columnas típicas: [0]=Numero [1]=Motivo [2]=Fecha [3]=Archivos [4]=Domicilio [5]=Estado [6]=Ver
       if (celdas.length >= 5 && celdas[0] && /\d/.test(celdas[0])) {
         filas.push({
-          rowIndex:           index,
-          numero:             celdas[0],
-          motivo:             celdas[1],
-          fecha_notificacion: celdas[2],
-          archivos_adjuntos:  celdas[3],
-          domicilio:          celdas[4],
-          estado:             celdas[5] || null,
-          tieneVer:           !!tr.querySelector('a, input[type=button], button'),
+          rowIndex:    index,
+          numero:      celdas[0],
+          cuit:        celdas[1],
+          razon_social: celdas[2],
+          motivo:      celdas[3],
+          fecha_envio: celdas[4],
+          vencimiento: celdas[5],
+          tieneVer:    !!tr.querySelector('a, input[type=button], button'),
         });
       }
     });
@@ -149,24 +123,17 @@ async function extraerFilas(frame) {
 
 // ── Abrir detalle de una notificación ─────────────────────────────────────────
 
-async function abrirDetalle(frame, context, rowIndex) {
-  const filas = frame.locator('table[id*="dgd"] tbody tr, table.dgdTable tbody tr');
-  const fila  = filas.nth(rowIndex);
+async function abrirDetalle(frame, rowIndex) {
+  const filas  = frame.locator('table#dgdNotificacion tbody tr');
+  const fila   = filas.nth(rowIndex);
   const btnVer = fila.locator('a, input[type=button], button').first();
-  if ((await btnVer.count()) === 0) return null;
+  if ((await btnVer.count()) === 0) return false;
 
-  try {
-    const pagesBefore = context.pages().length;
-    const [detallePage] = await Promise.all([
-      context.waitForEvent('page', { timeout: 20000 }),
-      btnVer.click(),
-    ]);
-    await detallePage.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
-    await new Promise(r => setTimeout(r, 3000));
-    return detallePage;
-  } catch {
-    return null;
-  }
+  // El "Ver" navega el frame actual a csicneaAboVerCedula.aspx
+  await btnVer.click();
+  await frame.waitForSelector('input#txtNroCedula', { timeout: 30000 });
+  console.log(`    [detalle] frame en: ${frame.url()}`);
+  return true;
 }
 
 // ── Extraer campos del detalle ────────────────────────────────────────────────
@@ -230,13 +197,13 @@ async function descargarAdjuntos(context, detallePage, numero) {
 
 // ── Función principal exportable ──────────────────────────────────────────────
 
-async function obtenerNotificacionesSICNEA({ headless = true, desde = DESDE_DEFAULT, limite = null } = {}) {
+async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = {}) {
   const modoAuto = limite === null;
 
   console.log('\n══ Scraper SICNEA ════════════════════════════════════════════');
   console.log(modoAuto
-    ? `  Modo: automático, desde ${desde}`
-    : `  Modo: prueba — límite ${limite}, desde ${desde}`
+    ? `  Modo: automático`
+    : `  Modo: prueba — límite ${limite}`
   );
 
   const browser = await chromium.launch({ headless });
@@ -252,13 +219,10 @@ async function obtenerNotificacionesSICNEA({ headless = true, desde = DESDE_DEFA
     console.log('\n2. Abriendo SICNEA...');
     const mainPage = await abrirSICNEA(context, portalPage);
 
-    console.log('\n3. Navegando a Consulta...');
-    const consultaFrame = await irAConsulta(mainPage);
+    console.log('\n3. Abriendo Bandeja de Entrada...');
+    const consultaFrame = await irABandeja(mainPage);
 
-    console.log('\n4. Ejecutando búsqueda...');
-    await buscar(consultaFrame, desde);
-
-    console.log('\n5. Procesando notificaciones...');
+    console.log('\n4. Procesando notificaciones...');
 
     const filas = await extraerFilas(consultaFrame);
     console.log(`  ${filas.length} fila(s) encontradas`);
@@ -267,8 +231,6 @@ async function obtenerNotificacionesSICNEA({ headless = true, desde = DESDE_DEFA
     for (const fila of filas) {
       const numero = fila.numero?.trim();
       if (!numero) continue;
-
-      const fechaIso = isoFecha(fila.fecha_notificacion);
 
       if (yaExiste(numero)) {
         if (modoAuto) {
@@ -285,29 +247,31 @@ async function obtenerNotificacionesSICNEA({ headless = true, desde = DESDE_DEFA
       let detalleDatos = {};
       let archivosPaths = [];
       if (fila.tieneVer) {
-        const detallePage = await abrirDetalle(consultaFrame, context, fila.rowIndex);
-        if (detallePage) {
-          detalleDatos  = await extraerDetalle(detallePage);
-          archivosPaths = await descargarAdjuntos(context, detallePage, numero);
-          await detallePage.close();
-          await new Promise(r => setTimeout(r, 2000));
+        const ok = await abrirDetalle(consultaFrame, fila.rowIndex);
+        if (ok) {
+          detalleDatos  = await extraerDetalle(consultaFrame);
+          archivosPaths = await descargarAdjuntos(context, consultaFrame, numero);
+          // Volver a la Bandeja para poder procesar la siguiente fila
+          await consultaFrame.goto(URL_BANDEJA, { waitUntil: 'domcontentloaded', timeout: 90000 });
+          await consultaFrame.waitForSelector('table#dgdNotificacion', { timeout: 30000 });
+          await new Promise(r => setTimeout(r, 1000));
         }
       }
 
       guardar({
         numero,
-        dependencia:   detalleDatos.dependencia  || null,
-        cuit_cliente:  detalleDatos.cuit_cliente || null,
-        razon_social:  detalleDatos.razon_social || null,
-        aduana:        detalleDatos.aduana       || null,
-        motivo:        detalleDatos.motivo       || fila.motivo || null,
+        dependencia:   detalleDatos.dependencia   || null,
+        cuit_cliente:  detalleDatos.cuit_cliente  || fila.cuit || null,
+        razon_social:  detalleDatos.razon_social  || fila.razon_social || null,
+        aduana:        detalleDatos.aduana        || null,
+        motivo:        detalleDatos.motivo        || fila.motivo || null,
         documento_ref: detalleDatos.documento_ref || null,
-        fecha_alta:    isoFecha(detalleDatos.fecha_alta) || fechaIso,
-        estado:        detalleDatos.estado       || fila.estado || null,
+        fecha_alta:    isoFecha(detalleDatos.fecha_alta) || isoFecha(fila.fecha_envio),
+        estado:        detalleDatos.estado        || null,
         archivos_paths: archivosPaths,
       });
 
-      console.log(`  [OK] ${numero}  ${fila.estado || ''}  ${fila.fecha_notificacion || ''}`);
+      console.log(`  [OK] ${numero}  ${fila.motivo || ''}  ${fila.fecha_envio || ''}`);
       nuevas++;
       examinadas++;
 
@@ -330,16 +294,14 @@ async function obtenerNotificacionesSICNEA({ headless = true, desde = DESDE_DEFA
 
 module.exports = { obtenerNotificacionesSICNEA };
 
-// node sicnea.js [--visible] [--desde=2023-01-01] [--limite=3]
+// node sicnea.js [--visible] [--limite=3]
 if (require.main === module) {
   const args     = process.argv.slice(2);
   const headless = !args.includes('--visible');
-  const desde    = args.find(a => a.startsWith('--desde='))?.split('=')[1]  || DESDE_DEFAULT;
   const limiteA  = args.find(a => a.startsWith('--limite='))?.split('=')[1];
 
   obtenerNotificacionesSICNEA({
     headless,
-    desde,
     limite: limiteA ? parseInt(limiteA, 10) : null,
   }).catch(e => {
     console.error('\nError fatal:', e.message);

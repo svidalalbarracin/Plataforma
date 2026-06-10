@@ -13,7 +13,7 @@ async function ejecutarPJN() {
 }
 
 async function ejecutarSICNEA() {
-  // Solo corre los sábados (getDay() === 6)
+  // Solo corre los sábados
   if (new Date().getDay() !== 6) return;
   console.log('[causas-scheduler] Sábado — ejecutando SICNEA...');
   try {

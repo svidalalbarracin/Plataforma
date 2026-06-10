@@ -157,6 +157,7 @@
     if (filtro === 'sin-leer') lista = lista.filter(n => !n.leida);
     if (filtro === 'PJN')      lista = lista.filter(n => n.origen === 'PJN');
     if (filtro === 'TAD')      lista = lista.filter(n => n.origen === 'TAD');
+    if (filtro === 'SICNEA')   lista = lista.filter(n => n.origen === 'SICNEA');
 
     const el = document.getElementById('lista-notificaciones');
 
