@@ -1,6 +1,19 @@
+/**
+ * Rutas CRUD de facturas con exportación a Excel y PDF.
+ *
+ * GET    /api/facturas                      → lista con filtros opcionales
+ * GET    /api/facturas/exportar/excel       → descarga .xlsx (filtros por query)
+ * GET    /api/facturas/exportar/pdf         → descarga .pdf (filtros por query)
+ * GET    /api/facturas/:id                  → detalle de una factura
+ * POST   /api/facturas                      → crea una factura manual
+ * PATCH  /api/facturas/:id/estado           → cambia estado a 'pagada' | 'impaga'
+ * DELETE /api/facturas/:id                  → elimina factura + pagos + PDF en disco
+ *
+ * @module facturacion/routes/facturas
+ */
 const { Router } = require('express');
 const path = require('path');
-const fs = require('fs');
+const fs   = require('fs');
 const ExcelJS     = require('exceljs');
 const PDFDocument = require('pdfkit');
 const db = require('../../../../core/database');
@@ -9,15 +22,30 @@ const PDF_DIR = path.join(__dirname, '../../storage/facturas');
 
 const router = Router();
 
+/**
+ * Convierte el pdf_path almacenado en la DB a la URL pública accesible por el cliente.
+ * @param {string|null} pdfPath - Nombre de archivo o ruta relativa.
+ * @returns {string|null} URL del tipo '/pdfs/archivo.pdf' o null si no hay PDF.
+ */
 function pdfUrl(pdfPath) {
   return pdfPath ? '/pdfs/' + path.basename(pdfPath) : null;
 }
 
+/**
+ * Agrega el campo calculado `pdf_url` a un objeto factura.
+ * @param {Object} f - Fila de factura tal como viene de la DB.
+ * @returns {Object} La misma factura con `pdf_url` añadido.
+ */
 function addComputed(f) {
   f.pdf_url = pdfUrl(f.pdf_path);
   return f;
 }
 
+/**
+ * GET /api/facturas — Lista facturas con datos de cliente, retención y monto de NC asociadas.
+ * @query {string} [cliente_id] - Filtra por cliente.
+ * @query {string} [estado]     - Filtra por estado ('pagada' | 'impaga').
+ */
 router.get('/', (req, res) => {
   const { cliente_id, estado } = req.query;
   let sql = `
@@ -38,8 +66,12 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params).map(addComputed));
 });
 
-// ── Helpers de exportación ────────────────────────────────────────────────────
-
+/**
+ * Ejecuta la consulta de exportación con los filtros indicados.
+ * Usada por los handlers de Excel y PDF para no duplicar la query.
+ * @param {{ cliente_id?, estado?, mes?, anio? }} filtros
+ * @returns {Array} Filas de facturas con cliente y retención
+ */
 function buildExportQuery({ cliente_id, estado, mes, anio }) {
   let sql = `
     SELECT f.*, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit,
@@ -58,6 +90,7 @@ function buildExportQuery({ cliente_id, estado, mes, anio }) {
   return db.prepare(sql).all(...params);
 }
 
+/** Definición de columnas compartida entre Excel y la cabecera del PDF. */
 const COLS_EXPORT = [
   { header: 'Número',     key: 'numero',          width: 22 },
   { header: 'Tipo',       key: 'tipo',            width: 8  },
@@ -71,8 +104,10 @@ const COLS_EXPORT = [
   { header: 'Estado',     key: 'estado',          width: 12 },
 ];
 
-// ── GET /api/facturas/exportar/excel ──────────────────────────────────────────
-
+/**
+ * GET /api/facturas/exportar/excel — Genera y descarga un .xlsx con las facturas filtradas.
+ * @query {string} [cliente_id], [estado], [mes], [anio]
+ */
 router.get('/exportar/excel', async (req, res) => {
   try {
     const facturas = buildExportQuery(req.query);
@@ -102,7 +137,6 @@ router.get('/exportar/excel', async (req, res) => {
       });
     });
 
-    // Fila de totales
     const sumNeto = facturas.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
     const sumIva  = facturas.reduce((s, f) => s + (f.iva  ?? 0), 0);
     const sumTot  = facturas.reduce((s, f) => s + f.monto_total, 0);
@@ -110,8 +144,8 @@ router.get('/exportar/excel', async (req, res) => {
     const n = facturas.length;
 
     const totRow = ws.addRow({
-      numero:          `${n} factura${n !== 1 ? 's' : ''}`,
-      tipo:            '', cliente_nombre: '', cliente_cuit: '',
+      numero: `${n} factura${n !== 1 ? 's' : ''}`,
+      tipo: '', cliente_nombre: '', cliente_cuit: '',
       fecha:           'TOTAL',
       monto_neto:      sumNeto,
       iva:             sumIva,
@@ -125,13 +159,12 @@ router.get('/exportar/excel', async (req, res) => {
       cell.border = { top: { style: 'medium', color: { argb: 'FF1E3A8A' } } };
     });
 
-    // Formato numérico para columnas de dinero
     COLS_EXPORT.forEach((c, i) => {
       if (c.money) ws.getColumn(i + 1).numFmt = '#,##0.00';
     });
 
     ws.eachRow((row, idx) => {
-      if (idx === ws.rowCount) return; // totales ya tiene borde
+      if (idx === ws.rowCount) return;
       row.eachCell(cell => {
         cell.border = { bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
       });
@@ -148,8 +181,10 @@ router.get('/exportar/excel', async (req, res) => {
   }
 });
 
-// ── GET /api/facturas/exportar/pdf ────────────────────────────────────────────
-
+/**
+ * GET /api/facturas/exportar/pdf — Genera y descarga un .pdf A4 apaisado con las facturas filtradas.
+ * @query {string} [cliente_id], [estado], [mes], [anio]
+ */
 router.get('/exportar/pdf', (req, res) => {
   try {
     const facturas = buildExportQuery(req.query);
@@ -166,14 +201,13 @@ router.get('/exportar/pdf', (req, res) => {
       ? new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
       : '—';
 
-    // Totales generales
     const MESES_PDF = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const pdfNeto = facturas.reduce((s, f) => s + (f.monto_neto ?? 0), 0);
     const pdfIva  = facturas.reduce((s, f) => s + (f.iva  ?? 0), 0);
     const pdfTot  = facturas.reduce((s, f) => s + f.monto_total, 0);
     const pdfRet  = facturas.reduce((s, f) => s + (f.retencion_total ?? 0), 0);
 
-    // Filtros activos descripción
+    // Descripción textual de los filtros activos
     const filtrosDesc = [];
     if (req.query.cliente_id) {
       const c = db.prepare('SELECT nombre FROM clientes WHERE id = ?').get(req.query.cliente_id);
@@ -183,17 +217,14 @@ router.get('/exportar/pdf', (req, res) => {
     if (req.query.anio)   filtrosDesc.push(`Año: ${req.query.anio}`);
     if (req.query.estado) filtrosDesc.push(`Estado: ${req.query.estado.charAt(0).toUpperCase() + req.query.estado.slice(1)}`);
 
-    // Encabezado del documento
+    // Encabezado
     doc.font('Helvetica-Bold').fontSize(14).fillColor('#1E3A8A').text(nombreEstudio);
     doc.font('Helvetica').fontSize(9).fillColor('#64748B')
        .text(`Listado de facturas — Exportado el ${fechaExport}`);
+    if (filtrosDesc.length)
+      doc.fontSize(8).fillColor('#64748B').text(`Filtros: ${filtrosDesc.join('  ·  ')}`);
 
-    if (filtrosDesc.length) {
-      doc.fontSize(8).fillColor('#64748B')
-         .text(`Filtros: ${filtrosDesc.join('  ·  ')}`);
-    }
-
-    // Resumen de totales
+    // Resumen de totales en el encabezado
     doc.fontSize(8).fillColor('#1E3A8A').font('Helvetica-Bold')
        .text(
          `${facturas.length} factura${facturas.length !== 1 ? 's' : ''}  ·  ` +
@@ -202,18 +233,18 @@ router.get('/exportar/pdf', (req, res) => {
        );
     doc.moveDown(0.6);
 
-    // Definición de columnas del PDF
+    // Columnas del PDF (independientes de COLS_EXPORT porque tienen anchos en puntos y alineación)
     const PDF_COLS = [
-      { header: 'Número',     key: 'numero',          width: 92,  align: 'left'  },
-      { header: 'Tipo',       key: 'tipo',            width: 28,  align: 'center'},
-      { header: 'Cliente',    key: 'cliente_nombre',  width: 132, align: 'left'  },
-      { header: 'CUIT',       key: 'cliente_cuit',    width: 78,  align: 'left'  },
-      { header: 'Fecha',      key: 'fecha',           width: 58,  align: 'center'},
-      { header: 'Monto Neto', key: 'monto_neto',      width: 72,  align: 'right', format: fmtMoney },
-      { header: 'IVA',        key: 'iva',             width: 58,  align: 'right', format: fmtMoney },
-      { header: 'Total',      key: 'monto_total',     width: 72,  align: 'right', format: fmtMoney },
-      { header: 'Retención',  key: 'retencion_total', width: 70,  align: 'right', format: fmtMoney },
-      { header: 'Estado',     key: 'estado',          width: 48,  align: 'center'},
+      { header: 'Número',     key: 'numero',          width: 92,  align: 'left'   },
+      { header: 'Tipo',       key: 'tipo',            width: 28,  align: 'center' },
+      { header: 'Cliente',    key: 'cliente_nombre',  width: 132, align: 'left'   },
+      { header: 'CUIT',       key: 'cliente_cuit',    width: 78,  align: 'left'   },
+      { header: 'Fecha',      key: 'fecha',           width: 58,  align: 'center' },
+      { header: 'Monto Neto', key: 'monto_neto',      width: 72,  align: 'right',  format: fmtMoney },
+      { header: 'IVA',        key: 'iva',             width: 58,  align: 'right',  format: fmtMoney },
+      { header: 'Total',      key: 'monto_total',     width: 72,  align: 'right',  format: fmtMoney },
+      { header: 'Retención',  key: 'retencion_total', width: 70,  align: 'right',  format: fmtMoney },
+      { header: 'Estado',     key: 'estado',          width: 48,  align: 'center' },
     ];
     const TOTAL_W  = PDF_COLS.reduce((s, c) => s + c.width, 0);
     const MARGIN   = 40;
@@ -222,6 +253,11 @@ router.get('/exportar/pdf', (req, res) => {
     const FONT_SZ  = 7;
     const PAD      = 3;
 
+    /**
+     * Dibuja la fila de encabezado de la tabla y devuelve la Y donde comienzan las filas de datos.
+     * @param {number} y - Posición vertical inicial en puntos.
+     * @returns {number} Y final del encabezado.
+     */
     function drawTableHeader(y) {
       doc.rect(MARGIN, y, TOTAL_W, HEADER_H).fill('#DBEAFE');
       doc.fillColor('#1E3A8A').font('Helvetica-Bold').fontSize(FONT_SZ);
@@ -233,6 +269,13 @@ router.get('/exportar/pdf', (req, res) => {
       return y + HEADER_H;
     }
 
+    /**
+     * Dibuja una fila de dato y devuelve la Y de la siguiente fila.
+     * @param {Object} f - Fila de factura.
+     * @param {number} y - Posición vertical inicial.
+     * @param {boolean} striped - Si es true, dibuja fondo gris claro (filas pares).
+     * @returns {number} Y al comienzo de la próxima fila.
+     */
     function drawTableRow(f, y, striped) {
       if (striped) doc.rect(MARGIN, y, TOTAL_W, ROW_H).fill('#F8FAFC');
       doc.fillColor('#0F172A').font('Helvetica').fontSize(FONT_SZ);
@@ -285,7 +328,6 @@ router.get('/exportar/pdf', (req, res) => {
       });
       xt += col.width;
     });
-    y += ROW_H;
 
     doc.end();
   } catch (e) {
@@ -294,6 +336,9 @@ router.get('/exportar/pdf', (req, res) => {
   }
 });
 
+/**
+ * GET /api/facturas/:id — Devuelve una factura por ID con datos del cliente.
+ */
 router.get('/:id', (req, res) => {
   const factura = db.prepare(`
     SELECT f.*, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit
@@ -305,6 +350,11 @@ router.get('/:id', (req, res) => {
   res.json(addComputed(factura));
 });
 
+/**
+ * POST /api/facturas — Crea una factura manual (no importada desde ARCA).
+ * El monto_neto se recalcula desde el total asumiendo IVA 21%.
+ * Body: { cliente_id, numero, fecha, monto, iva }
+ */
 router.post('/', (req, res) => {
   const { cliente_id, numero, fecha, monto, iva } = req.body;
   if (!cliente_id || !numero || !fecha || monto == null || iva == null)
@@ -325,6 +375,10 @@ router.post('/', (req, res) => {
   res.status(201).json({ id: lastInsertRowid, cliente_id, numero, fecha, monto: monto_neto, iva: iva_calc, monto_neto, monto_total, estado: 'impaga' });
 });
 
+/**
+ * PATCH /api/facturas/:id/estado — Cambia el estado de una factura.
+ * Body: { estado: 'pagada' | 'impaga' }
+ */
 router.patch('/:id/estado', (req, res) => {
   const { estado } = req.body;
   if (!['pagada', 'impaga'].includes(estado))
@@ -335,6 +389,9 @@ router.patch('/:id/estado', (req, res) => {
   res.json({ id: Number(req.params.id), estado });
 });
 
+/**
+ * DELETE /api/facturas/:id — Elimina la factura, sus pagos y el PDF del disco.
+ */
 router.delete('/:id', (req, res) => {
   const factura = db.prepare('SELECT pdf_path FROM facturas WHERE id = ?').get(req.params.id);
   if (!factura) return res.status(404).json({ error: 'Factura no encontrada' });

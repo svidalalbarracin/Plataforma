@@ -1,10 +1,17 @@
+/**
+ * Scraper de Trámites a Distancia (TAD).
+ *
+ * Hace login en tramitesadistancia.gob.ar vía ARCA (clave fiscal), navega a la
+ * sección de Notificaciones, descarga las últimas 10 notificaciones y los
+ * documentos externos asociados a trámites que tengan notificación.
+ *
+ * @module causas/scrapers/tad
+ */
 require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env') });
 const { chromium } = require('playwright');
 const path = require('path');
-const fs = require('fs');
-const db = require('../../../../core/database');
-
-// ── Storage ───────────────────────────────────────────────────────────────────
+const fs   = require('fs');
+const db   = require('../../../../core/database');
 
 const DIR_NOTIF = path.join(__dirname, '../../storage/tad/notificaciones');
 const DIR_DOCS  = path.join(__dirname, '../../storage/tad/documentos_externos');
@@ -13,18 +20,34 @@ fs.mkdirSync(DIR_DOCS,  { recursive: true });
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
+/**
+ * Verifica si una notificación TAD ya existe por número de trámite y fecha.
+ * @param {string} numero_tramite
+ * @param {string|null} fecha
+ * @returns {boolean}
+ */
 function notifExiste(numero_tramite, fecha) {
   return !!db.prepare(
     'SELECT id FROM notificaciones_tad WHERE numero_tramite = ? AND fecha = ?'
   ).get(numero_tramite, fecha);
 }
 
+/**
+ * Verifica si un documento externo TAD ya existe por número de trámite y fecha de envío.
+ * @param {string} numero_tramite
+ * @param {string|null} fecha_envio
+ * @returns {boolean}
+ */
 function docExiste(numero_tramite, fecha_envio) {
   return !!db.prepare(
     'SELECT id FROM documentos_externos_tad WHERE numero_tramite = ? AND fecha_envio = ?'
   ).get(numero_tramite, fecha_envio);
 }
 
+/**
+ * Inserta una notificación TAD en la base de datos.
+ * @param {{ fecha: string|null, nombre: string|null, mensaje: string|null, numero_tramite: string, archivo_path: string|null }} datos
+ */
 function guardarNotif({ fecha, nombre, mensaje, numero_tramite, archivo_path }) {
   db.prepare(`
     INSERT INTO notificaciones_tad (fecha, nombre, mensaje, numero_tramite, archivo_path)
@@ -32,6 +55,11 @@ function guardarNotif({ fecha, nombre, mensaje, numero_tramite, archivo_path }) 
   `).run(fecha, nombre, mensaje, numero_tramite, archivo_path);
 }
 
+/**
+ * Inserta un documento externo TAD en la base de datos.
+ * `archivos_paths` se serializa como JSON array de rutas absolutas.
+ * @param {{ fecha_envio: string|null, nombre: string|null, numero_tramite: string, motivo: string|null, archivos_paths: string[] }} datos
+ */
 function guardarDoc({ fecha_envio, nombre, numero_tramite, motivo, archivos_paths }) {
   db.prepare(`
     INSERT INTO documentos_externos_tad (fecha_envio, nombre, numero_tramite, motivo, archivos_paths)
@@ -39,6 +67,11 @@ function guardarDoc({ fecha_envio, nombre, numero_tramite, motivo, archivos_path
   `).run(fecha_envio, nombre, numero_tramite, motivo, JSON.stringify(archivos_paths));
 }
 
+/**
+ * Convierte fechas en formato dd/mm/aaaa o ISO a YYYY-MM-DD.
+ * @param {string|null} str
+ * @returns {string|null}
+ */
 function isoFecha(str) {
   if (!str) return null;
   const s = str.trim();
@@ -48,8 +81,16 @@ function isoFecha(str) {
   return s || null;
 }
 
-// ── Login: TAD → modal ARCA → clave fiscal ───────────────────────────────────
+// ── Login ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Abre una nueva pestaña, navega a TAD, abre el modal de login,
+ * selecciona ARCA y completa el formulario de clave fiscal.
+ * Usa CUIT y CLAVE_FISCAL del .env.
+ *
+ * @param {import('playwright').BrowserContext} context
+ * @returns {Promise<import('playwright').Page>} Página de TAD ya autenticada
+ */
 async function login(context) {
   const page = await context.newPage();
 
@@ -70,23 +111,29 @@ async function login(context) {
   await page.waitForURL(url => url.href.includes('tramitesadistancia.gob.ar'), { timeout: 60000, waitUntil: 'load' });
   await new Promise(r => setTimeout(r, 3000));
 
-  console.log(`  Login OK`);
+  console.log('  Login OK');
   return page;
 }
 
-// ── Navegar a la página de Notificaciones ─────────────────────────────────────
+// ── Navegación ────────────────────────────────────────────────────────────────
 
+/**
+ * Hace click en el link de "notificaciones" del menú y espera que cargue la tabla.
+ * @param {import('playwright').Page} page
+ */
 async function irANotificaciones(page) {
   await page.waitForSelector('a[href*="notificaciones"]', { timeout: 20000 });
   await page.locator('a[href*="notificaciones"]').first().click();
   await new Promise(r => setTimeout(r, 4000));
-  // Esperar que cargue la tabla
   await page.waitForSelector('table tbody tr', { timeout: 20000 });
   console.log('  Página Notificaciones cargada');
 }
 
-// ── Cambiar a pestaña interna ─────────────────────────────────────────────────
-
+/**
+ * Cambia a una pestaña interna del listado (ej: "Documentos Externos") usando los tabs de Bootstrap.
+ * @param {import('playwright').Page} page
+ * @param {string} nombre - Texto visible de la pestaña
+ */
 async function irAPestanaInterna(page, nombre) {
   await page.locator(`a[data-toggle="tab"]:has-text("${nombre}")`).click();
   await new Promise(r => setTimeout(r, 3000));
@@ -94,11 +141,13 @@ async function irAPestanaInterna(page, nombre) {
   console.log(`  Pestaña "${nombre}" activa`);
 }
 
-// ── Mostrar 10 resultados por página ─────────────────────────────────────────
-
+/**
+ * Intenta configurar 10 resultados por página en el paginador del listado.
+ * Si no encuentra el selector, continúa con el default.
+ * @param {import('playwright').Page} page
+ */
 async function mostrar10(page) {
   try {
-    // El paginador tiene links con texto "10"
     const btn = page.locator('a:has-text("10"), button:has-text("10")').filter({ hasText: /^10$/ }).first();
     if (await btn.isVisible({ timeout: 5000 })) {
       await btn.click();
@@ -110,8 +159,15 @@ async function mostrar10(page) {
   }
 }
 
-// ── Extraer filas de Notificaciones ──────────────────────────────────────────
+// ── Extracción de datos ───────────────────────────────────────────────────────
 
+/**
+ * Extrae las filas de la tabla de Notificaciones.
+ * Columnas esperadas: [0] fecha | [1] nombre | [2] mensaje | [3] número de trámite
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<Array<{ fecha: string|null, nombre: string|null, mensaje: string|null, numero_tramite: string|null }>>}
+ */
 async function extraerFilasNotif(page) {
   return page.evaluate(() => {
     const filas = [];
@@ -130,8 +186,13 @@ async function extraerFilasNotif(page) {
   });
 }
 
-// ── Extraer filas de Documentos Externos ─────────────────────────────────────
-
+/**
+ * Extrae las filas de la tabla de Documentos Externos.
+ * Columnas esperadas: [0] fecha envío | [1] nombre | [2] número de trámite | [3] motivo
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<Array<{ fecha_envio: string|null, nombre: string|null, numero_tramite: string|null, motivo: string|null }>>}
+ */
 async function extraerFilasDocs(page) {
   return page.evaluate(() => {
     const filas = [];
@@ -150,8 +211,17 @@ async function extraerFilasDocs(page) {
   });
 }
 
-// ── Descargar PDF de la columna Acciones (notificación) ──────────────────────
+// ── Descargas ─────────────────────────────────────────────────────────────────
 
+/**
+ * Descarga el PDF de una notificación desde la columna Acciones.
+ *
+ * @param {import('playwright').Page} page
+ * @param {number} rowIndex       - Índice de la fila en tbody
+ * @param {string} numero_tramite - Número de trámite (para el nombre del archivo)
+ * @param {string|null} fecha     - Fecha en formato ISO (para el nombre del archivo)
+ * @returns {Promise<string|null>} Ruta absoluta al PDF o null si falló
+ */
 async function descargarNotif(page, rowIndex, numero_tramite, fecha) {
   const row = page.locator('table tbody tr').nth(rowIndex);
   const btn = row.locator('.acciones a, a:has(i.fa-download)').first();
@@ -174,8 +244,16 @@ async function descargarNotif(page, rowIndex, numero_tramite, fecha) {
   }
 }
 
-// ── Descargar PDFs del modal del ojo (documentos externos) ───────────────────
-
+/**
+ * Abre el modal del ojo de una fila de Documentos Externos y descarga todos los PDFs del modal.
+ * Cierra el modal al terminar.
+ *
+ * @param {import('playwright').Page} page
+ * @param {number} rowIndex       - Índice de la fila en tbody
+ * @param {string} numero_tramite - Para el nombre de los archivos
+ * @param {string|null} fecha_envio
+ * @returns {Promise<string[]>} Rutas absolutas de los PDFs descargados
+ */
 async function descargarDocsDelOjo(page, rowIndex, numero_tramite, fecha_envio) {
   const row    = page.locator('table tbody tr').nth(rowIndex);
   const btnOjo = row.locator('.acciones a, a:has(i.fa-eye), a:has(i.fa-search)').first();
@@ -184,8 +262,8 @@ async function descargarDocsDelOjo(page, rowIndex, numero_tramite, fecha_envio) 
   await new Promise(r => setTimeout(r, 2000));
   await page.waitForSelector('[role="dialog"] table tbody tr, .modal table tbody tr, .modal-body table tbody tr', { timeout: 15000 });
 
-  const filasDocs = await page.locator('[role="dialog"] table tbody tr, .modal table tbody tr, .modal-body table tbody tr').all();
-  const rutas     = [];
+  const filasDocs   = await page.locator('[role="dialog"] table tbody tr, .modal table tbody tr, .modal-body table tbody tr').all();
+  const rutas       = [];
   const numLimpio   = (numero_tramite || 'sin-numero').replace(/[/\\:*?"<>|]/g, '-');
   const fechaLimpia = (fecha_envio   || 'sin-fecha'  ).replace(/[/\\:*?"<>|]/g, '-');
 
@@ -205,7 +283,7 @@ async function descargarDocsDelOjo(page, rowIndex, numero_tramite, fecha_envio) 
     }
   }
 
-  // Cerrar modal
+  // Cerrar el modal antes de continuar
   try {
     await page.locator('[role="dialog"] button[aria-label*="cerrar"], [role="dialog"] button[aria-label*="close"], [role="dialog"] .modal-close, button.close').first().click({ timeout: 5000 });
   } catch {
@@ -218,6 +296,16 @@ async function descargarDocsDelOjo(page, rowIndex, numero_tramite, fecha_envio) 
 
 // ── Función principal exportable ──────────────────────────────────────────────
 
+/**
+ * Obtiene las últimas 10 notificaciones y documentos externos de TAD
+ * y persiste los nuevos en la base de datos.
+ *
+ * Solo descarga documentos externos si el número de trámite tiene
+ * una notificación asociada en la misma ejecución.
+ *
+ * @param {{ headless?: boolean }} [opts]
+ * @returns {Promise<{ nuevasNotif: number, nuevosDocs: number }>}
+ */
 async function obtenerNotificacionesTAD({ headless = true } = {}) {
   console.log('\n══ Scraper TAD ═══════════════════════════════════════════════');
 
@@ -246,6 +334,7 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
 
     console.log(`  ${filasNotif.length} fila(s) encontradas`);
 
+    // Acumula los trámites vistos para filtrar documentos externos luego
     const tramitesNotif = new Set();
 
     for (let i = 0; i < filasNotif.length; i++) {
@@ -263,7 +352,9 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
       nuevasNotif++;
     }
 
-    // ── Parte 2: Documentos Externos — solo los que tienen notificación ────────
+    // ── Parte 2: Documentos Externos ─────────────────────────────────────────
+    // Solo se descargan documentos de trámites que tienen notificación,
+    // para evitar descargar documentos sin contexto.
 
     console.log('\n4. Cambiando a Documentos Externos...');
     await irAPestanaInterna(page, 'Documentos Externos');
@@ -283,7 +374,7 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
         continue;
       }
 
-      // Obtener el índice real en la tabla (puede ser distinto al filtrado)
+      // El índice real en la tabla puede diferir del índice filtrado
       const idx = todasFilasDocs.findIndex(
         r => r.numero_tramite?.trim() === f.numero_tramite && isoFecha(r.fecha_envio) === f.fecha_envio
       );
@@ -306,8 +397,10 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
 
 module.exports = { obtenerNotificacionesTAD };
 
+// node tad.js [--visible]
 if (require.main === module) {
-  obtenerNotificacionesTAD({ headless: false }).catch(e => {
+  const headless = !process.argv.includes('--visible');
+  obtenerNotificacionesTAD({ headless }).catch(e => {
     console.error('\nError fatal:', e.message);
     process.exit(1);
   });

@@ -1,8 +1,27 @@
+/**
+ * Rutas de estadísticas de facturación.
+ *
+ * GET /api/estadisticas/mes?mes=5&anio=2026         → resumen del mes vs. mes anterior
+ * GET /api/estadisticas/anio?anio=2026              → desglose mes a mes del año
+ * GET /api/estadisticas/clientes-pendientes         → clientes con facturas impagas
+ *
+ * Las notas de crédito (tipo LIKE 'NC%') se descuentan del total facturado.
+ * Las facturas en USD se convierten a ARS usando el tipo_cambio almacenado.
+ *
+ * @module facturacion/routes/estadisticas
+ */
 const { Router } = require('express');
 const db = require('../../../../core/database');
 
 const router = Router();
 
+/**
+ * Calcula estadísticas de facturación y cobros para un mes y año dado.
+ * Las NC se restan del total facturado; las facturas USD se convierten a ARS.
+ * @param {number} anio
+ * @param {number} mes - 1–12
+ * @returns {{ total_facturas, total_facturado, cobradas, pendientes, total_cobrado, total_retenciones }}
+ */
 function getMonthStats(anio, mes) {
   const y = String(anio);
   const m = String(mes).padStart(2, '0');
@@ -24,8 +43,8 @@ function getMonthStats(anio, mes) {
 
   const cobros = db.prepare(`
     SELECT
-      COALESCE(SUM(p.monto), 0)                        AS total_cobrado,
-      COALESCE(SUM(p.retencion), 0)                    AS total_retenciones
+      COALESCE(SUM(p.monto), 0)      AS total_cobrado,
+      COALESCE(SUM(p.retencion), 0)  AS total_retenciones
     FROM pagos p
     JOIN facturas f ON f.id = p.factura_id
     WHERE strftime('%Y', f.fecha) = ? AND strftime('%m', f.fecha) = ?
@@ -34,20 +53,31 @@ function getMonthStats(anio, mes) {
   return { ...base, ...cobros };
 }
 
-// GET /api/estadisticas/mes?mes=5&anio=2026
+/**
+ * GET /api/estadisticas/mes — Estadísticas del mes solicitado y el anterior.
+ * @query {number} [mes]  - Mes (1–12). Default: mes actual.
+ * @query {number} [anio] - Año. Default: año actual.
+ * @returns {{ actual, anterior, mes, anio }}
+ */
 router.get('/mes', (req, res) => {
   const hoy  = new Date();
   const mes  = Number(req.query.mes  ?? hoy.getMonth() + 1);
   const anio = Number(req.query.anio ?? hoy.getFullYear());
 
   const actual   = getMonthStats(anio, mes);
-  const prevDate = new Date(anio, mes - 2); // mes-2 porque Date usa 0-index
+  // new Date(anio, mes-2) resuelve correctamente el cruce de año (ej: mes=1 → diciembre del año anterior)
+  const prevDate = new Date(anio, mes - 2);
   const anterior = getMonthStats(prevDate.getFullYear(), prevDate.getMonth() + 1);
 
   res.json({ actual, anterior, mes, anio });
 });
 
-// GET /api/estadisticas/anio?anio=2026
+/**
+ * GET /api/estadisticas/anio — Estadísticas mes a mes para el año solicitado.
+ * Devuelve los 12 meses aunque no tengan facturas (valores en 0).
+ * @query {number} [anio] - Default: año actual.
+ * @returns {{ anio, meses: Array<{mes, total_facturas, total_facturado, cobradas, pendientes, total_cobrado, total_retenciones}> }}
+ */
 router.get('/anio', (req, res) => {
   const hoy  = new Date();
   const anio = Number(req.query.anio ?? hoy.getFullYear());
@@ -99,12 +129,16 @@ router.get('/anio', (req, res) => {
   res.json({ anio, meses });
 });
 
-// GET /api/estadisticas/clientes-pendientes
+/**
+ * GET /api/estadisticas/clientes-pendientes — Clientes con facturas impagas.
+ * Ordenado por monto pendiente descendente.
+ * @returns {Array<{nombre, cuit, facturas_count, monto_pendiente}>}
+ */
 router.get('/clientes-pendientes', (req, res) => {
   const rows = db.prepare(`
     SELECT c.nombre, c.cuit,
-      COUNT(f.id)           AS facturas_count,
-      SUM(f.monto_total)    AS monto_pendiente
+      COUNT(f.id)        AS facturas_count,
+      SUM(f.monto_total) AS monto_pendiente
     FROM facturas f
     JOIN clientes c ON c.id = f.cliente_id
     WHERE f.estado = 'impaga'
