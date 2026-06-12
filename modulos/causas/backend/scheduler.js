@@ -39,7 +39,7 @@ async function ejecutarCiclo() {
 
   // Inferir y vincular clientes automáticamente para las causas nuevas
   try {
-    const r = inferirTodos();
+    const r = await inferirTodos();
     if (r.vinculadas > 0) {
       console.log(`[causas-scheduler] Inferencia: ${r.vinculadas} causa(s) vinculada(s) a cliente (${r.nuevosClientes} nuevo(s))`);
     }
@@ -60,7 +60,7 @@ async function ejecutarSICNEA() {
   try {
     await obtenerNotificacionesSICNEA();
     await notificarNuevasCausas(desde);
-    const r = inferirTodos();
+    const r = await inferirTodos();
     if (r.vinculadas > 0) {
       console.log(`[causas-scheduler] Inferencia SICNEA: ${r.vinculadas} causa(s) vinculada(s) a cliente`);
     }

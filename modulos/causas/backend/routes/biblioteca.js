@@ -114,9 +114,9 @@ router.get('/stats', (req, res) => {
  * a partir de sus notificaciones (SICNEA: razon_social, PJN: carátula,
  * TAD: solo si el cliente ya existe). Devuelve un resumen del proceso.
  */
-router.post('/inferir-clientes', (req, res) => {
+router.post('/inferir-clientes', async (req, res) => {
   try {
-    const resultado = inferirTodos();
+    const resultado = await inferirTodos();
     res.json(resultado);
   } catch (err) {
     console.error('[inferir-clientes]', err);

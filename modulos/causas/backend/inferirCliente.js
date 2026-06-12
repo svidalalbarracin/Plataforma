@@ -2,24 +2,21 @@
  * Inferencia automática de clientes a partir de notificaciones vinculadas.
  *
  * Estrategia por portal:
- * - SICNEA: razon_social es el cliente explícito → auto-crear y vincular siempre.
- * - PJN:    parsear carátula buscando IMPUTADO / CONTRIBUYENTE / REQUERIDO /
- *           nombre c/ DGA → crear y vincular si el patrón es confiable.
- * - TAD:    buscar nombre en el campo `mensaje` → vincular solo si ya existe
- *           el cliente en la tabla (no crear desde TAD).
+ * - SICNEA: razon_social es el cliente explícito → auto-crear y vincular.
+ * - PJN:    parsear carátula (IMPUTADO / CONTRIBUYENTE / REQUERIDO / c/ DGA).
+ * - TAD:    1º intentar campo `mensaje`; 2º fallback PDF: línea "Referencia:" del
+ *           acto del TFN. Crea el cliente si no existe (el PDF es fuente oficial).
+ *
+ * Las funciones exportadas son async porque el fallback PDF usa pdf-parse (async).
  *
  * @module causas/inferirCliente
  */
-const db = require('../../../core/database');
+const fs       = require('fs');
+const pdfParse = require('pdf-parse');
+const db       = require('../../../core/database');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Normaliza un nombre para comparación: mayúsculas, sin puntuación duplicada,
- * sin espacios extra. Permite comparar "S.A." con "SA" y similares.
- * @param {string} nombre
- * @returns {string}
- */
 function norm(nombre) {
   return nombre.toUpperCase()
     .replace(/\./g, '')
@@ -29,9 +26,7 @@ function norm(nombre) {
 }
 
 /**
- * Busca un cliente existente por nombre normalizado.
- * @param {string} nombre
- * @returns {{ id: number, nombre: string } | null}
+ * Búsqueda exacta por nombre normalizado.
  */
 function buscarCliente(nombre) {
   const n = norm(nombre);
@@ -40,23 +35,25 @@ function buscarCliente(nombre) {
 }
 
 /**
- * Busca o crea un cliente por nombre. Devuelve el cliente y si fue creado.
- * @param {string} nombre
- * @returns {{ id: number, nombre: string, nuevo: boolean }}
+ * Búsqueda fuzzy: devuelve el primer cliente cuyo nombre normalizado contiene
+ * al extraído, o viceversa. Útil cuando el PDF da "MC CAIN" y la DB tiene "MC CAIN SA".
  */
+function buscarClienteFuzzy(nombre) {
+  const n = norm(nombre);
+  return db.prepare('SELECT id, nombre FROM clientes').all()
+    .find(c => {
+      const cn = norm(c.nombre);
+      return cn.includes(n) || n.includes(cn);
+    }) ?? null;
+}
+
 function encontrarOCrear(nombre) {
-  const existente = buscarCliente(nombre);
-  if (existente) return { ...existente, nuevo: false };
+  const exacto = buscarCliente(nombre);
+  if (exacto) return { ...exacto, nuevo: false };
   const r = db.prepare('INSERT INTO clientes (nombre) VALUES (?)').run(nombre.trim());
   return { id: r.lastInsertRowid, nombre: nombre.trim(), nuevo: true };
 }
 
-/**
- * Vincula un cliente a una causa si el vínculo no existe aún.
- * @param {number} causaId
- * @param {number} clienteId
- * @returns {boolean} true si se insertó, false si ya existía
- */
 function vincular(causaId, clienteId) {
   const existe = db.prepare(
     'SELECT id FROM causa_cliente WHERE causa_id = ? AND cliente_id = ?'
@@ -68,25 +65,9 @@ function vincular(causaId, clienteId) {
 
 // ── Extracción de nombre por portal ───────────────────────────────────────────
 
-/**
- * Extrae el nombre del cliente de una carátula PJN.
- *
- * Prioridad de patrones:
- * 1. IMPUTADO (el más confiable en causas penales/aduaneras)
- * 2. CONTRIBUYENTE (causas fiscales)
- * 3. Nombre c/ DGA (formato "EMPRESA c/ DGA")
- * 4. REQUERIDO
- * 5. Nombre Y OTRO s/ (cuando el cliente encabeza la carátula)
- *
- * Los prefijos "Incidente Nº X -" y "Recurso Nº X -" se eliminan antes.
- *
- * @param {string|null} caratula
- * @returns {string|null} Nombre extraído o null si no se pudo parsear
- */
 function extraerDePJN(caratula) {
   if (!caratula) return null;
 
-  // Eliminar prefijos anidados de incidente/recurso (puede haber más de uno)
   let s = caratula;
   const prefijo = /^(?:Incidente|Recurso\s+\w+|Auto)\s+Nº\s+\d+\s+-\s+/i;
   while (prefijo.test(s)) s = s.replace(prefijo, '').trim();
@@ -98,15 +79,10 @@ function extraerDePJN(caratula) {
     .trim();
 
   const patrones = [
-    // IMPUTADO: NOMBRE  s/ o Y OTROS
     /IMPUTADO:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|\s+QUERELLANTE|$)/i,
-    // CONTRIBUYENTE: NOMBRE  s/ o Y OTROS
     /CONTRIBUYENTE:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|$)/i,
-    // NOMBRE (TF 12345-A) c/ DGA
     /^(.+?)\s*\(TF[\s\d\-A-Z]+\)\s+c\//i,
-    // REQUERIDO: NOMBRE
     /REQUERIDO:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|$)/i,
-    // NOMBRE Y OTRO s/  (nombre encabeza la carátula)
     /^([A-Z][A-Z\s\.\-,]+?)\s+Y\s+OTRO\s+s\//i,
   ];
 
@@ -114,45 +90,77 @@ function extraerDePJN(caratula) {
     const m = s.match(pat);
     if (m) {
       const nombre = limpiar(m[1]);
-      // Descartar "N.N.", nombres vacíos o demasiado cortos
-      if (nombre.length > 3 && !/^N\.?N\.?$/i.test(nombre)) {
-        return nombre;
-      }
+      if (nombre.length > 3 && !/^N\.?N\.?$/i.test(nombre)) return nombre;
     }
   }
-
   return null;
 }
 
-/**
- * Extrae el nombre del cliente del campo `mensaje` de una notificación TAD.
- * El formato habitual es "34.900-A NOMBRE EMPRESA S.A." al inicio del mensaje.
- *
- * @param {string|null} mensaje
- * @returns {string|null}
- */
 function extraerDeTAD(mensaje) {
   if (!mensaje) return null;
-  // "34.900-A NOMBRE" o "EXP 12345 NOMBRE" al inicio
   const m = mensaje.match(/^[\d\.\-]+[A-Z]?\s+([A-Z][A-Z\s\.]+(?:S\.?A\.?|S\.?R\.?L\.?|TEAM|GROUP|S\.?A\.?S\.?)?)(?:\s|$)/i);
-  if (m) return m[1].trim();
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * Lee un PDF y devuelve su texto plano. Devuelve null si el archivo no existe o falla.
+ * @param {string} filePath
+ * @returns {Promise<string|null>}
+ */
+async function extraerTextoPDF(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  try {
+    const buf  = fs.readFileSync(filePath);
+    const data = await pdfParse(buf);
+    return data.text ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extrae el nombre del cliente de la línea "Referencia:" de un acto del TFN.
+ *
+ * Formatos observados:
+ *   Referencia: EX-2020-07566630- -APN-SGASAD#TFN Monte Verde SA
+ *   Referencia: "MC CAIN" (2023-135287222)
+ *   Referencia: Traslado inicial EX-2026-34118977- BARPLA S.A.
+ *
+ * @param {string} texto  Texto plano del PDF
+ * @returns {string|null}
+ */
+function extraerDeTADTextoPDF(texto) {
+  if (!texto) return null;
+
+  const linea = texto.split('\n').map(l => l.trim()).find(l => /^Referencia:/i.test(l));
+  if (!linea) return null;
+
+  const contenido = linea.replace(/^Referencia:\s*/i, '').trim();
+
+  // Formato: "NOMBRE" (referencia)
+  const conComillas = contenido.match(/^"([^"]+)"/);
+  if (conComillas) return conComillas[1].trim();
+
+  // Formato: [descripción opcional] EX-YYYY-NNNNNNN- [-APN-XXX#TFN] NOMBRE
+  // Se elimina todo hasta el fin del token EX (con sufijo APN opcional) y se toma el resto.
+  const sinEX = contenido.replace(/^.*?EX-[\d\-]+\s*(?:-APN-[^\s]+\s*)?/, '').trim();
+  if (sinEX && sinEX !== contenido && sinEX.length > 2) {
+    return sinEX.replace(/\s*\(.*\)\s*$/, '').trim();
+  }
+
   return null;
 }
 
 // ── Función principal ─────────────────────────────────────────────────────────
 
 /**
- * Resultado de una inferencia individual.
- * @typedef {{ fuente: string, nombre: string, nuevo: boolean, vinculado: boolean } | null} ResultadoInferencia
- */
-
-/**
  * Intenta inferir y vincular el cliente de una causa a partir de sus notificaciones.
+ * Async porque el fallback PDF usa pdf-parse.
  *
  * @param {{ id: number, tipo: string, numero_expediente: string }} causa
- * @returns {{ fuente: string, nombre: string, nuevo: boolean, vinculado: boolean } | null}
+ * @returns {Promise<{ fuente: string, nombre: string, nuevo: boolean, vinculado: boolean } | null>}
  */
-function inferirParaCausa(causa) {
+async function inferirParaCausa(causa) {
   // SICNEA: razon_social es explícito
   if (causa.tipo === 'sicnea') {
     const notif = db.prepare(
@@ -160,7 +168,7 @@ function inferirParaCausa(causa) {
     ).get(causa.id);
     if (!notif?.razon_social) return null;
 
-    const cliente = encontrarOCrear(notif.razon_social);
+    const cliente  = encontrarOCrear(notif.razon_social);
     const vinculado = vincular(causa.id, cliente.id);
     return { fuente: 'sicnea', nombre: cliente.nombre, nuevo: cliente.nuevo, vinculado };
   }
@@ -173,24 +181,48 @@ function inferirParaCausa(causa) {
     const nombre = extraerDePJN(notif?.caratula);
     if (!nombre) return null;
 
-    const cliente = encontrarOCrear(nombre);
+    const cliente  = encontrarOCrear(nombre);
     const vinculado = vincular(causa.id, cliente.id);
     return { fuente: 'pjn', nombre: cliente.nombre, nuevo: cliente.nuevo, vinculado };
   }
 
-  // TAD: solo vincular si el cliente ya existe, no crear
+  // TAD: 1º mensaje, 2º fallback PDF
   if (causa.tipo === 'tad') {
-    const notif = db.prepare(
-      'SELECT mensaje FROM notificaciones_tad WHERE causa_id = ? AND mensaje IS NOT NULL LIMIT 1'
-    ).get(causa.id);
-    const nombre = extraerDeTAD(notif?.mensaje);
-    if (!nombre) return null;
+    const notifs = db.prepare(
+      'SELECT mensaje, archivo_path FROM notificaciones_tad WHERE causa_id = ? ORDER BY fecha DESC'
+    ).all(causa.id);
 
-    const existente = buscarCliente(nombre);
-    if (!existente) return null; // TAD no crea clientes nuevos
+    // Intentar primero con mensaje de cada notificación
+    for (const notif of notifs) {
+      const nombre = extraerDeTAD(notif.mensaje);
+      if (nombre) {
+        const cliente  = encontrarOCrear(nombre);
+        const vinculado = vincular(causa.id, cliente.id);
+        return { fuente: 'tad:mensaje', nombre: cliente.nombre, nuevo: cliente.nuevo, vinculado };
+      }
+    }
 
-    const vinculado = vincular(causa.id, existente.id);
-    return { fuente: 'tad', nombre: existente.nombre, nuevo: false, vinculado };
+    // Fallback: escanear PDFs en busca de la línea Referencia:
+    for (const notif of notifs) {
+      if (!notif.archivo_path) continue;
+      const texto  = await extraerTextoPDF(notif.archivo_path);
+      const nombre = extraerDeTADTextoPDF(texto);
+      if (!nombre) continue;
+
+      // Intentar match exacto primero, luego fuzzy (ej. "MC CAIN" → "MC CAIN SA")
+      const existente = buscarCliente(nombre) ?? buscarClienteFuzzy(nombre);
+      if (existente) {
+        const vinculado = vincular(causa.id, existente.id);
+        return { fuente: 'tad:pdf', nombre: existente.nombre, nuevo: false, vinculado };
+      }
+
+      // No existe: crear desde PDF (fuente oficial)
+      const nuevo    = encontrarOCrear(nombre);
+      const vinculado = vincular(causa.id, nuevo.id);
+      return { fuente: 'tad:pdf', nombre: nuevo.nombre, nuevo: nuevo.nuevo, vinculado };
+    }
+
+    return null;
   }
 
   return null;
@@ -198,11 +230,9 @@ function inferirParaCausa(causa) {
 
 /**
  * Corre la inferencia sobre todas las causas que aún no tienen clientes vinculados.
- * Devuelve un resumen de lo que se procesó.
- *
- * @returns {{ procesadas: number, vinculadas: number, nuevosClientes: number, sinMatch: number, detalle: Array }}
+ * @returns {Promise<{ procesadas, vinculadas, nuevosClientes, sinMatch, detalle }>}
  */
-function inferirTodos() {
+async function inferirTodos() {
   const sinClientes = db.prepare(`
     SELECT c.id, c.tipo, c.numero_expediente
     FROM causas c
@@ -213,13 +243,13 @@ function inferirTodos() {
   const detalle = [];
 
   for (const causa of sinClientes) {
-    const r = inferirParaCausa(causa);
+    const r = await inferirParaCausa(causa);
     if (!r) {
       sinMatch++;
       detalle.push({ causa: causa.numero_expediente, tipo: causa.tipo, resultado: null });
     } else {
-      if (r.vinculado)   vinculadas++;
-      if (r.nuevo)       nuevosClientes++;
+      if (r.vinculado) vinculadas++;
+      if (r.nuevo)     nuevosClientes++;
       detalle.push({ causa: causa.numero_expediente, tipo: causa.tipo, resultado: r });
     }
   }
@@ -227,4 +257,4 @@ function inferirTodos() {
   return { procesadas: sinClientes.length, vinculadas, nuevosClientes, sinMatch, detalle };
 }
 
-module.exports = { inferirParaCausa, inferirTodos, extraerDePJN, extraerDeTAD };
+module.exports = { inferirParaCausa, inferirTodos, extraerDePJN, extraerDeTAD, extraerDeTADTextoPDF };
