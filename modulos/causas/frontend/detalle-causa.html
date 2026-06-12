@@ -85,12 +85,32 @@
       <span class="modal-title">Vincular cliente</span>
       <button class="modal-close" onclick="cerrarModal('modal-cliente')">×</button>
     </div>
-    <div class="form-group">
-      <label for="sel-cliente">Cliente</label>
-      <select id="sel-cliente" style="width:100%">
-        <option value="">Seleccioná un cliente…</option>
-      </select>
+
+    <div class="filter-tabs" style="margin-bottom:1.25rem">
+      <button class="filter-tab active" id="tab-cli-existente" onclick="tabCliente('existente')">Existente</button>
+      <button class="filter-tab" id="tab-cli-nuevo" onclick="tabCliente('nuevo')">Crear nuevo</button>
     </div>
+
+    <div id="panel-cli-existente">
+      <div class="form-group">
+        <label for="sel-cliente">Cliente</label>
+        <select id="sel-cliente" style="width:100%">
+          <option value="">Seleccioná un cliente…</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="panel-cli-nuevo" style="display:none">
+      <div class="form-group">
+        <label for="cli-nombre">Nombre / Razón social <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="cli-nombre" placeholder="Ej: García, Juan Carlos">
+      </div>
+      <div class="form-group">
+        <label for="cli-cuit">CUIT <span class="text-muted" style="font-weight:400">(opcional)</span></label>
+        <input type="text" id="cli-cuit" placeholder="20-12345678-9">
+      </div>
+    </div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="cerrarModal('modal-cliente')">Cancelar</button>
       <button class="btn btn-primary" id="btn-vincular-cliente">Vincular</button>
@@ -128,25 +148,25 @@
     // Movimientos: unificar notificaciones de los tres portales
     const movimientos = [
       ...(causa.notif_pjn ?? []).map(n => ({
-        fecha:  n.fecha_envio,
-        desc:   n.caratula || n.numero_expediente || `Notificación ${n.numero}`,
+        fecha:   n.fecha_envio,
+        desc:    n.caratula || n.numero_expediente || `Notificación ${n.numero}`,
         detalle: n.autor ? `De: ${n.autor}` : null,
-        origen: 'PJN',
-        url:    null,
+        origen:  'PJN',
+        docUrl:  n.archivo_path ? `/api/causas/biblioteca/notif-doc/pjn/${n.id}` : null,
       })),
       ...(causa.notif_tad ?? []).map(n => ({
-        fecha:  n.fecha,
-        desc:   n.nombre || n.numero_tramite,
+        fecha:   n.fecha,
+        desc:    n.nombre || n.numero_tramite,
         detalle: n.mensaje ? (n.mensaje.length > 100 ? n.mensaje.slice(0, 100) + '…' : n.mensaje) : null,
-        origen: 'TAD',
-        url:    null,
+        origen:  'TAD',
+        docUrl:  n.archivo_path ? `/api/causas/biblioteca/notif-doc/tad/${n.id}` : null,
       })),
       ...(causa.notif_sicnea ?? []).map(n => ({
-        fecha:  n.fecha_alta,
-        desc:   n.motivo || n.razon_social || `Cédula ${n.numero}`,
+        fecha:   n.fecha_alta,
+        desc:    n.motivo || n.razon_social || `Cédula ${n.numero}`,
         detalle: n.aduana ? `Aduana: ${n.aduana}` : null,
-        origen: 'SICNEA',
-        url:    null,
+        origen:  'SICNEA',
+        docUrl:  n.archivos_paths ? `/api/causas/biblioteca/notif-doc/sicnea/${n.id}` : null,
       })),
     ].sort((a, b) => (b.fecha ?? '').localeCompare(a.fecha ?? ''));
 
@@ -210,17 +230,20 @@
         </div>
         <ul class="movimientos-list" id="movimientos-list">
           ${movimientos.length
-            ? movimientos.map(m => `
+            ? movimientos.map(m => {
+                const badgeCls = m.origen === 'PJN' ? 'badge-tipo-pjn' : m.origen === 'TAD' ? 'badge-tipo-tad' : 'badge-tipo-sicnea';
+                return `
               <li class="movimiento-item">
                 <div class="movimiento-fecha">${formatFecha(m.fecha)}</div>
-                <div>
+                <div style="flex:1">
                   <div class="movimiento-desc">${m.desc}</div>
                   ${m.detalle ? `<div class="movimiento-origen">${m.detalle}</div>` : ''}
-                  <div class="movimiento-origen" style="margin-top:.1rem">
-                    <span class="badge badge-tipo ${m.origen === 'PJN' ? 'badge-tipo-pjn' : m.origen === 'TAD' ? 'badge-tipo-tad' : 'badge-tipo-sicnea'}" style="font-size:.65rem">${m.origen}</span>
+                  <div style="margin-top:.3rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+                    <span class="badge badge-tipo ${badgeCls}" style="font-size:.65rem">${m.origen}</span>
+                    ${m.docUrl ? `<a href="${m.docUrl}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:.75rem;padding:.15rem .5rem;line-height:1.4">Ver doc</a>` : ''}
                   </div>
                 </div>
-              </li>`).join('')
+              </li>`; }).join('')
             : '<li class="empty" style="padding:1.5rem 0">Sin notificaciones vinculadas. Usá "Vincular automático" si hay notificaciones con el mismo número de expediente.</li>'
           }
         </ul>
@@ -319,7 +342,20 @@
   }
 
   // ── Clientes ───────────────────────────────────────
+  let tabClienteActiva = 'existente';
+
+  function tabCliente(tab) {
+    tabClienteActiva = tab;
+    document.getElementById('tab-cli-existente').classList.toggle('active', tab === 'existente');
+    document.getElementById('tab-cli-nuevo').classList.toggle('active',     tab === 'nuevo');
+    document.getElementById('panel-cli-existente').style.display = tab === 'existente' ? '' : 'none';
+    document.getElementById('panel-cli-nuevo').style.display     = tab === 'nuevo'     ? '' : 'none';
+  }
+
   async function abrirModalCliente() {
+    tabCliente('existente');
+    document.getElementById('cli-nombre').value = '';
+    document.getElementById('cli-cuit').value   = '';
     const sel = document.getElementById('sel-cliente');
     sel.innerHTML = '<option value="">Cargando…</option>';
     abrirModal('modal-cliente');
@@ -337,13 +373,26 @@
   }
 
   document.getElementById('btn-vincular-cliente').addEventListener('click', async () => {
-    const cliente_id = document.getElementById('sel-cliente').value;
-    if (!cliente_id) { toast('Seleccioná un cliente', 'error'); return; }
+    const btn = document.getElementById('btn-vincular-cliente');
+    let body;
+
+    if (tabClienteActiva === 'nuevo') {
+      const nombre = document.getElementById('cli-nombre').value.trim();
+      if (!nombre) { toast('Ingresá el nombre del cliente', 'error'); return; }
+      const cuit = document.getElementById('cli-cuit').value.trim();
+      body = { nombre, cuit: cuit || null };
+    } else {
+      const cliente_id = document.getElementById('sel-cliente').value;
+      if (!cliente_id) { toast('Seleccioná un cliente', 'error'); return; }
+      body = { cliente_id: Number(cliente_id) };
+    }
+
+    btn.disabled = true;
     try {
       const res = await fetch(`/api/causas/biblioteca/${CAUSA_ID}/clientes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cliente_id: Number(cliente_id) }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await res.text());
       cerrarModal('modal-cliente');
@@ -351,6 +400,8 @@
       cargarCausa();
     } catch (e) {
       toast('Error: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
     }
   });
 

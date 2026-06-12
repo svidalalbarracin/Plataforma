@@ -1,26 +1,31 @@
 /**
  * Rutas API para la biblioteca de causas.
  *
- * GET    /api/causas/biblioteca                        → lista causas (filtros: estado, tipo, q)
- * GET    /api/causas/biblioteca/stats                  → conteos por estado y tipo
- * GET    /api/causas/biblioteca/:id                    → detalle completo de una causa
- * POST   /api/causas/biblioteca                        → crear causa
- * PUT    /api/causas/biblioteca/:id                    → actualizar causa
- * DELETE /api/causas/biblioteca/:id                    → eliminar causa
+ * GET    /api/causas/biblioteca                          → lista causas (filtros: estado, tipo, q)
+ * GET    /api/causas/biblioteca/stats                    → conteos por estado y tipo
+ * GET    /api/causas/biblioteca/notif-doc/:origen/:id    → sirve el PDF de una notificación
+ * POST   /api/causas/biblioteca/inferir-clientes         → inferencia batch de clientes
+ * GET    /api/causas/biblioteca/:id                      → detalle completo de una causa
+ * POST   /api/causas/biblioteca                          → crear causa
+ * PUT    /api/causas/biblioteca/:id                      → actualizar causa
+ * DELETE /api/causas/biblioteca/:id                      → eliminar causa
  *
- * POST   /api/causas/biblioteca/:id/clientes           → vincular cliente a causa
- * DELETE /api/causas/biblioteca/:id/clientes/:cliId    → desvincular cliente
+ * POST   /api/causas/biblioteca/:id/clientes             → vincular cliente existente { cliente_id }
+ *                                                           o crear y vincular nuevo { nombre, cuit? }
+ * DELETE /api/causas/biblioteca/:id/clientes/:cliId      → desvincular cliente
  *
- * POST   /api/causas/biblioteca/:id/vincular-notif     → auto-vincular notificaciones por expediente
+ * POST   /api/causas/biblioteca/:id/vincular-notif       → auto-vincular notificaciones por expediente
  * PATCH  /api/causas/biblioteca/notif/:origen/:nId/causa → asignar causa_id a una notificación
  *
- * GET    /api/causas/carpetas                          → lista carpetas (con causa vinculada)
- * POST   /api/causas/carpetas                          → crear carpeta
- * PUT    /api/causas/carpetas/:id                      → actualizar carpeta
- * DELETE /api/causas/carpetas/:id                      → eliminar carpeta
+ * GET    /api/causas/biblioteca/carpetas                 → lista carpetas (con causa vinculada)
+ * POST   /api/causas/biblioteca/carpetas                 → crear carpeta
+ * PUT    /api/causas/biblioteca/carpetas/:id             → actualizar carpeta
+ * DELETE /api/causas/biblioteca/carpetas/:id             → eliminar carpeta
  *
  * @module causas/routes/biblioteca
  */
+const path            = require('path');
+const fs              = require('fs');
 const express         = require('express');
 const router          = express.Router();
 const db              = require('../../../../core/database');
@@ -122,6 +127,40 @@ router.post('/inferir-clientes', async (req, res) => {
     console.error('[inferir-clientes]', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+/**
+ * GET /api/causas/biblioteca/notif-doc/:origen/:id
+ * Sirve el PDF de una notificación como inline PDF.
+ * El path del archivo se obtiene desde la DB (sin posibilidad de path traversal).
+ * origen: 'pjn' | 'tad' | 'sicnea'
+ */
+router.get('/notif-doc/:origen/:id', (req, res) => {
+  const { origen, id } = req.params;
+  let filePath;
+
+  if (origen === 'pjn') {
+    const row = db.prepare('SELECT archivo_path FROM notificaciones_pjn WHERE id = ?').get(id);
+    filePath = row?.archivo_path ?? null;
+  } else if (origen === 'tad') {
+    const row = db.prepare('SELECT archivo_path FROM notificaciones_tad WHERE id = ?').get(id);
+    filePath = row?.archivo_path ?? null;
+  } else if (origen === 'sicnea') {
+    const row = db.prepare('SELECT archivos_paths FROM notificaciones_sicnea WHERE id = ?').get(id);
+    if (row?.archivos_paths) {
+      try { filePath = JSON.parse(row.archivos_paths)[0] ?? null; } catch { filePath = null; }
+    }
+  } else {
+    return res.status(400).json({ error: 'Origen inválido' });
+  }
+
+  if (!filePath || !fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Documento no disponible' });
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${path.basename(filePath)}"`);
+  res.sendFile(filePath);
 });
 
 /**
@@ -230,19 +269,29 @@ router.delete('/:id', (req, res) => {
 
 /**
  * POST /api/causas/biblioteca/:id/clientes
- * Vincula un cliente existente a la causa. Body: { cliente_id }
+ * Vincula un cliente a la causa. Dos modos:
+ *   { cliente_id }        → vincula un cliente existente
+ *   { nombre, cuit? }     → crea el cliente y lo vincula en un solo paso
  */
 router.post('/:id/clientes', (req, res) => {
   const causa = getCausa(req.params.id);
   if (!causa) return res.status(404).json({ error: 'Causa no encontrada' });
 
-  const { cliente_id } = req.body;
-  if (!cliente_id) return res.status(400).json({ error: 'cliente_id es obligatorio' });
+  const { cliente_id, nombre, cuit } = req.body;
+  let cliente;
 
-  const cliente = db.prepare('SELECT id, nombre, cuit FROM clientes WHERE id = ?').get(cliente_id);
-  if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (nombre?.trim()) {
+    const r = db.prepare('INSERT INTO clientes (nombre, cuit) VALUES (?, ?)')
+      .run(nombre.trim(), cuit?.trim() || null);
+    cliente = db.prepare('SELECT id, nombre, cuit FROM clientes WHERE id = ?').get(r.lastInsertRowid);
+  } else if (cliente_id) {
+    cliente = db.prepare('SELECT id, nombre, cuit FROM clientes WHERE id = ?').get(cliente_id);
+    if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+  } else {
+    return res.status(400).json({ error: 'Se requiere cliente_id o nombre' });
+  }
 
-  db.prepare('INSERT OR IGNORE INTO causa_cliente (causa_id, cliente_id) VALUES (?, ?)').run(causa.id, cliente_id);
+  db.prepare('INSERT OR IGNORE INTO causa_cliente (causa_id, cliente_id) VALUES (?, ?)').run(causa.id, cliente.id);
   res.json({ ok: true, cliente });
 });
 
