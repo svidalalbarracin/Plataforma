@@ -175,6 +175,35 @@ db.exec(`
   );
 `);
 
+// Migración: hace clientes.cuit nullable (los clientes inferidos desde causas no tienen CUIT inicial).
+// SQLite no soporta ALTER COLUMN, así que se recrea la tabla solo si sigue siendo NOT NULL.
+const cuitNotnull = db.prepare('PRAGMA table_info(clientes)').all()
+  .find(c => c.name === 'cuit' && c.notnull === 1);
+if (cuitNotnull) {
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+    CREATE TABLE clientes_new (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre                TEXT    NOT NULL,
+      cuit                  TEXT,
+      email                 TEXT,
+      telefono              TEXT,
+      anticipo_usd          REAL,
+      honorario_exito_usd   REAL,
+      concepto_facturacion  TEXT
+    );
+    INSERT INTO clientes_new
+      SELECT id, nombre, cuit, email, telefono, anticipo_usd, honorario_exito_usd, concepto_facturacion
+      FROM clientes;
+    DROP TABLE clientes;
+    ALTER TABLE clientes_new RENAME TO clientes;
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
+  console.log('[db] Migración: clientes.cuit ahora es nullable');
+}
+
 // Agrega causa_id a las tablas de notificaciones si todavía no existe.
 // SQLite no soporta ALTER TABLE ADD COLUMN IF NOT EXISTS, así que se verifica
 // con PRAGMA antes de intentar la migración.

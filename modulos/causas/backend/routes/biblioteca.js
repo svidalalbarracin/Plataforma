@@ -21,9 +21,10 @@
  *
  * @module causas/routes/biblioteca
  */
-const express = require('express');
-const router  = express.Router();
-const db      = require('../../../../core/database');
+const express         = require('express');
+const router          = express.Router();
+const db              = require('../../../../core/database');
+const { inferirTodos } = require('../inferirCliente');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,22 @@ router.get('/stats', (req, res) => {
     SELECT tipo, COUNT(*) AS total FROM causas GROUP BY tipo
   `).all();
   res.json({ por_estado: porEstado, por_tipo: porTipo });
+});
+
+/**
+ * POST /api/causas/biblioteca/inferir-clientes
+ * Recorre todas las causas sin cliente vinculado e intenta inferirlo
+ * a partir de sus notificaciones (SICNEA: razon_social, PJN: carátula,
+ * TAD: solo si el cliente ya existe). Devuelve un resumen del proceso.
+ */
+router.post('/inferir-clientes', (req, res) => {
+  try {
+    const resultado = inferirTodos();
+    res.json(resultado);
+  } catch (err) {
+    console.error('[inferir-clientes]', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /**
