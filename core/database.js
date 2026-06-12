@@ -140,4 +140,49 @@ db.exec(`
   );
 `);
 
+// ── Biblioteca — Causas ───────────────────────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS causas (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero_expediente TEXT,
+    caratula          TEXT,
+    tipo              TEXT NOT NULL CHECK(tipo IN ('pjn','tad','sicnea','aduanero','papel')),
+    estado            TEXT NOT NULL DEFAULT 'en_tramite' CHECK(estado IN ('en_tramite','archivada','cerrada')),
+    juzgado           TEXT,
+    fecha_inicio      TEXT,
+    notas             TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS causa_cliente (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    causa_id   INTEGER NOT NULL,
+    cliente_id INTEGER NOT NULL,
+    UNIQUE (causa_id, cliente_id),
+    FOREIGN KEY (causa_id)   REFERENCES causas(id)   ON DELETE CASCADE,
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS carpetas (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    causa_id    INTEGER,
+    numero      TEXT,
+    ubicacion   TEXT,
+    descripcion TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE SET NULL
+  );
+`);
+
+// Agrega causa_id a las tablas de notificaciones si todavía no existe.
+// SQLite no soporta ALTER TABLE ADD COLUMN IF NOT EXISTS, así que se verifica
+// con PRAGMA antes de intentar la migración.
+for (const tabla of ['notificaciones_pjn', 'notificaciones_tad', 'notificaciones_sicnea']) {
+  const columnas = db.prepare(`PRAGMA table_info(${tabla})`).all();
+  if (!columnas.find(c => c.name === 'causa_id')) {
+    db.exec(`ALTER TABLE ${tabla} ADD COLUMN causa_id INTEGER REFERENCES causas(id) ON DELETE SET NULL`);
+  }
+}
+
 module.exports = db;
