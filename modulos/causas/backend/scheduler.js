@@ -11,6 +11,7 @@ const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
 const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
 const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
 const { notificarNuevasCausas, ahoraSQL } = require('./notificaciones');
+const { inferirTodos }                = require('./inferirCliente');
 
 /** Intervalo de polling para PJN y TAD, en minutos (default 30). */
 const INTERVALO_MIN = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
@@ -35,6 +36,16 @@ async function ejecutarCiclo() {
   notificarNuevasCausas(desde).catch(err =>
     console.error(`[${new Date().toISOString()}] [causas/mail] Error:`, err.message)
   );
+
+  // Inferir y vincular clientes automáticamente para las causas nuevas
+  try {
+    const r = await inferirTodos();
+    if (r.vinculadas > 0) {
+      console.log(`[causas-scheduler] Inferencia: ${r.vinculadas} causa(s) vinculada(s) a cliente (${r.nuevosClientes} nuevo(s))`);
+    }
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] [causas/inferir] Error:`, err.message);
+  }
 }
 
 /**
@@ -49,6 +60,10 @@ async function ejecutarSICNEA() {
   try {
     await obtenerNotificacionesSICNEA();
     await notificarNuevasCausas(desde);
+    const r = await inferirTodos();
+    if (r.vinculadas > 0) {
+      console.log(`[causas-scheduler] Inferencia SICNEA: ${r.vinculadas} causa(s) vinculada(s) a cliente`);
+    }
   } catch (err) {
     console.error(`[${new Date().toISOString()}] [causas/sicnea] Error:`, err.message);
   }
