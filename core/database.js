@@ -173,6 +173,19 @@ db.exec(`
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE SET NULL
   );
+
+  CREATE TABLE IF NOT EXISTS pendientes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    descripcion  TEXT    NOT NULL,
+    causa_id     INTEGER,
+    fecha_limite TEXT    NOT NULL,
+    dias_aviso   INTEGER NOT NULL DEFAULT 3,
+    fecha_aviso  TEXT    NOT NULL,
+    nota         TEXT,
+    completado   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE SET NULL
+  );
 `);
 
 // Migración: hace clientes.cuit nullable (los clientes inferidos desde causas no tienen CUIT inicial).

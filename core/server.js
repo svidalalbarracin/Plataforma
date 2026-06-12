@@ -26,6 +26,7 @@ app.use('/api/estadisticas',          require('../modulos/facturacion/backend/ro
 app.use('/api/configuracion',         require('../core/configuracion/backend/routes'));
 app.use('/api/causas/notificaciones', require('../modulos/causas/backend/routes/notificaciones'));
 app.use('/api/causas/biblioteca',    require('../modulos/causas/backend/routes/biblioteca'));
+app.use('/api/causas/pendientes',    require('../modulos/causas/backend/routes/pendientes'));
 
 /**
  * POST /api/importar
