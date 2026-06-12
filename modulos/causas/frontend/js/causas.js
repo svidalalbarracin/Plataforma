@@ -1,29 +1,16 @@
 /**
- * Utilidades y lógica de UI del módulo de causas.
- * Usado por index.html (tabla de causas) y cualquier página que necesite
- * calcular vencimientos o renderizar badges.
+ * Utilidades compartidas del módulo de causas.
+ * Usado por causas.html, detalle-causa.html y cualquier otra página del módulo.
  */
 
-/** Fecha de hoy fija al momento de cargar la página (evita recalcular en cada llamada). */
 const HOY = new Date().toISOString().slice(0, 10);
 
-/**
- * Calcula cuántos días faltan desde hoy hasta una fecha futura.
- * Devuelve un número negativo si la fecha ya pasó.
- * @param {string} fechaStr - Fecha en formato YYYY-MM-DD.
- * @returns {number} Días hasta la fecha (puede ser negativo).
- */
 function diasHasta(fechaStr) {
   const hoy = new Date(HOY + 'T00:00:00');
   const d   = new Date(fechaStr + 'T00:00:00');
   return Math.round((d - hoy) / 86400000);
 }
 
-/**
- * Calcula cuántos días pasaron desde una fecha hasta hoy.
- * @param {string} fechaStr - Fecha en formato YYYY-MM-DD.
- * @returns {number} Días transcurridos (positivo = pasado).
- */
 function diasDesde(fechaStr) {
   const hoy = new Date(HOY + 'T00:00:00');
   const d   = new Date(fechaStr + 'T00:00:00');
@@ -31,95 +18,100 @@ function diasDesde(fechaStr) {
 }
 
 /**
- * Convierte una fecha ISO (YYYY-MM-DD) al formato visual DD/MM/AAAA.
+ * Convierte una fecha ISO (YYYY-MM-DD) o datetime SQLite al formato DD/MM/AAAA.
  * @param {string|null} fechaStr
- * @returns {string} Fecha formateada o '—' si es nula.
+ * @returns {string}
  */
 function formatFecha(fechaStr) {
   if (!fechaStr) return '—';
-  const [y, m, d] = fechaStr.split('-');
+  const s = fechaStr.slice(0, 10);
+  const [y, m, d] = s.split('-');
   return `${d}/${m}/${y}`;
 }
 
 /**
- * Devuelve el HTML de un badge coloreado con el tipo de causa.
- * @param {'PJN'|'Aduana'|'Fisica'|string} tipo
- * @returns {string} HTML del badge.
+ * Badge de tipo de causa. Acepta valores de la API (pjn, tad, sicnea, aduanero, papel).
+ * @param {string} tipo
+ * @returns {string} HTML
  */
 function tipoBadge(tipo) {
   const map = {
-    PJN:    ['badge badge-tipo badge-tipo-pjn',    'PJN'],
-    Aduana: ['badge badge-tipo badge-tipo-aduana', 'Aduana'],
-    Fisica: ['badge badge-tipo badge-tipo-fisica', 'Física'],
+    pjn:      ['badge badge-tipo badge-tipo-pjn',    'PJN'],
+    tad:      ['badge badge-tipo badge-tipo-tad',    'TAD'],
+    sicnea:   ['badge badge-tipo badge-tipo-sicnea', 'SICNEA'],
+    aduanero: ['badge badge-tipo badge-tipo-aduana', 'Aduana'],
+    papel:    ['badge badge-tipo badge-tipo-fisica', 'Física'],
   };
-  const [cls, label] = map[tipo] ?? ['badge badge-tipo', tipo];
+  const [cls, label] = map[tipo?.toLowerCase()] ?? ['badge badge-tipo', tipo ?? '?'];
   return `<span class="${cls}">${label}</span>`;
 }
 
 /**
- * Devuelve el HTML del badge de estado para una causa.
- * Prioridad: cerrada/archivada → vencimiento próximo → sin movimiento → en trámite.
- * "Sin movimiento" se activa si el estado es 'sin-movimiento' o si el último movimiento
- * fue hace más de 30 días.
- * @param {{ estado: string, vencimiento: string|null, ultimoMov: string }} causa
- * @returns {string} HTML del badge.
+ * Badge de estado de causa. Acepta valores de la API (en_tramite, archivada, cerrada).
+ * @param {{ estado: string }} causa
+ * @returns {string} HTML
  */
-function estadoBadge(causa) {
-  const { estado, vencimiento, ultimoMov } = causa;
-
+function estadoBadge({ estado }) {
   if (estado === 'cerrada')   return '<span class="badge badge-muted">Cerrada</span>';
   if (estado === 'archivada') return '<span class="badge" style="background:var(--border);color:var(--text-muted)">Archivada</span>';
-
-  if (vencimiento) {
-    const dias = diasHasta(vencimiento);
-    if (dias <= 0) return '<span class="badge badge-danger">Vence hoy</span>';
-    if (dias <= 7) return `<span class="badge badge-warning">Vence en ${dias} día${dias !== 1 ? 's' : ''}</span>`;
-  }
-
-  if (estado === 'sin-movimiento' || diasDesde(ultimoMov) > 30) {
-    return '<span class="badge badge-orange">Sin movimiento</span>';
-  }
-
   return '<span class="badge badge-info">En trámite</span>';
 }
 
 /**
- * Trunca un texto al largo máximo indicado, agregando "…" si se cortó.
+ * Nombre legible del estado.
+ * @param {string} estado
+ * @returns {string}
+ */
+function estadoLabel(estado) {
+  if (estado === 'en_tramite') return 'En trámite';
+  if (estado === 'archivada')  return 'Archivada';
+  if (estado === 'cerrada')    return 'Cerrada';
+  return estado ?? '—';
+}
+
+/**
+ * Nombre legible del tipo.
+ * @param {string} tipo
+ * @returns {string}
+ */
+function tipoLabel(tipo) {
+  const map = { pjn: 'Poder Judicial (PJN)', tad: 'TAD', sicnea: 'SICNEA / Aduanero', aduanero: 'Aduanero', papel: 'Carpeta física' };
+  return map[tipo] ?? tipo ?? '—';
+}
+
+/**
+ * Trunca texto al largo indicado.
  * @param {string} txt
  * @param {number} [max=52]
  * @returns {string}
  */
 function truncar(txt, max = 52) {
+  if (!txt) return '';
   return txt.length > max ? txt.slice(0, max) + '…' : txt;
 }
 
 /**
- * Filtra una lista de causas por estado y texto de búsqueda libre.
- * La búsqueda abarca expediente, cliente y carátula (case-insensitive).
- * @param {Array} causas - Lista completa de causas.
- * @param {'tramite'|'cerrada'|'vencimiento'|'sin-movimiento'|string} filtro - Filtro activo.
- * @param {string} busqueda - Texto ingresado por el usuario.
- * @returns {Array} Causas que cumplen ambos filtros.
+ * Filtra causas por estado y texto libre.
+ * Espera objetos con los campos de la API: numero_expediente, caratula, estado, clientes[].
+ * @param {Array}  causas
+ * @param {string} filtro   - 'en_tramite' | 'archivada' | 'cerrada' | ''
+ * @param {string} busqueda - texto libre
+ * @returns {Array}
  */
 function filtrarCausas(causas, filtro, busqueda) {
   let resultado = causas;
 
-  if (filtro === 'tramite') {
-    resultado = resultado.filter(c => c.estado === 'tramite' || c.estado === 'sin-movimiento');
-  } else if (filtro === 'cerrada') {
-    resultado = resultado.filter(c => c.estado === 'cerrada' || c.estado === 'archivada');
-  } else if (filtro === 'vencimiento') {
-    resultado = resultado.filter(c => c.vencimiento && diasHasta(c.vencimiento) <= 7);
-  } else if (filtro === 'sin-movimiento') {
-    resultado = resultado.filter(c => c.estado === 'sin-movimiento' || diasDesde(c.ultimoMov) > 30);
+  if (filtro) {
+    resultado = resultado.filter(c => c.estado === filtro);
   }
 
   if (busqueda) {
     const q = busqueda.toLowerCase();
     resultado = resultado.filter(c =>
-      c.expediente.toLowerCase().includes(q) ||
-      c.cliente.toLowerCase().includes(q) ||
-      c.caratula.toLowerCase().includes(q)
+      (c.numero_expediente ?? '').toLowerCase().includes(q) ||
+      (c.caratula          ?? '').toLowerCase().includes(q) ||
+      (c.juzgado           ?? '').toLowerCase().includes(q) ||
+      (c.clientes ?? []).some(cl => cl.nombre.toLowerCase().includes(q))
     );
   }
 
@@ -127,40 +119,66 @@ function filtrarCausas(causas, filtro, busqueda) {
 }
 
 /**
- * Renderiza la tabla de causas en el elemento `#causas-body`.
- * Muestra un mensaje vacío si no hay causas que mostrar.
- * @param {Array} causas - Causas ya filtradas a renderizar.
+ * Renderiza la tabla de causas en #causas-body.
+ * Espera objetos con los campos de la API de biblioteca.
+ * @param {Array} causas
  */
 function renderTabla(causas) {
   const tbody = document.getElementById('causas-body');
   if (!tbody) return;
 
-  if (causas.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">No hay causas que coincidan con la búsqueda</td></tr>';
+  if (!causas.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No hay causas que coincidan</td></tr>';
     return;
   }
 
-  tbody.innerHTML = causas.map(c => `
+  tbody.innerHTML = causas.map(c => {
+    const expediente  = c.numero_expediente ?? '—';
+    const clientesTxt = c.clientes?.length
+      ? c.clientes.map(cl => cl.nombre).join(', ')
+      : '<span class="text-muted">Sin cliente</span>';
+    const juzgado     = c.juzgado ?? '—';
+    const totalNotif  = (c.notif_pjn || 0) + (c.notif_tad || 0) + (c.notif_sicnea || 0);
+    const notifBadge  = totalNotif
+      ? `<span class="badge badge-info" style="font-size:.7rem">${totalNotif}</span>`
+      : '<span class="text-muted">—</span>';
+
+    return `
     <tr>
       <td class="font-mono">
-        ${c.expediente}
+        ${expediente}
         ${tipoBadge(c.tipo)}
       </td>
       <td>
-        <div style="font-weight:500">${c.cliente}</div>
+        <div style="font-weight:500">${clientesTxt}</div>
         <div class="text-muted" style="font-size:.8125rem;margin-top:.15rem">${truncar(c.caratula)}</div>
       </td>
-      <td style="max-width:200px">${c.tribunal}</td>
+      <td style="max-width:180px;color:var(--text-muted);font-size:.875rem">${truncar(juzgado, 30)}</td>
       <td>${estadoBadge(c)}</td>
-      <td class="font-mono text-muted">${formatFecha(c.ultimoMov)}</td>
+      <td>${notifBadge}</td>
       <td>
         <a href="detalle-causa.html?id=${c.id}" class="btn btn-ghost btn-sm">Ver</a>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
-// Actualiza el badge del navbar con las notificaciones sin leer en cualquier página del módulo
+/**
+ * Actualiza las tarjetas de métricas del dashboard.
+ * @param {{ total: number, en_tramite: number, archivadas: number }} stats
+ * @param {number} notifSinLeer
+ */
+function actualizarMetricas(stats, notifSinLeer = 0) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('stat-total',    stats.total      ?? '—');
+  set('stat-tramite',  stats.en_tramite ?? '—');
+  set('stat-notif',    notifSinLeer);
+  set('stat-archivadas', stats.archivadas ?? '—');
+  const badge = document.getElementById('badge-notif');
+  if (badge) badge.textContent = notifSinLeer || '';
+}
+
+// Actualiza el badge de notificaciones en el navbar en cualquier página del módulo
 document.addEventListener('DOMContentLoaded', async () => {
   const badge = document.getElementById('badge-notif');
   if (!badge) return;
@@ -169,28 +187,3 @@ document.addEventListener('DOMContentLoaded', async () => {
     badge.textContent = notificaciones.filter(n => !n.leida).length || '';
   } catch {}
 });
-
-/**
- * Actualiza las tarjetas de métricas del dashboard (total, notificaciones, vencimientos, sin movimiento).
- * Si algún elemento no existe en el DOM, lo ignora silenciosamente.
- * @param {Array} causas - Lista completa de causas (sin filtrar).
- * @param {number} [notifCount=0] - Cantidad de notificaciones sin leer.
- */
-function actualizarMetricas(causas, notifCount = 0) {
-  const total  = causas.length;
-  const venc   = causas.filter(c => c.vencimiento && diasHasta(c.vencimiento) >= 0 && diasHasta(c.vencimiento) <= 7).length;
-  const sinMov = causas.filter(c => c.estado === 'sin-movimiento' || diasDesde(c.ultimoMov) > 30).length;
-
-  const elTotal  = document.getElementById('stat-total');
-  const elNotif  = document.getElementById('stat-notif');
-  const elVenc   = document.getElementById('stat-venc');
-  const elSinMov = document.getElementById('stat-sin-mov');
-
-  if (elTotal)  elTotal.textContent  = total;
-  if (elNotif)  elNotif.textContent  = notifCount;
-  if (elVenc)   elVenc.textContent   = venc;
-  if (elSinMov) elSinMov.textContent = sinMov;
-
-  const badgeNotif = document.getElementById('badge-notif');
-  if (badgeNotif) badgeNotif.textContent = notifCount;
-}

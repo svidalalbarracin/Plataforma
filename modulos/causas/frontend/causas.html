@@ -33,10 +33,7 @@
       <button class="btn btn-ghost btn-sm" onclick="toast('Importación desde Google Sheets próximamente', 'info')">
         ↑ Importar desde Sheets
       </button>
-      <button class="btn btn-ghost btn-sm" onclick="toast('Exportación próximamente', 'info')">
-        ↓ Exportar
-      </button>
-      <button class="btn btn-primary" onclick="toast('Alta de causas próximamente', 'info')">
+      <button class="btn btn-primary" onclick="abrirModalNueva()">
         + Nueva causa
       </button>
     </div>
@@ -48,16 +45,16 @@
       <div class="stat-value" id="stat-total">—</div>
     </div>
     <div class="stat-card">
+      <div class="stat-label">En trámite</div>
+      <div class="stat-value is-primary" id="stat-tramite">—</div>
+    </div>
+    <div class="stat-card">
       <div class="stat-label">Notificaciones sin leer</div>
       <div class="stat-value is-danger" id="stat-notif">—</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Vencimientos próximos 7 días</div>
-      <div class="stat-value is-warning" id="stat-venc">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Sin movimiento +30 días</div>
-      <div class="stat-value is-muted" id="stat-sin-mov">—</div>
+      <div class="stat-label">Archivadas / Cerradas</div>
+      <div class="stat-value is-muted" id="stat-archivadas">—</div>
     </div>
   </div>
 
@@ -65,13 +62,12 @@
     <div class="quick-filters">
       <div class="filter-tabs">
         <button class="filter-tab active" data-filtro="">Todas</button>
-        <button class="filter-tab" data-filtro="tramite">En trámite</button>
+        <button class="filter-tab" data-filtro="en_tramite">En trámite</button>
+        <button class="filter-tab" data-filtro="archivada">Archivadas</button>
         <button class="filter-tab" data-filtro="cerrada">Cerradas</button>
-        <button class="filter-tab" data-filtro="vencimiento">Con vencimiento</button>
-        <button class="filter-tab" data-filtro="sin-movimiento">Sin movimiento</button>
       </div>
       <div class="search-box">
-        <input type="text" id="buscador" placeholder="Buscar por expediente o cliente…">
+        <input type="text" id="buscador" placeholder="Buscar por expediente, cliente, juzgado…">
       </div>
     </div>
 
@@ -81,9 +77,9 @@
           <tr>
             <th>Expediente</th>
             <th>Cliente / Carátula</th>
-            <th>Tribunal</th>
+            <th>Tribunal / Juzgado</th>
             <th>Estado</th>
-            <th>Último movimiento</th>
+            <th>Notificaciones</th>
             <th></th>
           </tr>
         </thead>
@@ -95,10 +91,64 @@
   </div>
 </div>
 
+<!-- Modal: Nueva causa -->
+<div class="modal-backdrop" id="modal-nueva">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <span class="modal-title">Nueva causa</span>
+      <button class="modal-close" onclick="cerrarModalNueva()">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="n-expediente">Nro. expediente</label>
+        <input type="text" id="n-expediente" placeholder="Ej: 12345/2024">
+      </div>
+      <div class="form-group">
+        <label for="n-tipo">Tipo <span style="color:var(--danger)">*</span></label>
+        <select id="n-tipo">
+          <option value="pjn">Poder Judicial (PJN)</option>
+          <option value="tad">TAD</option>
+          <option value="sicnea">SICNEA / Aduanero</option>
+          <option value="aduanero">Aduanero (papel)</option>
+          <option value="papel">Carpeta física</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="n-caratula">Carátula</label>
+        <input type="text" id="n-caratula" placeholder="Ej: García, Juan c/ Empresa S.A. s/ despido">
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="n-juzgado">Tribunal / Juzgado</label>
+        <input type="text" id="n-juzgado" placeholder="Ej: CNAT Sala III">
+      </div>
+      <div class="form-group">
+        <label for="n-estado">Estado</label>
+        <select id="n-estado">
+          <option value="en_tramite">En trámite</option>
+          <option value="archivada">Archivada</option>
+          <option value="cerrada">Cerrada</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="n-fecha">Fecha de inicio</label>
+        <input type="date" id="n-fecha">
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="n-notas">Notas <span class="text-muted" style="font-weight:400">(opcional)</span></label>
+        <textarea id="n-notas" placeholder="Observaciones iniciales…" style="min-height:72px"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModalNueva()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-nueva">Crear causa</button>
+    </div>
+  </div>
+</div>
+
 <script src="js/causas.js"></script>
 <script src="/js/layout.js"></script>
 <script>
-  let CAUSAS = [];
+  let CAUSAS      = [];
   let filtroActivo = '';
 
   function toast(msg, tipo = 'success') {
@@ -109,15 +159,16 @@
     setTimeout(() => el.remove(), 3000);
   }
 
+  // ── Filtros y búsqueda ─────────────────────────────
   document.querySelectorAll('.filter-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       filtroActivo = btn.dataset.filtro;
-      const busqueda = (document.getElementById('buscador')?.value ?? '').trim();
+      const busqueda = document.getElementById('buscador').value.trim();
       renderTabla(filtrarCausas(CAUSAS, filtroActivo, busqueda));
-      const titulo = filtroActivo === '' ? 'Todas las causas' : btn.textContent.trim();
-      document.getElementById('titulo-seccion').textContent = titulo;
+      const labels = { '': 'Todas las causas', en_tramite: 'En trámite', archivada: 'Archivadas', cerrada: 'Cerradas' };
+      document.getElementById('titulo-seccion').textContent = labels[filtroActivo] ?? btn.textContent.trim();
     });
   });
 
@@ -125,14 +176,85 @@
     renderTabla(filtrarCausas(CAUSAS, filtroActivo, e.target.value.trim()));
   });
 
-  async function init() {
-    renderTabla([]);
+  // ── Modal nueva causa ──────────────────────────────
+  function abrirModalNueva() {
+    document.getElementById('modal-nueva').classList.add('open');
+  }
+
+  function cerrarModalNueva() {
+    document.getElementById('modal-nueva').classList.remove('open');
+    ['n-expediente','n-caratula','n-juzgado','n-notas'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('n-tipo').value   = 'pjn';
+    document.getElementById('n-estado').value = 'en_tramite';
+    document.getElementById('n-fecha').value  = '';
+  }
+
+  document.getElementById('modal-nueva').addEventListener('click', e => {
+    if (e.target === e.currentTarget) cerrarModalNueva();
+  });
+
+  document.getElementById('btn-guardar-nueva').addEventListener('click', async () => {
+    const tipo = document.getElementById('n-tipo').value;
+    if (!tipo) { toast('Seleccioná un tipo', 'error'); return; }
+
+    const btn = document.getElementById('btn-guardar-nueva');
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+
     try {
-      const notifs = await fetch('/api/causas/notificaciones').then(r => r.json());
-      const sinLeer = notifs.filter(n => !n.leida).length;
-      actualizarMetricas(CAUSAS, sinLeer);
+      const body = {
+        numero_expediente: document.getElementById('n-expediente').value.trim() || null,
+        caratula:          document.getElementById('n-caratula').value.trim()   || null,
+        tipo,
+        estado:            document.getElementById('n-estado').value,
+        juzgado:           document.getElementById('n-juzgado').value.trim()   || null,
+        fecha_inicio:      document.getElementById('n-fecha').value             || null,
+        notas:             document.getElementById('n-notas').value.trim()      || null,
+      };
+
+      const res = await fetch('/api/causas/biblioteca', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+      const nueva = await res.json();
+      cerrarModalNueva();
+      toast('Causa creada');
+      window.location.href = `detalle-causa.html?id=${nueva.id}`;
     } catch (e) {
-      console.error('Error cargando notificaciones:', e);
+      toast('Error al crear: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Crear causa';
+    }
+  });
+
+  // ── Init ───────────────────────────────────────────
+  async function init() {
+    try {
+      const [causas, statsRes, notifRes] = await Promise.all([
+        fetch('/api/causas/biblioteca').then(r => r.json()),
+        fetch('/api/causas/biblioteca/stats').then(r => r.json()),
+        fetch('/api/causas/notificaciones').then(r => r.json()),
+      ]);
+
+      CAUSAS = causas;
+      renderTabla(filtrarCausas(CAUSAS, filtroActivo, ''));
+
+      const porEstado   = statsRes.por_estado ?? [];
+      const total       = porEstado.reduce((s, r) => s + r.total, 0);
+      const enTramite   = porEstado.find(r => r.estado === 'en_tramite')?.total ?? 0;
+      const archCerrada = (porEstado.find(r => r.estado === 'archivada')?.total ?? 0)
+                        + (porEstado.find(r => r.estado === 'cerrada')?.total ?? 0);
+      const sinLeer     = (notifRes.notificaciones ?? []).filter(n => !n.leida).length;
+
+      actualizarMetricas({ total, en_tramite: enTramite, archivadas: archCerrada }, sinLeer);
+
+    } catch (e) {
+      console.error('Error cargando causas:', e);
+      document.getElementById('causas-body').innerHTML =
+        '<tr><td colspan="6" class="empty">Error al cargar. Verificá que el servidor esté corriendo.</td></tr>';
     }
   }
 

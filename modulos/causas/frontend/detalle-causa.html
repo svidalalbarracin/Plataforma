@@ -15,302 +15,96 @@
   <a href="causas.html" class="navbar-brand">Causas</a>
   <div class="navbar-links">
     <a href="causas.html">Todas</a>
-    <a href="causas.html?nav=notificaciones">
+    <a href="notificaciones.html">
       Notificaciones
       <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
     </a>
-    <a href="causas.html?nav=vencimientos">
-      Vencimientos
-    </a>
-    <a href="causas.html?nav=sin-movimiento">Sin movimiento</a>
-
-    <div class="navbar-dropdown" id="dd-tipo">
-      <button class="navbar-dropdown-toggle">
-        Por tipo <span class="chevron">▾</span>
-      </button>
-      <div class="navbar-dropdown-menu">
-        <a href="causas.html?nav=tipo-pjn"    class="navbar-dropdown-item">Poder Judicial</a>
-        <a href="causas.html?nav=tipo-aduana" class="navbar-dropdown-item">Aduanero</a>
-        <a href="causas.html?nav=tipo-fisica" class="navbar-dropdown-item">Carpetas físicas</a>
-      </div>
-    </div>
-
-    <div class="navbar-dropdown" id="dd-estado">
-      <button class="navbar-dropdown-toggle">
-        Estado <span class="chevron">▾</span>
-      </button>
-      <div class="navbar-dropdown-menu">
-        <a href="causas.html?nav=tramite"   class="navbar-dropdown-item">En trámite</a>
-        <a href="causas.html?nav=cerrada"   class="navbar-dropdown-item">Cerradas</a>
-        <a href="causas.html?nav=archivada" class="navbar-dropdown-item">Archivadas</a>
-      </div>
-    </div>
   </div>
   <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
   <button class="btn-theme" id="btn-theme">☾</button>
 </nav>
 
-<div class="container">
-
-  <!-- Header de la causa -->
-  <div class="page-header" style="margin-bottom:1rem">
-    <div class="flex items-center gap-2 flex-wrap">
-      <a href="causas.html" class="btn btn-ghost btn-sm">← Volver</a>
-      <h1 class="page-title" id="titulo-causa">Cargando…</h1>
-    </div>
-  </div>
-
-  <div class="causa-header" id="causa-header">
-    <div class="causa-header-left">
-      <div class="causa-expediente" id="causa-expediente">—</div>
-      <div class="causa-caratula" id="causa-caratula">—</div>
-    </div>
-    <div id="causa-estado-badge"></div>
-  </div>
-
-  <!-- Datos principales -->
-  <div class="card">
-    <div class="card-title">Datos principales</div>
-    <dl class="detail-grid" id="datos-principales">
-      <div class="detail-item"><dt>Cargando…</dt><dd></dd></div>
-    </dl>
-  </div>
-
-  <!-- Movimientos -->
-  <div class="card">
-    <div class="flex justify-between items-center" style="margin-bottom:1.25rem">
-      <div class="card-title" style="margin-bottom:0">Movimientos</div>
-    </div>
-    <ul class="movimientos-list" id="movimientos-list">
-      <li class="empty">Cargando…</li>
-    </ul>
-  </div>
-
-  <!-- Pendientes y acciones -->
-  <div class="card">
-    <div class="flex justify-between items-center" style="margin-bottom:1.25rem">
-      <div class="card-title" style="margin-bottom:0">Pendientes y acciones</div>
-      <button class="btn btn-ghost btn-sm" id="btn-nueva-accion">+ Agregar</button>
-    </div>
-    <ul class="pendientes-list" id="pendientes-list">
-      <li class="empty">Sin acciones pendientes</li>
-    </ul>
-  </div>
-
-  <!-- Avisos programados -->
-  <div class="card">
-    <div class="flex justify-between items-center" style="margin-bottom:1.25rem">
-      <div class="card-title" style="margin-bottom:0">Avisos programados</div>
-      <button class="btn btn-ghost btn-sm" id="btn-nuevo-aviso">+ Agregar</button>
-    </div>
-    <ul class="avisos-list" id="avisos-list">
-      <li class="empty">Sin avisos configurados</li>
-    </ul>
-  </div>
-
-  <!-- Notas -->
-  <div class="card">
-    <div class="card-title">Notas</div>
-    <textarea id="notas-textarea" placeholder="Anotá cualquier observación relevante de esta causa…" style="min-height:120px"></textarea>
-    <div style="margin-top:.75rem;display:flex;justify-content:flex-end">
-      <button class="btn btn-primary btn-sm" id="btn-guardar-notas">Guardar notas</button>
-    </div>
-  </div>
-
+<div class="container" id="contenido">
+  <div class="empty" style="padding:4rem 0">Cargando…</div>
 </div>
 
-<!-- Modal: Nueva acción -->
-<div class="modal-backdrop" id="modal-accion">
-  <div class="modal">
+<!-- Modal: Editar causa -->
+<div class="modal-backdrop" id="modal-editar">
+  <div class="modal" style="max-width:560px">
     <div class="modal-header">
-      <span class="modal-title">Nueva acción pendiente</span>
-      <button class="modal-close" id="modal-accion-close">×</button>
+      <span class="modal-title">Editar causa</span>
+      <button class="modal-close" onclick="cerrarModal('modal-editar')">×</button>
     </div>
     <div class="form-grid">
-      <div class="form-group" style="grid-column:1/-1">
-        <label for="accion-desc">Descripción</label>
-        <input type="text" id="accion-desc" placeholder="Ej: Apelar sentencia de primera instancia">
+      <div class="form-group">
+        <label for="e-expediente">Nro. expediente</label>
+        <input type="text" id="e-expediente">
       </div>
       <div class="form-group">
-        <label for="accion-fecha">Fecha límite</label>
-        <input type="date" id="accion-fecha">
+        <label for="e-tipo">Tipo</label>
+        <select id="e-tipo">
+          <option value="pjn">Poder Judicial (PJN)</option>
+          <option value="tad">TAD</option>
+          <option value="sicnea">SICNEA / Aduanero</option>
+          <option value="aduanero">Aduanero (papel)</option>
+          <option value="papel">Carpeta física</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="e-caratula">Carátula</label>
+        <input type="text" id="e-caratula">
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="e-juzgado">Tribunal / Juzgado</label>
+        <input type="text" id="e-juzgado">
+      </div>
+      <div class="form-group">
+        <label for="e-estado">Estado</label>
+        <select id="e-estado">
+          <option value="en_tramite">En trámite</option>
+          <option value="archivada">Archivada</option>
+          <option value="cerrada">Cerrada</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="e-fecha">Fecha de inicio</label>
+        <input type="date" id="e-fecha">
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" id="modal-accion-cancel">Cancelar</button>
-      <button class="btn btn-primary" id="modal-accion-save">Agregar acción</button>
+      <button class="btn btn-ghost" onclick="cerrarModal('modal-editar')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-editar">Guardar cambios</button>
     </div>
   </div>
 </div>
 
-<!-- Modal: Nuevo aviso -->
-<div class="modal-backdrop" id="modal-aviso">
-  <div class="modal">
+<!-- Modal: Vincular cliente -->
+<div class="modal-backdrop" id="modal-cliente">
+  <div class="modal" style="max-width:440px">
     <div class="modal-header">
-      <span class="modal-title">Nuevo aviso programado</span>
-      <button class="modal-close" id="modal-aviso-close">×</button>
+      <span class="modal-title">Vincular cliente</span>
+      <button class="modal-close" onclick="cerrarModal('modal-cliente')">×</button>
     </div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label for="aviso-fecha">Fecha del aviso</label>
-        <input type="date" id="aviso-fecha">
-      </div>
-      <div class="form-group" style="grid-column:1/-1">
-        <label for="aviso-mensaje">Mensaje</label>
-        <input type="text" id="aviso-mensaje" placeholder="Ej: Recordatorio: presentar escrito">
-      </div>
+    <div class="form-group">
+      <label for="sel-cliente">Cliente</label>
+      <select id="sel-cliente" style="width:100%">
+        <option value="">Seleccioná un cliente…</option>
+      </select>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" id="modal-aviso-cancel">Cancelar</button>
-      <button class="btn btn-primary" id="modal-aviso-save">Agregar aviso</button>
+      <button class="btn btn-ghost" onclick="cerrarModal('modal-cliente')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-vincular-cliente">Vincular</button>
     </div>
   </div>
 </div>
 
 <script src="js/causas.js"></script>
+<script src="/js/layout.js"></script>
 <script>
-  let CAUSAS = [];
+  let CAUSA  = null;
+  let CAUSA_ID = null;
 
-  // ── Datos de detalle de ejemplo ───────────────────
-  const DETALLES = {
-    1: {
-      juzgado: 'CNAT - Sala III',
-      fechaInicio: '2023-03-15',
-      carpetaFisica: null,
-      movimientos: [
-        { fecha: '2026-05-28', descripcion: 'Sentencia de primera instancia dictada. Fallo favorable a la actora por monto de $4.850.000.', origen: 'portal' },
-        { fecha: '2026-05-10', descripcion: 'Alegatos presentados por la parte actora.', origen: 'manual' },
-        { fecha: '2026-04-02', descripcion: 'Audiencia de vista de causa realizada.', origen: 'portal' },
-        { fecha: '2025-11-15', descripcion: 'Prueba pericial contable agregada a los autos.', origen: 'portal' },
-        { fecha: '2024-08-20', descripcion: 'Presentación de demanda laboral por despido injustificado.', origen: 'portal' },
-      ],
-      pendientes: [
-        { id: 1, accion: 'Apelar sentencia de primera instancia', fechaLimite: '2026-06-20', completada: false },
-        { id: 2, accion: 'Notificar al cliente del resultado de la sentencia', fechaLimite: '2026-06-05', completada: true },
-        { id: 3, accion: 'Solicitar liquidación de honorarios', fechaLimite: '2026-07-01', completada: false },
-      ],
-      avisos: [
-        { id: 1, fecha: '2026-06-18', mensaje: 'Recordatorio: el plazo para apelar vence el 20/06' },
-        { id: 2, fecha: '2026-06-10', mensaje: 'Llamar a García para confirmar decisión de apelar' },
-      ],
-      notas: 'Cliente muy pendiente del estado. Llamó el 29/05 para preguntar sobre el resultado. Está dispuesto a apelar si el estudio lo recomienda. Posibilidad de mediación si la empresa ofrece 3 meses adicionales de indemnización.\n\nTribunal suele tardar 6-8 meses en resolver apelaciones.',
-    },
-    2: {
-      juzgado: 'CNAT - Sala I',
-      fechaInicio: '2024-01-22',
-      carpetaFisica: null,
-      movimientos: [
-        { fecha: '2026-06-01', descripcion: 'Auto de apertura a prueba dictado.', origen: 'portal' },
-        { fecha: '2026-05-15', descripcion: 'Contestación de demanda presentada por el Banco Nacional.', origen: 'portal' },
-        { fecha: '2026-04-10', descripcion: 'Demanda por cobro de diferencias salariales presentada.', origen: 'portal' },
-      ],
-      pendientes: [
-        { id: 1, accion: 'Presentar ofrecimiento de prueba documental', fechaLimite: '2026-06-07', completada: false },
-        { id: 2, accion: 'Gestionar certificados de haberes del cliente', fechaLimite: '2026-06-06', completada: false },
-      ],
-      avisos: [
-        { id: 1, fecha: '2026-06-06', mensaje: 'Urgente: vence plazo de prueba el 07/06' },
-      ],
-      notas: 'Diferencias salariales por categoría mal asignada desde 2021. Cliente tiene toda la documentación ordenada.',
-    },
-    3: {
-      juzgado: 'División Infracciones - DGA',
-      fechaInicio: '2025-02-10',
-      carpetaFisica: null,
-      movimientos: [
-        { fecha: '2026-06-03', descripcion: 'Notificación recibida en SICNEA. Resolución de apertura de sumario.', origen: 'portal' },
-        { fecha: '2026-05-20', descripcion: 'Presentación de descargo administrativo.', origen: 'manual' },
-        { fecha: '2025-03-01', descripcion: 'Acta de infracción labrada en aduana de Ezeiza.', origen: 'portal' },
-      ],
-      pendientes: [
-        { id: 1, accion: 'Responder resolución de apertura de sumario', fechaLimite: '2026-06-04', completada: false },
-      ],
-      avisos: [
-        { id: 1, fecha: '2026-06-04', mensaje: 'HOY vence el plazo para responder la resolución de apertura' },
-      ],
-      notas: 'Mercadería importada declarada como categoría arancelaria incorrecta. El error fue involuntario, hay documentación que lo respalda.',
-    },
-    4: {
-      juzgado: 'Juzgado Federal Civil y Com. Nro. 3',
-      fechaInicio: '2022-06-18',
-      carpetaFisica: null,
-      movimientos: [
-        { fecha: '2026-04-20', descripcion: 'Proveído de mero trámite. Expediente pasa a cuarto intermedio.', origen: 'portal' },
-        { fecha: '2025-09-05', descripcion: 'Pericia médica realizada. Informe agregado a los autos.', origen: 'portal' },
-        { fecha: '2025-03-12', descripcion: 'Prueba testimonial rendida.', origen: 'portal' },
-        { fecha: '2022-08-30', descripcion: 'Demanda por daños y perjuicios presentada.', origen: 'portal' },
-      ],
-      pendientes: [
-        { id: 1, accion: 'Revisar estado del expediente en el portal', fechaLimite: '2026-06-10', completada: false },
-      ],
-      avisos: [],
-      notas: 'Causa muy demorada. Última actividad hace más de 45 días. Conviene impulsar el expediente con un escrito de activación.',
-    },
-    5: {
-      juzgado: 'Juzgado Civil Nro. 15',
-      fechaInicio: '2023-11-07',
-      carpetaFisica: 'Estante B / Carpeta 17',
-      movimientos: [
-        { fecha: '2026-05-15', descripcion: 'Escrito de responde presentado. Audiencia fijada para agosto.', origen: 'manual' },
-        { fecha: '2026-02-20', descripcion: 'Demanda administrativa presentada en Mesa de Entradas.', origen: 'manual' },
-      ],
-      pendientes: [
-        { id: 1, accion: 'Preparar prueba para audiencia de agosto', fechaLimite: '2026-07-30', completada: false },
-        { id: 2, accion: 'Solicitar informes a la Municipalidad', fechaLimite: '2026-06-25', completada: false },
-      ],
-      avisos: [
-        { id: 1, fecha: '2026-06-20', mensaje: 'Recordatorio: plazo para solicitar informes vence el 25/06' },
-      ],
-      notas: 'Causa en carpeta física. No digitalizada. Ver carpeta 17 en estante B.',
-    },
-    6: {
-      juzgado: 'Juzgado Federal Civil y Com. Nro. 2',
-      fechaInicio: '2020-09-14',
-      carpetaFisica: null,
-      movimientos: [
-        { fecha: '2025-11-10', descripcion: 'Cobro de honorarios regulados. Causa archivada.', origen: 'portal' },
-        { fecha: '2025-08-22', descripcion: 'Acuerdo homologado por el juzgado.', origen: 'portal' },
-        { fecha: '2025-07-10', descripcion: 'Mediación exitosa. Acuerdo firmado entre las partes.', origen: 'manual' },
-      ],
-      pendientes: [],
-      avisos: [],
-      notas: 'Causa finalizada con acuerdo en mediación. Honorarios cobrados en su totalidad.',
-    },
-    7: {
-      juzgado: 'División Sumarios - DGA',
-      fechaInicio: '2025-01-15',
-      carpetaFisica: null,
-      movimientos: [
-        { fecha: '2026-05-29', descripcion: 'Vista de actuaciones otorgada. Plazo para presentar descargo: 15 días.', origen: 'portal' },
-        { fecha: '2026-04-03', descripcion: 'Sumario administrativo iniciado por multa de $1.200.000.', origen: 'portal' },
-        { fecha: '2025-02-28', descripcion: 'Notificación del inicio de fiscalización aduanera.', origen: 'portal' },
-      ],
-      pendientes: [
-        { id: 1, accion: 'Presentar descargo ante la DGA', fechaLimite: '2026-06-13', completada: false },
-        { id: 2, accion: 'Recopilar documentación de importación 2024', fechaLimite: '2026-06-10', completada: false },
-      ],
-      avisos: [
-        { id: 1, fecha: '2026-06-10', mensaje: 'Recordatorio: recopilar documentación para el descargo' },
-        { id: 2, fecha: '2026-06-12', mensaje: 'Revisar borrador de descargo antes de presentar' },
-      ],
-      notas: 'Multa desproporcionada. Hay antecedentes favorables de la empresa con la aduana. Buenas chances de reducir o anular.',
-    },
-    8: {
-      juzgado: 'Juzgado Civil Nro. 8',
-      fechaInicio: '2021-03-05',
-      carpetaFisica: 'Estante A / Carpeta 31',
-      movimientos: [
-        { fecha: '2023-08-22', descripcion: 'Declaratoria de herederos dictada. Inscripción en Registro de la Propiedad completada.', origen: 'manual' },
-        { fecha: '2022-11-10', descripcion: 'Audiencia de conciliación entre herederos realizada.', origen: 'manual' },
-        { fecha: '2021-04-01', descripcion: 'Demanda de declaratoria de herederos presentada.', origen: 'manual' },
-      ],
-      pendientes: [],
-      avisos: [],
-      notas: 'Causa archivada. Todo resuelto. Ver carpeta 31 en estante A para documentación original.',
-    },
-  };
-
-  // ── Helpers ───────────────────────────────────────
+  // ── Utils ──────────────────────────────────────────
   function toast(msg, tipo = 'success') {
     const el = document.createElement('div');
     el.className = `toast toast-${tipo}`;
@@ -319,217 +113,320 @@
     setTimeout(() => el.remove(), 3000);
   }
 
-  function formatFechaLocal(fechaStr) {
-    if (!fechaStr) return '—';
-    const [y, m, d] = fechaStr.split('-');
-    return `${d}/${m}/${y}`;
-  }
+  function abrirModal(id) { document.getElementById(id).classList.add('open'); }
+  function cerrarModal(id) { document.getElementById(id).classList.remove('open'); }
 
-  // ── Render ────────────────────────────────────────
-  function renderHeader(causa) {
-    document.title = `${causa.expediente} — Causas`;
-    document.getElementById('titulo-causa').textContent = causa.expediente;
+  document.querySelectorAll('.modal-backdrop').forEach(b => {
+    b.addEventListener('click', e => { if (e.target === b) b.classList.remove('open'); });
+  });
 
-    const expEl = document.getElementById('causa-expediente');
-    expEl.innerHTML = causa.expediente + ' ' + tipoBadge(causa.tipo);
+  // ── Render ─────────────────────────────────────────
+  function renderPagina(causa) {
+    CAUSA = causa;
+    document.title = `${causa.numero_expediente ?? 'Causa'} — Causas`;
 
-    document.getElementById('causa-caratula').textContent = causa.caratula;
-    document.getElementById('causa-estado-badge').innerHTML = estadoBadge(causa);
-  }
+    // Movimientos: unificar notificaciones de los tres portales
+    const movimientos = [
+      ...(causa.notif_pjn ?? []).map(n => ({
+        fecha:  n.fecha_envio,
+        desc:   n.caratula || n.numero_expediente || `Notificación ${n.numero}`,
+        detalle: n.autor ? `De: ${n.autor}` : null,
+        origen: 'PJN',
+        url:    null,
+      })),
+      ...(causa.notif_tad ?? []).map(n => ({
+        fecha:  n.fecha,
+        desc:   n.nombre || n.numero_tramite,
+        detalle: n.mensaje ? (n.mensaje.length > 100 ? n.mensaje.slice(0, 100) + '…' : n.mensaje) : null,
+        origen: 'TAD',
+        url:    null,
+      })),
+      ...(causa.notif_sicnea ?? []).map(n => ({
+        fecha:  n.fecha_alta,
+        desc:   n.motivo || n.razon_social || `Cédula ${n.numero}`,
+        detalle: n.aduana ? `Aduana: ${n.aduana}` : null,
+        origen: 'SICNEA',
+        url:    null,
+      })),
+    ].sort((a, b) => (b.fecha ?? '').localeCompare(a.fecha ?? ''));
 
-  function renderDatos(causa, detalle) {
-    const items = [
-      ['Cliente', causa.cliente],
-      ['Tribunal', causa.tribunal],
-      ['Juzgado / División', detalle.juzgado],
-      ['Fecha de inicio', formatFechaLocal(detalle.fechaInicio)],
-      ['Tipo', { PJN: 'Poder Judicial Nacional', Aduana: 'Aduanero', Fisica: 'Carpeta física' }[causa.tipo] ?? causa.tipo],
-    ];
-
-    if (detalle.carpetaFisica) {
-      items.push(['Carpeta física', detalle.carpetaFisica]);
-    }
-
-    document.getElementById('datos-principales').innerHTML = items.map(([label, val]) => `
-      <div class="detail-item">
-        <dt>${label}</dt>
-        <dd>${val}</dd>
+    const html = `
+      <div class="page-header" style="margin-bottom:1rem">
+        <div class="flex items-center gap-2 flex-wrap">
+          <a href="causas.html" class="btn btn-ghost btn-sm">← Volver</a>
+          <h1 class="page-title">${causa.numero_expediente ?? 'Sin expediente'}</h1>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="abrirEditar()">Editar</button>
       </div>
-    `).join('');
-  }
 
-  function renderMovimientos(movimientos) {
-    const lista = document.getElementById('movimientos-list');
-    if (!movimientos.length) {
-      lista.innerHTML = '<li class="empty">Sin movimientos registrados</li>';
-      return;
-    }
-    lista.innerHTML = movimientos.map(m => `
-      <li class="movimiento-item">
-        <div class="movimiento-fecha">${formatFechaLocal(m.fecha)}</div>
-        <div>
-          <div class="movimiento-desc">${m.descripcion}</div>
-          <div class="movimiento-origen">${m.origen === 'portal' ? 'Importado del portal' : 'Cargado manualmente'}</div>
-        </div>
-      </li>
-    `).join('');
-  }
-
-  let pendientesData = [];
-
-  function renderPendientes(pendientes) {
-    pendientesData = [...pendientes];
-    const lista = document.getElementById('pendientes-list');
-    if (!pendientes.length) {
-      lista.innerHTML = '<li class="empty" style="padding:1.5rem 0">Sin acciones pendientes</li>';
-      return;
-    }
-    lista.innerHTML = pendientes.map(p => `
-      <li class="pendiente-item" data-id="${p.id}">
-        <div class="pendiente-check ${p.completada ? 'completada' : ''}" data-id="${p.id}" title="${p.completada ? 'Completada' : 'Marcar como completada'}">
-          ${p.completada ? '✓' : ''}
-        </div>
-        <div class="pendiente-info">
-          <div class="pendiente-accion ${p.completada ? 'completada' : ''}">${p.accion}</div>
-          <div class="pendiente-fecha">
-            ${p.fechaLimite ? `Fecha límite: ${formatFechaLocal(p.fechaLimite)}` : 'Sin fecha límite'}
+      <div class="causa-header">
+        <div class="causa-header-left">
+          <div class="causa-expediente">
+            ${causa.numero_expediente ?? '—'}
+            ${tipoBadge(causa.tipo)}
           </div>
+          <div class="causa-caratula">${causa.caratula ?? '—'}</div>
         </div>
-        <button class="btn btn-ghost btn-sm btn-icon" data-delete-pendiente="${p.id}" title="Eliminar">✕</button>
-      </li>
-    `).join('');
+        <div>${estadoBadge(causa)}</div>
+      </div>
 
-    lista.querySelectorAll('.pendiente-check').forEach(el => {
-      el.addEventListener('click', () => {
-        const id = Number(el.dataset.id);
-        const p = pendientesData.find(x => x.id === id);
-        if (p) {
-          p.completada = !p.completada;
-          renderPendientes(pendientesData);
-          toast(p.completada ? 'Acción marcada como completada' : 'Acción reabierta');
-        }
-      });
-    });
+      <!-- Datos principales -->
+      <div class="card">
+        <div class="card-title">Datos principales</div>
+        <dl class="detail-grid">
+          <div class="detail-item"><dt>Tipo</dt><dd>${tipoLabel(causa.tipo)}</dd></div>
+          <div class="detail-item"><dt>Estado</dt><dd>${estadoLabel(causa.estado)}</dd></div>
+          <div class="detail-item"><dt>Tribunal / Juzgado</dt><dd>${causa.juzgado ?? '—'}</dd></div>
+          <div class="detail-item"><dt>Fecha de inicio</dt><dd>${formatFecha(causa.fecha_inicio)}</dd></div>
+        </dl>
+      </div>
 
-    lista.querySelectorAll('[data-delete-pendiente]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = Number(btn.dataset.deletePendiente);
-        pendientesData = pendientesData.filter(p => p.id !== id);
-        renderPendientes(pendientesData);
-        toast('Acción eliminada');
-      });
-    });
+      <!-- Clientes -->
+      <div class="card">
+        <div class="flex justify-between items-center" style="margin-bottom:1.25rem">
+          <div class="card-title" style="margin-bottom:0">Clientes</div>
+          <button class="btn btn-ghost btn-sm" onclick="abrirModalCliente()">+ Vincular</button>
+        </div>
+        <div id="clientes-lista">
+          ${causa.clientes?.length
+            ? causa.clientes.map(cl => `
+              <div class="flex justify-between items-center" style="padding:.6rem 0;border-bottom:1px solid var(--border)">
+                <div>
+                  <div style="font-weight:500">${cl.nombre}</div>
+                  <div class="text-muted font-mono" style="font-size:.8rem">${cl.cuit ?? ''}</div>
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="desvincularCliente(${cl.id})" title="Desvincular">✕</button>
+              </div>`).join('')
+            : '<div class="empty" style="padding:1.5rem 0">Sin clientes vinculados</div>'
+          }
+        </div>
+      </div>
+
+      <!-- Notificaciones / Movimientos -->
+      <div class="card">
+        <div class="flex justify-between items-center" style="margin-bottom:1.25rem">
+          <div class="card-title" style="margin-bottom:0">Notificaciones vinculadas</div>
+          <button class="btn btn-ghost btn-sm" onclick="vincularNotificaciones()">Vincular automático</button>
+        </div>
+        <ul class="movimientos-list" id="movimientos-list">
+          ${movimientos.length
+            ? movimientos.map(m => `
+              <li class="movimiento-item">
+                <div class="movimiento-fecha">${formatFecha(m.fecha)}</div>
+                <div>
+                  <div class="movimiento-desc">${m.desc}</div>
+                  ${m.detalle ? `<div class="movimiento-origen">${m.detalle}</div>` : ''}
+                  <div class="movimiento-origen" style="margin-top:.1rem">
+                    <span class="badge badge-tipo ${m.origen === 'PJN' ? 'badge-tipo-pjn' : m.origen === 'TAD' ? 'badge-tipo-tad' : 'badge-tipo-sicnea'}" style="font-size:.65rem">${m.origen}</span>
+                  </div>
+                </div>
+              </li>`).join('')
+            : '<li class="empty" style="padding:1.5rem 0">Sin notificaciones vinculadas. Usá "Vincular automático" si hay notificaciones con el mismo número de expediente.</li>'
+          }
+        </ul>
+      </div>
+
+      <!-- Carpetas físicas -->
+      <div class="card">
+        <div class="flex justify-between items-center" style="margin-bottom:1.25rem">
+          <div class="card-title" style="margin-bottom:0">Carpetas físicas</div>
+          <button class="btn btn-ghost btn-sm" onclick="abrirModalCarpeta()">+ Agregar</button>
+        </div>
+        <div id="carpetas-lista">
+          ${renderCarpetas(causa.carpetas ?? [])}
+        </div>
+      </div>
+
+      <!-- Notas -->
+      <div class="card">
+        <div class="card-title">Notas</div>
+        <textarea id="notas-textarea" placeholder="Anotá cualquier observación relevante de esta causa…" style="min-height:120px">${causa.notas ?? ''}</textarea>
+        <div style="margin-top:.75rem;display:flex;justify-content:flex-end">
+          <button class="btn btn-primary btn-sm" onclick="guardarNotas()">Guardar notas</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('contenido').innerHTML = html;
   }
 
-  let avisosData = [];
+  function renderCarpetas(carpetas) {
+    if (!carpetas.length) return '<div class="empty" style="padding:1.5rem 0">Sin carpetas físicas vinculadas</div>';
+    return carpetas.map(c => `
+      <div class="flex justify-between items-center" style="padding:.6rem 0;border-bottom:1px solid var(--border)">
+        <div>
+          ${c.numero ? `<div style="font-weight:500">Carpeta ${c.numero}</div>` : ''}
+          ${c.ubicacion ? `<div class="text-muted" style="font-size:.875rem">${c.ubicacion}</div>` : ''}
+          ${c.descripcion ? `<div class="text-muted" style="font-size:.8125rem;font-style:italic">${c.descripcion}</div>` : ''}
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="eliminarCarpeta(${c.id})" title="Eliminar">✕</button>
+      </div>`).join('');
+  }
 
-  function renderAvisos(avisos) {
-    avisosData = [...avisos];
-    const lista = document.getElementById('avisos-list');
-    if (!avisos.length) {
-      lista.innerHTML = '<li class="empty" style="padding:1.5rem 0">Sin avisos configurados</li>';
+  // ── Editar causa ───────────────────────────────────
+  function abrirEditar() {
+    if (!CAUSA) return;
+    document.getElementById('e-expediente').value = CAUSA.numero_expediente ?? '';
+    document.getElementById('e-caratula').value   = CAUSA.caratula ?? '';
+    document.getElementById('e-tipo').value       = CAUSA.tipo ?? 'pjn';
+    document.getElementById('e-estado').value     = CAUSA.estado ?? 'en_tramite';
+    document.getElementById('e-juzgado').value    = CAUSA.juzgado ?? '';
+    document.getElementById('e-fecha').value      = CAUSA.fecha_inicio ?? '';
+    abrirModal('modal-editar');
+  }
+
+  document.getElementById('btn-guardar-editar').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-guardar-editar');
+    btn.disabled = true;
+    try {
+      const res = await fetch(`/api/causas/biblioteca/${CAUSA_ID}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          numero_expediente: document.getElementById('e-expediente').value.trim() || null,
+          caratula:  document.getElementById('e-caratula').value.trim()  || null,
+          tipo:      document.getElementById('e-tipo').value,
+          estado:    document.getElementById('e-estado').value,
+          juzgado:   document.getElementById('e-juzgado').value.trim()   || null,
+          fecha_inicio: document.getElementById('e-fecha').value || null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      cerrarModal('modal-editar');
+      toast('Causa actualizada');
+      cargarCausa();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ── Notas ──────────────────────────────────────────
+  async function guardarNotas() {
+    const notas = document.getElementById('notas-textarea')?.value ?? '';
+    try {
+      const res = await fetch(`/api/causas/biblioteca/${CAUSA_ID}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notas }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast('Notas guardadas');
+    } catch (e) {
+      toast('Error al guardar: ' + e.message, 'error');
+    }
+  }
+
+  // ── Clientes ───────────────────────────────────────
+  async function abrirModalCliente() {
+    const sel = document.getElementById('sel-cliente');
+    sel.innerHTML = '<option value="">Cargando…</option>';
+    abrirModal('modal-cliente');
+    try {
+      const clientes = await fetch('/api/clientes').then(r => r.json());
+      const yaVinculados = new Set((CAUSA?.clientes ?? []).map(c => c.id));
+      sel.innerHTML = '<option value="">Seleccioná un cliente…</option>'
+        + clientes
+            .filter(c => !yaVinculados.has(c.id))
+            .map(c => `<option value="${c.id}">${c.nombre}${c.cuit ? ` — ${c.cuit}` : ''}</option>`)
+            .join('');
+    } catch {
+      sel.innerHTML = '<option value="">Error al cargar clientes</option>';
+    }
+  }
+
+  document.getElementById('btn-vincular-cliente').addEventListener('click', async () => {
+    const cliente_id = document.getElementById('sel-cliente').value;
+    if (!cliente_id) { toast('Seleccioná un cliente', 'error'); return; }
+    try {
+      const res = await fetch(`/api/causas/biblioteca/${CAUSA_ID}/clientes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cliente_id: Number(cliente_id) }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      cerrarModal('modal-cliente');
+      toast('Cliente vinculado');
+      cargarCausa();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  });
+
+  async function desvincularCliente(clienteId) {
+    if (!confirm('¿Desvincular este cliente de la causa?')) return;
+    try {
+      const res = await fetch(`/api/causas/biblioteca/${CAUSA_ID}/clientes/${clienteId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      toast('Cliente desvinculado');
+      cargarCausa();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ── Notificaciones auto-vincular ───────────────────
+  async function vincularNotificaciones() {
+    try {
+      const res = await fetch(`/api/causas/biblioteca/${CAUSA_ID}/vincular-notif`, { method: 'POST' });
+      const data = await res.json();
+      const total = (data.vinculadas?.pjn ?? 0) + (data.vinculadas?.tad ?? 0) + (data.vinculadas?.sicnea ?? 0);
+      toast(total ? `${total} notificación(es) vinculada(s)` : 'No se encontraron coincidencias por expediente');
+      if (total) cargarCausa();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ── Carpetas ───────────────────────────────────────
+  function abrirModalCarpeta() {
+    const numero = prompt('Número de carpeta (opcional):') ?? '';
+    const ubicacion = prompt('Ubicación (ej: Estante A / Caja 3):') ?? '';
+    if (!numero && !ubicacion) return;
+    fetch(`/api/causas/biblioteca/carpetas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ causa_id: CAUSA_ID, numero: numero || null, ubicacion: ubicacion || null }),
+    })
+      .then(r => r.ok ? (toast('Carpeta agregada'), cargarCausa()) : Promise.reject())
+      .catch(() => toast('Error al agregar carpeta', 'error'));
+  }
+
+  async function eliminarCarpeta(carpetaId) {
+    if (!confirm('¿Eliminar esta carpeta?')) return;
+    try {
+      await fetch(`/api/causas/biblioteca/carpetas/${carpetaId}`, { method: 'DELETE' });
+      toast('Carpeta eliminada');
+      cargarCausa();
+    } catch {
+      toast('Error al eliminar', 'error');
+    }
+  }
+
+  // ── Init ───────────────────────────────────────────
+  async function cargarCausa() {
+    try {
+      const causa = await fetch(`/api/causas/biblioteca/${CAUSA_ID}`).then(r => {
+        if (!r.ok) throw new Error('No encontrada');
+        return r.json();
+      });
+      renderPagina(causa);
+    } catch (e) {
+      document.getElementById('contenido').innerHTML =
+        `<p class="empty" style="margin-top:3rem">Causa no encontrada. <a href="causas.html">Volver al listado</a></p>`;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    CAUSA_ID = Number(new URLSearchParams(location.search).get('id'));
+    if (!CAUSA_ID) {
+      document.getElementById('contenido').innerHTML =
+        '<p class="empty" style="margin-top:3rem">ID de causa inválido. <a href="causas.html">Volver</a></p>';
       return;
     }
-    lista.innerHTML = avisos.map(a => `
-      <li class="aviso-item" data-id="${a.id}">
-        <div class="aviso-fecha">${formatFechaLocal(a.fecha)}</div>
-        <div class="aviso-mensaje">${a.mensaje}</div>
-        <button class="btn btn-ghost btn-sm btn-icon" data-delete-aviso="${a.id}" title="Eliminar">✕</button>
-      </li>
-    `).join('');
-
-    lista.querySelectorAll('[data-delete-aviso]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = Number(btn.dataset.deleteAviso);
-        avisosData = avisosData.filter(a => a.id !== id);
-        renderAvisos(avisosData);
-        toast('Aviso eliminado');
-      });
-    });
-  }
-
-  // ── Modales ───────────────────────────────────────
-  function openModal(id) { document.getElementById(id).classList.add('open'); }
-  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-
-  document.getElementById('btn-nueva-accion').addEventListener('click', () => openModal('modal-accion'));
-  document.getElementById('modal-accion-close').addEventListener('click', () => closeModal('modal-accion'));
-  document.getElementById('modal-accion-cancel').addEventListener('click', () => closeModal('modal-accion'));
-
-  document.getElementById('btn-nuevo-aviso').addEventListener('click', () => openModal('modal-aviso'));
-  document.getElementById('modal-aviso-close').addEventListener('click', () => closeModal('modal-aviso'));
-  document.getElementById('modal-aviso-cancel').addEventListener('click', () => closeModal('modal-aviso'));
-
-  document.getElementById('modal-accion-save').addEventListener('click', () => {
-    const desc  = document.getElementById('accion-desc').value.trim();
-    const fecha = document.getElementById('accion-fecha').value;
-    if (!desc) { toast('Completá la descripción', 'error'); return; }
-    const newId = pendientesData.length ? Math.max(...pendientesData.map(p => p.id)) + 1 : 1;
-    pendientesData.push({ id: newId, accion: desc, fechaLimite: fecha || null, completada: false });
-    renderPendientes(pendientesData);
-    document.getElementById('accion-desc').value = '';
-    document.getElementById('accion-fecha').value = '';
-    closeModal('modal-accion');
-    toast('Acción agregada');
-  });
-
-  document.getElementById('modal-aviso-save').addEventListener('click', () => {
-    const fecha   = document.getElementById('aviso-fecha').value;
-    const mensaje = document.getElementById('aviso-mensaje').value.trim();
-    if (!fecha || !mensaje) { toast('Completá fecha y mensaje', 'error'); return; }
-    const newId = avisosData.length ? Math.max(...avisosData.map(a => a.id)) + 1 : 1;
-    avisosData.push({ id: newId, fecha, mensaje });
-    renderAvisos(avisosData);
-    document.getElementById('aviso-fecha').value = '';
-    document.getElementById('aviso-mensaje').value = '';
-    closeModal('modal-aviso');
-    toast('Aviso agregado');
-  });
-
-  // Cerrar modales al hacer click fuera
-  document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
-    backdrop.addEventListener('click', e => {
-      if (e.target === backdrop) backdrop.classList.remove('open');
-    });
-  });
-
-  // ── Notas ─────────────────────────────────────────
-  document.getElementById('btn-guardar-notas').addEventListener('click', () => {
-    toast('Notas guardadas');
-  });
-
-  // ── Init ──────────────────────────────────────────
-  const params  = new URLSearchParams(location.search);
-  const causaId = Number(params.get('id'));
-
-  const causa   = CAUSAS.find(c => c.id === causaId);
-  const detalle = DETALLES[causaId];
-
-  if (!causa || !detalle) {
-    document.querySelector('.container').innerHTML =
-      '<p class="empty" style="margin-top:3rem">Causa no encontrada. <a href="causas.html">Volver al listado</a></p>';
-  } else {
-    renderHeader(causa);
-    renderDatos(causa, detalle);
-    renderMovimientos(detalle.movimientos);
-    renderPendientes(detalle.pendientes);
-    renderAvisos(detalle.avisos);
-    document.getElementById('notas-textarea').value = detalle.notas ?? '';
-  }
-
-  // Dropdowns navbar
-  document.querySelectorAll('.navbar-dropdown').forEach(dd => {
-    dd.querySelector('.navbar-dropdown-toggle').addEventListener('click', e => {
-      e.stopPropagation();
-      const isOpen = dd.classList.contains('open');
-      document.querySelectorAll('.navbar-dropdown').forEach(d => d.classList.remove('open'));
-      if (!isOpen) dd.classList.add('open');
-    });
-  });
-  document.addEventListener('click', () => {
-    document.querySelectorAll('.navbar-dropdown').forEach(d => d.classList.remove('open'));
+    cargarCausa();
   });
 </script>
-<script src="/js/layout.js"></script>
 </body>
 </html>
