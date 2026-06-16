@@ -169,6 +169,7 @@ async function notificarNuevasCausas(desde) {
     subject: `Nuevas notificaciones (${total}) — ${partes.join(', ')}`,
     html,
   });
+  transporter.close();
 
   console.log(`  [causas/mail] Enviado → ${process.env.MAIL_TO}`);
   return total;
@@ -235,6 +236,7 @@ async function notificarAvisoPendientes() {
     subject: `Pendientes del día - ${fechaLarga}`,
     html,
   });
+  transporter.close();
 
   console.log(`  [causas/aviso-pendientes] Enviado → ${process.env.MAIL_TO}`);
   return rows.length;
@@ -292,6 +294,7 @@ async function notificarNotificacionesDiarias() {
     subject: `Notificaciones del día - ${hoyStr} (${partes.join(', ')})`,
     html,
   });
+  transporter.close();
 
   console.log(`  [causas/mail-diario] Enviado → ${process.env.MAIL_TO}`);
   return total;
