@@ -293,6 +293,10 @@
           </div>
           <div class="pendiente-card-right">
             ${estadoHtml}
+            ${!p.completado
+              ? `<button class="btn btn-success btn-sm" onclick="toggleCompletado(${p.id})">Completar</button>`
+              : `<button class="btn btn-ghost btn-sm" onclick="toggleCompletado(${p.id})">Desmarcar</button>`
+            }
             <button class="btn btn-ghost btn-sm btn-icon" onclick="eliminarPendiente(${p.id})" title="Eliminar">✕</button>
           </div>
         </div>`;
