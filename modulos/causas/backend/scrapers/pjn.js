@@ -303,12 +303,13 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
     if (page.url().includes('sso.pjn.gov.ar')) {
       console.log('\n2. Login requerido (SSO)...');
       await login(page);
+      await esperarSPA(page, 60000);
     } else {
       console.log('  Sesión activa, sin necesidad de login');
     }
 
     console.log('\n3. Esperando carga de notificaciones...');
-    await page.waitForSelector('table tbody tr', { timeout: 30000 });
+    await page.waitForSelector('table tbody tr', { timeout: 60000 });
     console.log('  Tabla cargada');
     await cambiarResultadosPorPagina(page, 30);
 
