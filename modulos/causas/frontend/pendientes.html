@@ -32,21 +32,32 @@
   </div>
 
   <div class="card">
-    <div class="card-title">Nuevo pendiente / aviso</div>
+    <div class="card-title">Nuevo pendiente</div>
     <form id="form-pendiente" onsubmit="guardarPendiente(event)">
       <div class="form-grid form-grid-causas">
+        <div class="form-group">
+          <label for="inp-expediente">Número de expediente</label>
+          <input type="text" id="inp-expediente" placeholder="Ej: EX-2026-12345">
+        </div>
+        <div class="form-group">
+          <label for="inp-caratula">Carátula</label>
+          <input type="text" id="inp-caratula" placeholder="Carátula de la causa">
+        </div>
+        <div class="form-group">
+          <label for="inp-origen">Origen</label>
+          <select id="inp-origen">
+            <option value="">— Sin especificar —</option>
+            <option value="PJN">PJN</option>
+            <option value="SICNEA">SICNEA</option>
+            <option value="TAD">TAD</option>
+          </select>
+        </div>
         <div class="form-group" style="grid-column: 1 / -1">
-          <label for="inp-desc">Descripción de la acción</label>
+          <label for="inp-desc">Descripción de la acción <span style="color:var(--danger)">*</span></label>
           <input type="text" id="inp-desc" placeholder="Ej: Presentar escrito de apelación" required>
         </div>
         <div class="form-group">
-          <label for="inp-causa">Causa vinculada <span class="label-opt">(opcional)</span></label>
-          <select id="inp-causa">
-            <option value="">— Sin causa —</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="inp-fecha">Fecha límite</label>
+          <label for="inp-fecha">Fecha de vencimiento <span style="color:var(--danger)">*</span></label>
           <input type="date" id="inp-fecha" required>
         </div>
         <div class="form-group">
@@ -62,6 +73,8 @@
           <textarea id="inp-nota" placeholder="Información extra, referencias, etc." rows="2" style="min-height:60px"></textarea>
         </div>
       </div>
+      <input type="hidden" id="inp-notif-id">
+      <input type="hidden" id="inp-notif-tipo">
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Guardar pendiente</button>
       </div>
@@ -86,9 +99,19 @@
 <script src="js/causas.js"></script>
 <script src="/js/layout.js"></script>
 <script>
-  let PENDIENTES  = [];
+  let PENDIENTES   = [];
   let filtroActivo = 'todos';
   let FERIADOS_SET = new Set();
+
+  // ── Pre-fill desde URL ───────────────────────────
+  (function prefillDesdeURL() {
+    const p = new URLSearchParams(location.search);
+    if (p.get('numero_expediente')) document.getElementById('inp-expediente').value = p.get('numero_expediente');
+    if (p.get('caratula'))          document.getElementById('inp-caratula').value   = p.get('caratula');
+    if (p.get('origen'))            document.getElementById('inp-origen').value     = p.get('origen');
+    if (p.get('notificacion_id'))   document.getElementById('inp-notif-id').value   = p.get('notificacion_id');
+    if (p.get('notificacion_tipo')) document.getElementById('inp-notif-tipo').value  = p.get('notificacion_tipo') || p.get('origen');
+  })();
 
   // ── Feriados y días hábiles ──────────────────────
   async function cargarFeriados() {
@@ -145,27 +168,12 @@
     const dias  = parseInt(document.getElementById('inp-aviso').value) || 0;
     const el    = document.getElementById('aviso-calc');
     if (!fecha) { el.textContent = ''; return; }
-    if (dias === 0) { el.textContent = 'Aviso el mismo día de la fecha límite'; return; }
+    if (dias === 0) { el.textContent = 'Aviso el mismo día del vencimiento'; return; }
     el.textContent = `El aviso se programará para el ${formatFechaLarga(restarDiasHabiles(fecha, dias))}`;
   }
 
   document.getElementById('inp-fecha').addEventListener('change', actualizarCalcAviso);
   document.getElementById('inp-aviso').addEventListener('input',  actualizarCalcAviso);
-
-  // ── Causas en el selector ────────────────────────
-  async function cargarCausasSelector() {
-    try {
-      const causas = await fetch('/api/causas/biblioteca').then(r => r.json());
-      const sel = document.getElementById('inp-causa');
-      causas.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        const cliente = c.clientes?.[0]?.nombre ?? c.caratula ?? c.numero_expediente ?? 'Sin datos';
-        opt.textContent = `${c.numero_expediente ?? '—'} — ${cliente}`;
-        sel.appendChild(opt);
-      });
-    } catch {}
-  }
 
   // ── API helpers ──────────────────────────────────
   async function cargarPendientes() {
@@ -185,16 +193,22 @@
     btn.disabled = true;
     btn.textContent = 'Guardando…';
 
-    const fecha   = document.getElementById('inp-fecha').value;
-    const diasAv  = parseInt(document.getElementById('inp-aviso').value) || 0;
+    const fecha  = document.getElementById('inp-fecha').value;
+    const diasAv = parseInt(document.getElementById('inp-aviso').value) || 0;
+    const notifId   = document.getElementById('inp-notif-id').value;
+    const notifTipo = document.getElementById('inp-notif-tipo').value;
 
     try {
       const res = await fetch('/api/causas/pendientes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          descripcion:  document.getElementById('inp-desc').value.trim(),
-          causa_id:     parseInt(document.getElementById('inp-causa').value) || null,
+          descripcion:       document.getElementById('inp-desc').value.trim(),
+          numero_expediente: document.getElementById('inp-expediente').value.trim() || null,
+          caratula:          document.getElementById('inp-caratula').value.trim()   || null,
+          origen:            document.getElementById('inp-origen').value             || null,
+          notificacion_id:   notifId   ? parseInt(notifId)  : null,
+          notificacion_tipo: notifTipo || null,
           fecha_limite: fecha,
           dias_aviso:   diasAv,
           fecha_aviso:  restarDiasHabiles(fecha, diasAv),
@@ -204,6 +218,10 @@
       if (!res.ok) throw new Error(await res.text());
       e.target.reset();
       document.getElementById('aviso-calc').textContent = '';
+      // Limpiar hidden fields y URL
+      document.getElementById('inp-notif-id').value   = '';
+      document.getElementById('inp-notif-tipo').value = '';
+      history.replaceState(null, '', location.pathname);
       toast('Pendiente guardado');
       await cargarPendientes();
     } catch (err) {
@@ -214,9 +232,16 @@
     }
   }
 
+  // ── Origen badge ─────────────────────────────────
+  function origenBadge(origen) {
+    if (!origen) return '';
+    const cls = origen === 'PJN' ? 'badge-tipo-pjn' : origen === 'TAD' ? 'badge-tipo-tad' : origen === 'SICNEA' ? 'badge-tipo-sicnea' : '';
+    return `<span class="badge badge-tipo ${cls}">${origen}</span>`;
+  }
+
   // ── Render lista ─────────────────────────────────
   function renderLista(filtro) {
-    const el = document.getElementById('lista-pendientes');
+    const el  = document.getElementById('lista-pendientes');
     const hoy = new Date().toISOString().slice(0, 10);
 
     let lista = [...PENDIENTES];
@@ -233,14 +258,11 @@
       const vencido       = p.fecha_limite < hoy && !p.completado;
 
       let estadoHtml;
-      if (p.completado)           estadoHtml = '<span class="badge badge-success">Completado</span>';
-      else if (vencido)           estadoHtml = '<span class="badge badge-danger">Vencido</span>';
-      else if (diasRestantes <= 3) estadoHtml = `<span class="badge badge-warning">${diasRestantes} día${diasRestantes !== 1 ? 's' : ''} hábil${diasRestantes !== 1 ? 'es' : ''}</span>`;
-      else                        estadoHtml = `<span class="badge badge-info">${diasRestantes} días hábiles</span>`;
-
-      const causaHtml = p.numero_expediente
-        ? `<a href="detalle-causa.html?id=${p.causa_id}" class="pend-causa">${p.numero_expediente}</a>`
-        : '';
+      if (p.completado)            estadoHtml = '<span class="badge badge-success">Completado</span>';
+      else if (vencido)            estadoHtml = '<span class="badge badge-danger">Vencido</span>';
+      else if (diasRestantes <= 3) estadoHtml = `<span class="badge badge-danger">${diasRestantes} día${diasRestantes !== 1 ? 's' : ''} hábil${diasRestantes !== 1 ? 'es' : ''}</span>`;
+      else if (diasRestantes <= 7) estadoHtml = `<span class="badge badge-warning">${diasRestantes} días hábiles</span>`;
+      else                         estadoHtml = `<span class="badge badge-info">${diasRestantes} días hábiles</span>`;
 
       return `
         <div class="pendiente-card ${p.completado ? 'completado' : ''} ${vencido ? 'vencido' : ''}">
@@ -254,8 +276,10 @@
           <div class="pendiente-card-body">
             <div class="pendiente-card-top">
               <span class="pend-desc ${p.completado ? 'tachado' : ''}">${p.descripcion}</span>
-              ${causaHtml}
+              ${p.numero_expediente ? `<span class="pend-causa">${p.numero_expediente}</span>` : ''}
+              ${origenBadge(p.origen)}
             </div>
+            ${p.caratula ? `<div class="pend-nota" style="font-style:normal;color:var(--text-muted)">${p.caratula}</div>` : ''}
             <div class="pend-meta">
               <span class="pend-fecha">Vence ${formatFechaLarga(p.fecha_limite)}</span>
               ${p.dias_aviso > 0 ? `<span class="pend-aviso-fecha">· Aviso: ${formatFechaLarga(p.fecha_aviso)}</span>` : ''}
@@ -275,11 +299,15 @@
     const p = PENDIENTES.find(x => x.id === id);
     if (!p) return;
     try {
-      await fetch(`/api/causas/pendientes/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completado: p.completado ? 0 : 1 }),
-      });
+      if (!p.completado) {
+        await fetch(`/api/causas/pendientes/${id}/completar`, { method: 'PUT' });
+      } else {
+        await fetch(`/api/causas/pendientes/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ completado: 0 }),
+        });
+      }
       toast(p.completado ? 'Marcado como pendiente' : 'Marcado como completado');
       await cargarPendientes();
     } catch {
@@ -318,8 +346,9 @@
 
   // ── Init ─────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
-    await Promise.all([cargarFeriados(), cargarCausasSelector()]);
+    await cargarFeriados();
     await cargarPendientes();
+    actualizarCalcAviso();
   });
 </script>
 </body>

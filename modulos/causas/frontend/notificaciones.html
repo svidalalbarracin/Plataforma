@@ -188,6 +188,9 @@
                   onclick="marcarLeida(${n.id}, '${n.origen}')">
             ${n.leida ? 'Desmarcar' : 'Marcar leída'}
           </button>
+          <button class="btn-toggle-leida" onclick="agregarPendiente(${n.id},'${n.origen}')" title="Crear pendiente desde esta notificación">
+            + Pendiente
+          </button>
         </div>
       </div>`
     ).join('');
@@ -307,6 +310,17 @@
   document.getElementById('modal-docs').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
   });
+
+  function agregarPendiente(id, origen) {
+    const n = notificaciones.find(x => x.id === id && x.origen === origen);
+    if (!n) return;
+    const p = new URLSearchParams();
+    if (n.expediente) p.set('numero_expediente', n.expediente);
+    if (n.caratula)   p.set('caratula', n.caratula);
+    if (n.origen)     p.set('origen', n.origen);
+    p.set('notificacion_id', n.id);
+    location.href = `pendientes.html?${p.toString()}`;
+  }
 
   document.addEventListener('DOMContentLoaded', init);
 </script>

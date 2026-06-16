@@ -174,4 +174,70 @@ async function notificarNuevasCausas(desde) {
   return total;
 }
 
-module.exports = { notificarNuevasCausas, ahoraSQL };
+/**
+ * Busca pendientes cuya fecha_aviso es hoy y envía un mail resumen.
+ * Se llama desde el scheduler a las 9:00hs cada día.
+ *
+ * @returns {Promise<number>} Cantidad de pendientes notificados (0 si ninguno).
+ */
+async function notificarAvisoPendientes() {
+  const hoy  = new Date().toISOString().slice(0, 10);
+  const rows = db.prepare(
+    'SELECT * FROM pendientes WHERE fecha_aviso = ? AND completado = 0'
+  ).all(hoy);
+
+  if (!rows.length) {
+    console.log('  [causas/aviso-pendientes] Sin pendientes para hoy');
+    return 0;
+  }
+
+  console.log(`  [causas/aviso-pendientes] ${rows.length} pendiente(s) — enviando mail...`);
+
+  const fechaLarga = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const filas = rows.map(p => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-family:monospace;font-size:12px">${p.numero_expediente || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px">${p.caratula || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px">${p.descripcion}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:12px;white-space:nowrap">${p.fecha_limite}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a">
+  <div style="max-width:720px;margin:0 auto;background:#ffffff;border-radius:12px;padding:36px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
+    <h1 style="margin:0 0 6px;font-size:20px;font-weight:700">Pendientes del día</h1>
+    <p style="margin:0 0 24px;color:#64748b;font-size:14px">${fechaLarga} &nbsp;·&nbsp; ${rows.length} pendiente(s)</p>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 16px">
+    <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+      <thead>
+        <tr style="background:#f8fafc">
+          <th style="padding:7px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Expediente</th>
+          <th style="padding:7px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Carátula</th>
+          <th style="padding:7px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Acción</th>
+          <th style="padding:7px 12px;text-align:center;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">Vencimiento</th>
+        </tr>
+      </thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <p style="margin-top:36px;font-size:12px;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:16px">
+      Generado automáticamente &nbsp;·&nbsp; Sistema de Causas
+    </p>
+  </div>
+</body>
+</html>`;
+
+  const transporter = crearTransporter();
+  await transporter.sendMail({
+    from:    `"Causas" <${process.env.MAIL_USER}>`,
+    to:      process.env.MAIL_TO,
+    subject: `Pendientes del día - ${fechaLarga}`,
+    html,
+  });
+
+  console.log(`  [causas/aviso-pendientes] Enviado → ${process.env.MAIL_TO}`);
+  return rows.length;
+}
+
+module.exports = { notificarNuevasCausas, notificarAvisoPendientes, ahoraSQL };

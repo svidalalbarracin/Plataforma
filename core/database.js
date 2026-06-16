@@ -217,6 +217,24 @@ if (cuitNotnull) {
   console.log('[db] Migración: clientes.cuit ahora es nullable');
 }
 
+// Migración: agrega nuevos campos a pendientes si no existen.
+{
+  const cols = db.prepare('PRAGMA table_info(pendientes)').all().map(c => c.name);
+  const nuevos = [
+    ['numero_expediente', 'TEXT'],
+    ['caratula',          'TEXT'],
+    ['origen',            'TEXT'],
+    ['notificacion_id',   'INTEGER'],
+    ['notificacion_tipo', 'TEXT'],
+    ['completado_at',     'TEXT'],
+  ];
+  for (const [col, tipo] of nuevos) {
+    if (!cols.includes(col)) {
+      db.exec(`ALTER TABLE pendientes ADD COLUMN ${col} ${tipo}`);
+    }
+  }
+}
+
 // Agrega causa_id a las tablas de notificaciones si todavía no existe.
 // SQLite no soporta ALTER TABLE ADD COLUMN IF NOT EXISTS, así que se verifica
 // con PRAGMA antes de intentar la migración.
