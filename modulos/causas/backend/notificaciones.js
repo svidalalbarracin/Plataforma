@@ -240,4 +240,61 @@ async function notificarAvisoPendientes() {
   return rows.length;
 }
 
-module.exports = { notificarNuevasCausas, notificarAvisoPendientes, ahoraSQL };
+/**
+ * Consulta PJN, TAD y SICNEA para notificaciones del día (hora Argentina, UTC-3)
+ * y envía un único mail resumen. Pensado para correr a las 18hs.
+ *
+ * @returns {Promise<number>} Total de notificaciones enviadas (0 si ninguna).
+ */
+async function notificarNotificacionesDiarias() {
+  const hoy = `date(created_at, '-3 hours') = date('now', '-3 hours')`;
+
+  const pjn    = db.prepare(`SELECT * FROM notificaciones_pjn    WHERE ${hoy}`).all();
+  const tad    = db.prepare(`SELECT * FROM notificaciones_tad    WHERE ${hoy}`).all();
+  const sicnea = db.prepare(`SELECT * FROM notificaciones_sicnea WHERE ${hoy}`).all();
+
+  const total = pjn.length + tad.length + sicnea.length;
+  if (total === 0) {
+    console.log('  [causas/mail-diario] Sin notificaciones hoy');
+    return 0;
+  }
+
+  const partes = [];
+  if (pjn.length)    partes.push(`PJN: ${pjn.length}`);
+  if (tad.length)    partes.push(`TAD: ${tad.length}`);
+  if (sicnea.length) partes.push(`SICNEA: ${sicnea.length}`);
+
+  console.log(`  [causas/mail-diario] ${total} notificación(es) hoy (${partes.join(', ')}) — enviando...`);
+
+  const hoyStr = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a">
+  <div style="max-width:720px;margin:0 auto;background:#ffffff;border-radius:12px;padding:36px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
+    <h1 style="margin:0 0 6px;font-size:20px;font-weight:700">Notificaciones del día</h1>
+    <p style="margin:0 0 24px;color:#64748b;font-size:14px">${hoyStr} &nbsp;·&nbsp; ${partes.join(' &nbsp;·&nbsp; ')}</p>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 4px">
+    ${seccionPJN(pjn)}
+    ${seccionTAD(tad)}
+    ${seccionSICNEA(sicnea)}
+    <p style="margin-top:36px;font-size:12px;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:16px">
+      Generado automáticamente &nbsp;·&nbsp; Sistema de Causas
+    </p>
+  </div>
+</body>
+</html>`;
+
+  const transporter = crearTransporter();
+  await transporter.sendMail({
+    from:    `"Causas" <${process.env.MAIL_USER}>`,
+    to:      process.env.MAIL_TO,
+    subject: `Notificaciones del día - ${hoyStr} (${partes.join(', ')})`,
+    html,
+  });
+
+  console.log(`  [causas/mail-diario] Enviado → ${process.env.MAIL_TO}`);
+  return total;
+}
+
+module.exports = { notificarNuevasCausas, notificarNotificacionesDiarias, notificarAvisoPendientes, ahoraSQL };

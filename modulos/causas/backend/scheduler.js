@@ -10,7 +10,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'
 const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
 const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
 const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
-const { notificarNuevasCausas, notificarAvisoPendientes, ahoraSQL } = require('./notificaciones');
+const { notificarNotificacionesDiarias, notificarAvisoPendientes } = require('./notificaciones');
 const { inferirTodos }                = require('./inferirCliente');
 
 /** Intervalo de polling para PJN y TAD, en minutos (default 30). */
@@ -22,8 +22,6 @@ const INTERVALO_MIN = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
  * un fallo en uno no impida al otro ni al envío del mail.
  */
 async function ejecutarCiclo() {
-  const desde = ahoraSQL();
-
   await Promise.all([
     obtenerNotificacionesPJN().catch(err =>
       console.error(`[${new Date().toISOString()}] [causas/pjn] Error:`, err.message)
@@ -33,11 +31,6 @@ async function ejecutarCiclo() {
     ),
   ]);
 
-  notificarNuevasCausas(desde).catch(err =>
-    console.error(`[${new Date().toISOString()}] [causas/mail] Error:`, err.message)
-  );
-
-  // Inferir y vincular clientes automáticamente para las causas nuevas
   try {
     const r = await inferirTodos();
     if (r.vinculadas > 0) {
@@ -56,10 +49,8 @@ async function ejecutarCiclo() {
 async function ejecutarSICNEA() {
   if (new Date().getDay() !== 6) return;
   console.log('[causas-scheduler] Sábado — ejecutando SICNEA...');
-  const desde = ahoraSQL();
   try {
     await obtenerNotificacionesSICNEA();
-    await notificarNuevasCausas(desde);
     const r = await inferirTodos();
     if (r.vinculadas > 0) {
       console.log(`[causas-scheduler] Inferencia SICNEA: ${r.vinculadas} causa(s) vinculada(s) a cliente`);
@@ -73,6 +64,30 @@ async function ejecutarSICNEA() {
  * Programa el aviso diario de pendientes a las 9:00hs.
  * Calcula el delay hasta la próxima 9am y repite cada 24hs.
  */
+/**
+ * Programa el resumen diario de notificaciones a las 18:00hs.
+ */
+function programarResumenDiario() {
+  const ahora = new Date();
+  const proximas18 = new Date(ahora);
+  proximas18.setHours(18, 0, 0, 0);
+  if (proximas18 <= ahora) proximas18.setDate(proximas18.getDate() + 1);
+
+  const delay = proximas18 - ahora;
+  console.log(`[causas-scheduler] Resumen diario: próximo envío a las 18:00 (en ${Math.round(delay / 60000)} min)`);
+
+  setTimeout(() => {
+    notificarNotificacionesDiarias().catch(err =>
+      console.error(`[${new Date().toISOString()}] [causas/mail-diario] Error:`, err.message)
+    );
+    setInterval(() => {
+      notificarNotificacionesDiarias().catch(err =>
+        console.error(`[${new Date().toISOString()}] [causas/mail-diario] Error:`, err.message)
+      );
+    }, 24 * 60 * 60 * 1000);
+  }, delay);
+}
+
 function programarAvisoDiario() {
   const ahora = new Date();
   const proximas9 = new Date(ahora);
@@ -98,6 +113,7 @@ console.log(`[causas-scheduler] Iniciado. Intervalo PJN+TAD: cada ${INTERVALO_MI
 
 ejecutarCiclo();
 ejecutarSICNEA();
+programarResumenDiario();
 programarAvisoDiario();
 
 setInterval(ejecutarCiclo, INTERVALO_MIN * 60 * 1000);
