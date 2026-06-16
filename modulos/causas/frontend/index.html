@@ -157,7 +157,8 @@
     document.getElementById('nav-label').textContent = `${MESES_NOMBRE[month]} ${year}`;
 
     const header = document.getElementById('cal-mes-header');
-    header.innerHTML = DIAS_NOMBRE.map(n => `<div class="cal-mes-dia-nombre">${n}</div>`).join('');
+    const DIAS_MES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    header.innerHTML = DIAS_MES.map(n => `<div class="cal-mes-dia-nombre">${n}</div>`).join('');
 
     const primerDia = new Date(year, month, 1);
     const ultimoDia = new Date(year, month + 1, 0);
