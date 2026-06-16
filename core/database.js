@@ -173,6 +173,19 @@ db.exec(`
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE SET NULL
   );
+
+  CREATE TABLE IF NOT EXISTS pendientes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    descripcion  TEXT    NOT NULL,
+    causa_id     INTEGER,
+    fecha_limite TEXT    NOT NULL,
+    dias_aviso   INTEGER NOT NULL DEFAULT 3,
+    fecha_aviso  TEXT    NOT NULL,
+    nota         TEXT,
+    completado   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE SET NULL
+  );
 `);
 
 // Migración: hace clientes.cuit nullable (los clientes inferidos desde causas no tienen CUIT inicial).
@@ -202,6 +215,24 @@ if (cuitNotnull) {
     PRAGMA foreign_keys = ON;
   `);
   console.log('[db] Migración: clientes.cuit ahora es nullable');
+}
+
+// Migración: agrega nuevos campos a pendientes si no existen.
+{
+  const cols = db.prepare('PRAGMA table_info(pendientes)').all().map(c => c.name);
+  const nuevos = [
+    ['numero_expediente', 'TEXT'],
+    ['caratula',          'TEXT'],
+    ['origen',            'TEXT'],
+    ['notificacion_id',   'INTEGER'],
+    ['notificacion_tipo', 'TEXT'],
+    ['completado_at',     'TEXT'],
+  ];
+  for (const [col, tipo] of nuevos) {
+    if (!cols.includes(col)) {
+      db.exec(`ALTER TABLE pendientes ADD COLUMN ${col} ${tipo}`);
+    }
+  }
 }
 
 // Agrega causa_id a las tablas de notificaciones si todavía no existe.

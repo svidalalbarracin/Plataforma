@@ -10,7 +10,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'
 const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
 const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
 const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
-const { notificarNuevasCausas, ahoraSQL } = require('./notificaciones');
+const { notificarNuevasCausas, notificarAvisoPendientes, ahoraSQL } = require('./notificaciones');
 const { inferirTodos }                = require('./inferirCliente');
 
 /** Intervalo de polling para PJN y TAD, en minutos (default 30). */
@@ -69,9 +69,35 @@ async function ejecutarSICNEA() {
   }
 }
 
+/**
+ * Programa el aviso diario de pendientes a las 9:00hs.
+ * Calcula el delay hasta la próxima 9am y repite cada 24hs.
+ */
+function programarAvisoDiario() {
+  const ahora = new Date();
+  const proximas9 = new Date(ahora);
+  proximas9.setHours(9, 0, 0, 0);
+  if (proximas9 <= ahora) proximas9.setDate(proximas9.getDate() + 1);
+
+  const delay = proximas9 - ahora;
+  console.log(`[causas-scheduler] Aviso pendientes: próximo envío a las 09:00 (en ${Math.round(delay / 60000)} min)`);
+
+  setTimeout(() => {
+    notificarAvisoPendientes().catch(err =>
+      console.error(`[${new Date().toISOString()}] [causas/aviso-pendientes] Error:`, err.message)
+    );
+    setInterval(() => {
+      notificarAvisoPendientes().catch(err =>
+        console.error(`[${new Date().toISOString()}] [causas/aviso-pendientes] Error:`, err.message)
+      );
+    }, 24 * 60 * 60 * 1000);
+  }, delay);
+}
+
 console.log(`[causas-scheduler] Iniciado. Intervalo PJN+TAD: cada ${INTERVALO_MIN} min. SICNEA: solo sábados al iniciar.`);
 
 ejecutarCiclo();
 ejecutarSICNEA();
+programarAvisoDiario();
 
 setInterval(ejecutarCiclo, INTERVALO_MIN * 60 * 1000);

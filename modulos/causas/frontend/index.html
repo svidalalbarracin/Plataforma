@@ -45,9 +45,7 @@
   </div>
 
   <div class="leyenda">
-    <span class="leyenda-item"><span class="leyenda-dot dot-pendiente"></span>Pendiente</span>
-    <span class="leyenda-item"><span class="leyenda-dot dot-aviso"></span>Aviso</span>
-    <span class="leyenda-item"><span class="leyenda-dot dot-vencido"></span>Vencido</span>
+    <span class="leyenda-item"><span class="leyenda-dot dot-pendiente"></span>Vencimiento</span>
   </div>
 
   <div id="cal-semanal" class="cal-wrapper">
@@ -64,9 +62,7 @@
 <script src="/js/layout.js"></script>
 <script>
   let CAUSAS     = [];
-  let PENDIENTES = (() => {
-    try { return JSON.parse(localStorage.getItem('causas_pendientes') || '[]'); } catch { return []; }
-  })();
+  let PENDIENTES = [];
 
   const DIAS_NOMBRE = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
   const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -100,30 +96,25 @@
   }
 
   function isoFecha(d) {
-    return d.toISOString().slice(0, 10);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 
   function eventosDelDia(fechaIso) {
-    const hoy = isoFecha(new Date());
-    return PENDIENTES.map(p => {
-      const esFechaLimite  = p.fechaLimite === fechaIso;
-      const esFechaAviso   = p.fechaAviso  === fechaIso;
-      if (!esFechaLimite && !esFechaAviso) return null;
-      const tipo    = esFechaAviso && !esFechaLimite ? 'aviso' : 'pendiente';
-      const vencido = fechaIso < hoy && !p.completado;
-      return { ...p, tipo: vencido && tipo === 'pendiente' ? 'vencido' : tipo };
-    }).filter(Boolean);
+    return PENDIENTES
+      .filter(p => !p.completado && p.fecha_limite === fechaIso)
+      .map(p => ({ ...p, tipo: 'pendiente' }));
   }
 
   function htmlEvento(ev) {
-    const causa = ev.causaId ? CAUSAS.find(c => c.id === ev.causaId) : null;
-    const causaLabel = causa ? `<span class="ev-causa">${causa.expediente}</span>` : '';
-    const tipoClass = `ev-${ev.tipo}`;
-    const completadaClass = ev.completado ? 'ev-completado' : '';
+    const expediente = ev.numero_expediente;
+    const expLabel   = expediente ? `<span class="ev-causa">${expediente}</span>` : '';
     return `
-      <div class="cal-evento ${tipoClass} ${completadaClass}">
+      <div class="cal-evento ev-${ev.tipo}">
         <span class="ev-desc">${ev.descripcion}</span>
-        ${causaLabel}
+        ${expLabel}
       </div>`;
   }
 
@@ -200,7 +191,16 @@
     else renderMensual();
   }
 
-  render();
+  async function cargarPendientes() {
+    try {
+      PENDIENTES = await fetch('/api/causas/pendientes?estado=pendiente').then(r => r.json());
+      render();
+    } catch {
+      render();
+    }
+  }
+
+  cargarPendientes();
 </script>
 </body>
 </html>

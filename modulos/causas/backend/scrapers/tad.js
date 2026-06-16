@@ -26,10 +26,10 @@ fs.mkdirSync(DIR_DOCS,  { recursive: true });
  * @param {string|null} fecha
  * @returns {boolean}
  */
-function notifExiste(numero_tramite, fecha) {
+function notifExiste(numero_tramite, fecha, mensaje) {
   return !!db.prepare(
-    'SELECT id FROM notificaciones_tad WHERE numero_tramite = ? AND fecha = ?'
-  ).get(numero_tramite, fecha);
+    'SELECT id FROM notificaciones_tad WHERE numero_tramite = ? AND fecha = ? AND mensaje = ?'
+  ).get(numero_tramite, fecha, mensaje);
 }
 
 /**
@@ -326,9 +326,8 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
 
     // ── Parte 1: Notificaciones ───────────────────────────────────────────────
 
-    console.log('\n3. Extrayendo notificaciones (primeras 10)...');
+    console.log('\n3. Extrayendo notificaciones...');
     const filasNotif = (await extraerFilasNotif(page))
-      .slice(0, 10)
       .map(f => ({ ...f, fecha: isoFecha(f.fecha), numero_tramite: f.numero_tramite?.trim() }))
       .filter(f => f.numero_tramite);
 
@@ -336,16 +335,24 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
 
     // Acumula los trámites vistos para filtrar documentos externos luego
     const tramitesNotif = new Set();
+    const MAX_DUPLICADOS = 3;
+    let duplicadosConsecutivos = 0;
 
     for (let i = 0; i < filasNotif.length; i++) {
       const f = filasNotif[i];
       tramitesNotif.add(f.numero_tramite);
 
-      if (notifExiste(f.numero_tramite, f.fecha)) {
-        console.log(`  [=]  ${f.numero_tramite} ya existe`);
+      if (notifExiste(f.numero_tramite, f.fecha, f.mensaje)) {
+        duplicadosConsecutivos++;
+        console.log(`  [=]  ${f.numero_tramite} ya existe (${duplicadosConsecutivos}/${MAX_DUPLICADOS})`);
+        if (duplicadosConsecutivos >= MAX_DUPLICADOS) {
+          console.log(`  [>>] ${MAX_DUPLICADOS} duplicados consecutivos → deteniendo`);
+          break;
+        }
         continue;
       }
 
+      duplicadosConsecutivos = 0;
       console.log(`  [+]  ${f.numero_tramite}  ${f.fecha ?? ''}`);
       const archivePath = await descargarNotif(page, i, f.numero_tramite, f.fecha);
       guardarNotif({ ...f, archivo_path: archivePath });
