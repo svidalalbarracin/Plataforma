@@ -257,4 +257,39 @@ async function inferirTodos() {
   return { procesadas: sinClientes.length, vinculadas, nuevosClientes, sinMatch, detalle };
 }
 
-module.exports = { inferirParaCausa, inferirTodos, extraerDePJN, extraerDeTAD, extraerDeTADTextoPDF };
+/**
+ * Recorre las notificaciones sin causa_id y las vincula a la causa cuyo
+ * numero_expediente coincida exactamente. Se llama después de cada ciclo de scrapers,
+ * antes de inferirTodos(), para que la inferencia tenga datos disponibles.
+ *
+ * @returns {{ pjn: number, tad: number, sicnea: number }} Cantidad de filas actualizadas por origen.
+ */
+function vincularNotificacionesPendientes() {
+  const pjn = db.prepare(`
+    UPDATE notificaciones_pjn
+    SET causa_id = (SELECT id FROM causas WHERE numero_expediente = notificaciones_pjn.numero_expediente LIMIT 1)
+    WHERE causa_id IS NULL
+      AND numero_expediente IS NOT NULL
+      AND EXISTS (SELECT 1 FROM causas WHERE numero_expediente = notificaciones_pjn.numero_expediente)
+  `).run().changes;
+
+  const tad = db.prepare(`
+    UPDATE notificaciones_tad
+    SET causa_id = (SELECT id FROM causas WHERE numero_expediente = notificaciones_tad.numero_tramite LIMIT 1)
+    WHERE causa_id IS NULL
+      AND numero_tramite IS NOT NULL
+      AND EXISTS (SELECT 1 FROM causas WHERE numero_expediente = notificaciones_tad.numero_tramite)
+  `).run().changes;
+
+  const sicnea = db.prepare(`
+    UPDATE notificaciones_sicnea
+    SET causa_id = (SELECT id FROM causas WHERE numero_expediente = notificaciones_sicnea.documento_ref LIMIT 1)
+    WHERE causa_id IS NULL
+      AND documento_ref IS NOT NULL
+      AND EXISTS (SELECT 1 FROM causas WHERE numero_expediente = notificaciones_sicnea.documento_ref)
+  `).run().changes;
+
+  return { pjn, tad, sicnea };
+}
+
+module.exports = { inferirParaCausa, inferirTodos, vincularNotificacionesPendientes, extraerDePJN, extraerDeTAD, extraerDeTADTextoPDF };
