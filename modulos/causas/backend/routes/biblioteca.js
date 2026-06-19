@@ -130,6 +130,63 @@ router.post('/inferir-clientes', async (req, res) => {
 });
 
 /**
+ * GET /api/causas/biblioteca/clientes
+ * Devuelve todos los clientes con sus causas anidadas.
+ * Por cada causa incluye: pendientes activos y fecha de última actividad.
+ */
+router.get('/clientes', (req, res) => {
+  const rows = db.prepare(`
+    SELECT
+      cl.id   AS cliente_id,
+      cl.nombre,
+      cl.cuit,
+      c.id    AS causa_id,
+      c.numero_expediente,
+      c.caratula,
+      c.tipo,
+      c.estado,
+      c.juzgado,
+      c.fecha_inicio,
+      c.created_at,
+      (SELECT COUNT(*) FROM pendientes p WHERE p.causa_id = c.id AND p.completado = 0)
+        AS pendientes_activos,
+      (SELECT MAX(f) FROM (
+        SELECT fecha_envio AS f FROM notificaciones_pjn    WHERE causa_id = c.id
+        UNION ALL
+        SELECT fecha      AS f FROM notificaciones_tad    WHERE causa_id = c.id
+        UNION ALL
+        SELECT fecha_alta AS f FROM notificaciones_sicnea WHERE causa_id = c.id
+      )) AS ultima_actividad
+    FROM clientes cl
+    LEFT JOIN causa_cliente cc ON cc.cliente_id = cl.id
+    LEFT JOIN causas c ON c.id = cc.causa_id
+    ORDER BY cl.nombre ASC, c.created_at DESC
+  `).all();
+
+  const mapa = new Map();
+  for (const row of rows) {
+    if (!mapa.has(row.cliente_id)) {
+      mapa.set(row.cliente_id, { id: row.cliente_id, nombre: row.nombre, cuit: row.cuit, causas: [] });
+    }
+    if (row.causa_id !== null) {
+      mapa.get(row.cliente_id).causas.push({
+        id:                 row.causa_id,
+        numero_expediente:  row.numero_expediente,
+        caratula:           row.caratula,
+        tipo:               row.tipo,
+        estado:             row.estado,
+        juzgado:            row.juzgado,
+        fecha_inicio:       row.fecha_inicio,
+        pendientes_activos: row.pendientes_activos ?? 0,
+        ultima_actividad:   row.ultima_actividad,
+      });
+    }
+  }
+
+  res.json([...mapa.values()]);
+});
+
+/**
  * GET /api/causas/biblioteca/notif-doc/:origen/:id
  * Sirve el PDF de una notificación como inline PDF.
  * El path del archivo se obtiene desde la DB (sin posibilidad de path traversal).
@@ -198,7 +255,12 @@ router.get('/:id', (req, res) => {
     FROM carpetas WHERE causa_id = ? ORDER BY created_at DESC
   `).all(causa.id);
 
-  res.json({ ...causa, clientes, notif_pjn, notif_tad, notif_sicnea, carpetas });
+  const pendientes = db.prepare(`
+    SELECT id, descripcion, fecha_limite, completado, origen, nota
+    FROM pendientes WHERE causa_id = ? ORDER BY completado ASC, fecha_limite ASC
+  `).all(causa.id);
+
+  res.json({ ...causa, clientes, notif_pjn, notif_tad, notif_sicnea, carpetas, pendientes });
 });
 
 // ── Causas — CRUD ─────────────────────────────────────────────────────────────
