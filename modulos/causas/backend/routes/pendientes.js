@@ -83,6 +83,12 @@ router.put('/:id/completar', (req, res) => {
   if (!p) return res.status(404).json({ error: 'Pendiente no encontrado' });
 
   const ahora = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  if (!p.causa_id && p.numero_expediente) {
+    const causa = db.prepare('SELECT id FROM causas WHERE numero_expediente = ?').get(p.numero_expediente);
+    if (causa) db.prepare('UPDATE pendientes SET causa_id = ? WHERE id = ?').run(causa.id, p.id);
+  }
+
   db.prepare('UPDATE pendientes SET completado = 1, completado_at = ? WHERE id = ?').run(ahora, p.id);
   res.json(getPendiente(p.id));
 });
@@ -90,6 +96,11 @@ router.put('/:id/completar', (req, res) => {
 router.patch('/:id', (req, res) => {
   const p = getPendiente(req.params.id);
   if (!p) return res.status(404).json({ error: 'Pendiente no encontrado' });
+
+  if (!p.causa_id && p.numero_expediente) {
+    const causa = db.prepare('SELECT id FROM causas WHERE numero_expediente = ?').get(p.numero_expediente);
+    if (causa) db.prepare('UPDATE pendientes SET causa_id = ? WHERE id = ?').run(causa.id, p.id);
+  }
 
   const campos = [
     'descripcion', 'causa_id', 'fecha_limite', 'dias_aviso', 'fecha_aviso',
