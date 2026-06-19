@@ -281,6 +281,7 @@
   // ── Seleccionar causa ─────────────────────────────
   async function seleccionarCausa(id) {
     causaSeleccionada = id;
+    localStorage.setItem('causas_seleccion', id);
     history.replaceState(null, '', `?id=${id}`);
     document.querySelectorAll('.causa-fila').forEach(el =>
       el.classList.toggle('activa', parseInt(el.dataset.id) === id)
@@ -503,9 +504,11 @@
     try {
       CLIENTES = await fetch('/api/causas/biblioteca/clientes').then(r => r.json());
       renderLista();
-      // Restaurar causa seleccionada desde la URL
-      const idEnUrl = parseInt(new URLSearchParams(location.search).get('id'));
-      if (idEnUrl) await seleccionarCausa(idEnUrl);
+      // Restaurar causa seleccionada: URL tiene prioridad, localStorage como fallback
+      const idEnUrl    = parseInt(new URLSearchParams(location.search).get('id'));
+      const idGuardado = parseInt(localStorage.getItem('causas_seleccion'));
+      const idRestaurar = idEnUrl || idGuardado;
+      if (idRestaurar) await seleccionarCausa(idRestaurar);
     } catch {
       document.getElementById('biblioteca-lista').innerHTML =
         '<div class="empty" style="padding:2rem 1rem">Error al cargar. Verificá que el servidor esté corriendo.</div>';
@@ -513,6 +516,17 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  // Si el browser restaura la página desde bfcache (back/forward), DOMContentLoaded
+  // no se dispara de nuevo pero el estado JS se preserva — solo necesitamos re-marcar
+  // el activo en la lista por si se perdió el estilo.
+  window.addEventListener('pageshow', e => {
+    if (e.persisted && causaSeleccionada) {
+      document.querySelectorAll('.causa-fila').forEach(el =>
+        el.classList.toggle('activa', parseInt(el.dataset.id) === causaSeleccionada)
+      );
+    }
+  });
 </script>
 </body>
 </html>
