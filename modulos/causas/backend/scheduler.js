@@ -11,7 +11,7 @@ const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
 const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
 const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
 const { notificarNotificacionesDiarias, notificarAvisoPendientes } = require('./notificaciones');
-const { inferirTodos, vincularNotificacionesPendientes } = require('./inferirCliente');
+const { inferirTodos, autoCrearCausas, vincularNotificacionesPendientes } = require('./inferirCliente');
 
 /** Intervalo de polling para PJN y TAD, en minutos (default 30). */
 const INTERVALO_MIN = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
@@ -32,6 +32,11 @@ async function ejecutarCiclo() {
   ]);
 
   try {
+    const nuevas = autoCrearCausas();
+    const totalNuevas = nuevas.pjn + nuevas.tad + nuevas.sicnea;
+    if (totalNuevas > 0) {
+      console.log(`[causas-scheduler] Auto-causas: ${totalNuevas} causa(s) creada(s) (PJN:${nuevas.pjn}, TAD:${nuevas.tad}, SICNEA:${nuevas.sicnea})`);
+    }
     const vinc = vincularNotificacionesPendientes();
     const totalVinc = vinc.pjn + vinc.tad + vinc.sicnea;
     if (totalVinc > 0) {
@@ -56,6 +61,7 @@ async function ejecutarSICNEA() {
   console.log('[causas-scheduler] Sábado — ejecutando SICNEA...');
   try {
     await obtenerNotificacionesSICNEA();
+    autoCrearCausas();
     vincularNotificacionesPendientes();
     const r = await inferirTodos();
     if (r.vinculadas > 0) {

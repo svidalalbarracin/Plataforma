@@ -80,6 +80,7 @@ function extraerDePJN(caratula) {
 
   const patrones = [
     /IMPUTADO:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|\s+QUERELLANTE|$)/i,
+    /DENUNCIADO:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|\s+QUERELLANTE|$)/i,
     /CONTRIBUYENTE:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|$)/i,
     /^(.+?)\s*\(TF[\s\d\-A-Z]+\)\s+c\//i,
     /REQUERIDO:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|$)/i,
@@ -258,6 +259,59 @@ async function inferirTodos() {
 }
 
 /**
+ * Crea automáticamente una causa por cada número de expediente nuevo encontrado en
+ * las notificaciones (PJN, TAD, SICNEA) que todavía no tiene una causa registrada.
+ *
+ * Se llama antes de vincularNotificacionesPendientes() para cerrar el ciclo:
+ *   scraper → autoCrearCausas → vincular → inferirTodos
+ *
+ * @returns {{ pjn: number, tad: number, sicnea: number }} Causas creadas por origen.
+ */
+function autoCrearCausas() {
+  // PJN: un expediente por número único que no tenga causa
+  const newPjn = db.prepare(`
+    SELECT DISTINCT numero_expediente
+    FROM notificaciones_pjn
+    WHERE causa_id IS NULL
+      AND numero_expediente IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = notificaciones_pjn.numero_expediente)
+  `).all();
+
+  const insertCausa = db.prepare(`INSERT INTO causas (numero_expediente, tipo) VALUES (?, ?)`);
+  for (const { numero_expediente } of newPjn) {
+    insertCausa.run(numero_expediente, 'pjn');
+  }
+
+  // TAD: usar numero_tramite como expediente
+  const newTad = db.prepare(`
+    SELECT DISTINCT numero_tramite
+    FROM notificaciones_tad
+    WHERE causa_id IS NULL
+      AND numero_tramite IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = notificaciones_tad.numero_tramite)
+  `).all();
+
+  for (const { numero_tramite } of newTad) {
+    insertCausa.run(numero_tramite, 'tad');
+  }
+
+  // SICNEA: usar documento_ref como expediente
+  const newSicnea = db.prepare(`
+    SELECT DISTINCT documento_ref
+    FROM notificaciones_sicnea
+    WHERE causa_id IS NULL
+      AND documento_ref IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = notificaciones_sicnea.documento_ref)
+  `).all();
+
+  for (const { documento_ref } of newSicnea) {
+    insertCausa.run(documento_ref, 'sicnea');
+  }
+
+  return { pjn: newPjn.length, tad: newTad.length, sicnea: newSicnea.length };
+}
+
+/**
  * Recorre las notificaciones sin causa_id y las vincula a la causa cuyo
  * numero_expediente coincida exactamente. Se llama después de cada ciclo de scrapers,
  * antes de inferirTodos(), para que la inferencia tenga datos disponibles.
@@ -292,4 +346,4 @@ function vincularNotificacionesPendientes() {
   return { pjn, tad, sicnea };
 }
 
-module.exports = { inferirParaCausa, inferirTodos, vincularNotificacionesPendientes, extraerDePJN, extraerDeTAD, extraerDeTADTextoPDF };
+module.exports = { inferirParaCausa, inferirTodos, autoCrearCausas, vincularNotificacionesPendientes, extraerDePJN, extraerDeTAD, extraerDeTADTextoPDF };

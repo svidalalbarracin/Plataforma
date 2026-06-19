@@ -29,7 +29,7 @@ const fs              = require('fs');
 const express         = require('express');
 const router          = express.Router();
 const db              = require('../../../../core/database');
-const { inferirTodos } = require('../inferirCliente');
+const { inferirTodos, autoCrearCausas, vincularNotificacionesPendientes } = require('../inferirCliente');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -121,8 +121,10 @@ router.get('/stats', (req, res) => {
  */
 router.post('/inferir-clientes', async (req, res) => {
   try {
+    const nuevas   = autoCrearCausas();
+    const vinc     = vincularNotificacionesPendientes();
     const resultado = await inferirTodos();
-    res.json(resultado);
+    res.json({ nuevas_causas: nuevas, vinculaciones: vinc, ...resultado });
   } catch (err) {
     console.error('[inferir-clientes]', err);
     res.status(500).json({ error: err.message });
