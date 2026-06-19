@@ -1463,6 +1463,7 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
 
 .biblioteca-panel-der {
   flex: 1;
+  overflow-x: hidden;
   overflow-y: auto;
   background: var(--bg);
   display: flex;
@@ -1511,6 +1512,8 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
 
 .causa-preview-meta-item dd {
   font-size: .875rem;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .causa-preview-cols {
@@ -1519,6 +1522,8 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
   gap: 1.5rem;
   margin-bottom: 1.25rem;
 }
+
+.causa-preview-cols > div { min-width: 0; overflow: hidden; }
 
 .causa-preview-header {
   display: flex;
@@ -1535,6 +1540,8 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
   font-weight: 700;
   line-height: 1.4;
   margin-bottom: .4rem;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .causa-preview-subtitulo {
@@ -1601,6 +1608,8 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
   font-size: .8125rem;
   color: var(--text-muted);
   flex-wrap: wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 /* ── Editar cliente ──────────────────────────────── */
