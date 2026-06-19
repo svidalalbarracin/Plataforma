@@ -338,6 +338,13 @@ router.post('/', (req, res) => {
   const insertCliente = db.prepare('INSERT OR IGNORE INTO causa_cliente (causa_id, cliente_id) VALUES (?, ?)');
   for (const cliId of clientes) insertCliente.run(causaId, cliId);
 
+  // Auto-vincular notificaciones existentes que coincidan por número de expediente
+  if (numero_expediente) {
+    db.prepare(`UPDATE notificaciones_pjn    SET causa_id = ? WHERE causa_id IS NULL AND numero_expediente = ?`).run(causaId, numero_expediente);
+    db.prepare(`UPDATE notificaciones_tad    SET causa_id = ? WHERE causa_id IS NULL AND numero_tramite    = ?`).run(causaId, numero_expediente);
+    db.prepare(`UPDATE notificaciones_sicnea SET causa_id = ? WHERE causa_id IS NULL AND documento_ref    = ?`).run(causaId, numero_expediente);
+  }
+
   res.status(201).json(getCausa(causaId));
 });
 

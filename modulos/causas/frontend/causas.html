@@ -147,6 +147,25 @@
         <label for="n-notas">Notas <span class="text-muted" style="font-weight:400">(opcional)</span></label>
         <textarea id="n-notas" placeholder="Observaciones iniciales…" style="min-height:72px"></textarea>
       </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="n-cliente-sel">Cliente</label>
+        <select id="n-cliente-sel">
+          <option value="">— Sin asignar por ahora —</option>
+          <option value="__nuevo__">+ Nuevo cliente…</option>
+        </select>
+      </div>
+      <div id="n-cliente-nuevo" style="display:none;grid-column:1/-1">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.25rem">
+          <div class="form-group">
+            <label for="n-cliente-nombre">Nombre *</label>
+            <input type="text" id="n-cliente-nombre" placeholder="Nombre del cliente">
+          </div>
+          <div class="form-group">
+            <label for="n-cliente-cuit">CUIT</label>
+            <input type="text" id="n-cliente-cuit" placeholder="20-12345678-9">
+          </div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="cerrarModalNueva()">Cancelar</button>
@@ -328,6 +347,7 @@
     document.querySelectorAll('.causa-fila').forEach(el =>
       el.classList.toggle('activa', parseInt(el.dataset.id) === id)
     );
+    document.querySelector(`.causa-fila[data-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     const panel = document.getElementById('biblioteca-panel-der');
     panel.innerHTML = '<div class="biblioteca-vacio"><div class="biblioteca-vacio-texto">Cargando…</div></div>';
@@ -498,18 +518,31 @@
 
   // ── Modal nueva causa ──────────────────────────────
   function abrirModalNueva() {
+    const sel = document.getElementById('n-cliente-sel');
+    sel.innerHTML = `<option value="">— Sin asignar por ahora —</option>
+      ${CLIENTES.filter(cl => !cl.sinCliente && cl.id).map(cl =>
+        `<option value="${cl.id}">${cl.nombre}${cl.cuit ? ' — ' + cl.cuit : ''}</option>`
+      ).join('')}
+      <option value="__nuevo__">+ Nuevo cliente…</option>`;
     document.getElementById('modal-nueva').classList.add('open');
   }
 
   function cerrarModalNueva() {
     document.getElementById('modal-nueva').classList.remove('open');
-    ['n-expediente','n-caratula','n-juzgado','n-notas'].forEach(id =>
+    ['n-expediente','n-caratula','n-juzgado','n-notas','n-cliente-nombre','n-cliente-cuit'].forEach(id =>
       document.getElementById(id).value = ''
     );
-    document.getElementById('n-tipo').value   = 'pjn';
-    document.getElementById('n-estado').value = 'en_tramite';
-    document.getElementById('n-fecha').value  = '';
+    document.getElementById('n-tipo').value        = 'pjn';
+    document.getElementById('n-estado').value      = 'en_tramite';
+    document.getElementById('n-fecha').value       = '';
+    document.getElementById('n-cliente-sel').value = '';
+    document.getElementById('n-cliente-nuevo').style.display = 'none';
   }
+
+  document.getElementById('n-cliente-sel').addEventListener('change', e => {
+    document.getElementById('n-cliente-nuevo').style.display =
+      e.target.value === '__nuevo__' ? '' : 'none';
+  });
 
   document.getElementById('modal-nueva').addEventListener('click', e => {
     if (e.target === e.currentTarget) cerrarModalNueva();
@@ -524,6 +557,7 @@
     btn.textContent = 'Guardando…';
 
     try {
+      const clienteSel = document.getElementById('n-cliente-sel').value;
       const body = {
         numero_expediente: document.getElementById('n-expediente').value.trim() || null,
         caratula:          document.getElementById('n-caratula').value.trim()   || null,
@@ -534,6 +568,11 @@
         notas:             document.getElementById('n-notas').value.trim()      || null,
       };
 
+      // Si se seleccionó un cliente existente, pasarlo en el body
+      if (clienteSel && clienteSel !== '__nuevo__') {
+        body.clientes = [parseInt(clienteSel)];
+      }
+
       const res = await fetch('/api/causas/biblioteca', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -542,6 +581,22 @@
 
       if (!res.ok) throw new Error(await res.text());
       const nueva = await res.json();
+
+      // Si se pidió crear un cliente nuevo, vincularlo ahora
+      if (clienteSel === '__nuevo__') {
+        const nombre = document.getElementById('n-cliente-nombre').value.trim();
+        if (nombre) {
+          await fetch(`/api/causas/biblioteca/${nueva.id}/clientes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              nombre,
+              cuit: document.getElementById('n-cliente-cuit').value.trim() || undefined,
+            }),
+          });
+        }
+      }
+
       cerrarModalNueva();
       toast('Causa creada');
       await init();
