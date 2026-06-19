@@ -268,44 +268,57 @@ async function inferirTodos() {
  * @returns {{ pjn: number, tad: number, sicnea: number }} Causas creadas por origen.
  */
 function autoCrearCausas() {
-  // PJN: un expediente por número único que no tenga causa
+  // PJN: tomar caratula y autor (juzgado) de la notificación más reciente
   const newPjn = db.prepare(`
-    SELECT DISTINCT numero_expediente
-    FROM notificaciones_pjn
-    WHERE causa_id IS NULL
-      AND numero_expediente IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = notificaciones_pjn.numero_expediente)
+    SELECT
+      n.numero_expediente,
+      (SELECT caratula FROM notificaciones_pjn WHERE numero_expediente = n.numero_expediente ORDER BY fecha_envio DESC LIMIT 1) AS caratula,
+      (SELECT autor    FROM notificaciones_pjn WHERE numero_expediente = n.numero_expediente ORDER BY fecha_envio DESC LIMIT 1) AS juzgado
+    FROM notificaciones_pjn n
+    WHERE n.causa_id IS NULL
+      AND n.numero_expediente IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = n.numero_expediente)
+    GROUP BY n.numero_expediente
   `).all();
 
-  const insertCausa = db.prepare(`INSERT INTO causas (numero_expediente, tipo) VALUES (?, ?)`);
-  for (const { numero_expediente } of newPjn) {
-    insertCausa.run(numero_expediente, 'pjn');
+  const insertCausa = db.prepare(
+    `INSERT INTO causas (numero_expediente, tipo, caratula, juzgado) VALUES (?, ?, ?, ?)`
+  );
+  for (const r of newPjn) {
+    insertCausa.run(r.numero_expediente, 'pjn', r.caratula ?? null, r.juzgado ?? null);
   }
 
-  // TAD: usar numero_tramite como expediente
+  // TAD: usar nombre de la notificación como caratula (suele ser genérico, mejor que nada)
   const newTad = db.prepare(`
-    SELECT DISTINCT numero_tramite
-    FROM notificaciones_tad
-    WHERE causa_id IS NULL
-      AND numero_tramite IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = notificaciones_tad.numero_tramite)
+    SELECT
+      n.numero_tramite,
+      (SELECT nombre FROM notificaciones_tad WHERE numero_tramite = n.numero_tramite ORDER BY fecha DESC LIMIT 1) AS caratula
+    FROM notificaciones_tad n
+    WHERE n.causa_id IS NULL
+      AND n.numero_tramite IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = n.numero_tramite)
+    GROUP BY n.numero_tramite
   `).all();
 
-  for (const { numero_tramite } of newTad) {
-    insertCausa.run(numero_tramite, 'tad');
+  for (const r of newTad) {
+    insertCausa.run(r.numero_tramite, 'tad', r.caratula ?? null, null);
   }
 
-  // SICNEA: usar documento_ref como expediente
+  // SICNEA: motivo como caratula, aduana como juzgado
   const newSicnea = db.prepare(`
-    SELECT DISTINCT documento_ref
-    FROM notificaciones_sicnea
-    WHERE causa_id IS NULL
-      AND documento_ref IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = notificaciones_sicnea.documento_ref)
+    SELECT
+      n.documento_ref,
+      (SELECT motivo FROM notificaciones_sicnea WHERE documento_ref = n.documento_ref ORDER BY fecha_alta DESC LIMIT 1) AS caratula,
+      (SELECT aduana FROM notificaciones_sicnea WHERE documento_ref = n.documento_ref ORDER BY fecha_alta DESC LIMIT 1) AS juzgado
+    FROM notificaciones_sicnea n
+    WHERE n.causa_id IS NULL
+      AND n.documento_ref IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = n.documento_ref)
+    GROUP BY n.documento_ref
   `).all();
 
-  for (const { documento_ref } of newSicnea) {
-    insertCausa.run(documento_ref, 'sicnea');
+  for (const r of newSicnea) {
+    insertCausa.run(r.documento_ref, 'sicnea', r.caratula ?? null, r.juzgado ?? null);
   }
 
   return { pjn: newPjn.length, tad: newTad.length, sicnea: newSicnea.length };
