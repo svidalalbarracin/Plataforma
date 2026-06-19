@@ -278,15 +278,11 @@
             ${cl.causas.map(htmlCausaFila).join('')}
           </div>`;
       }
-      const tramite = cl.causas.filter(c => c.estado === 'en_tramite').length;
       return `
         <div class="cliente-grupo">
           <div class="cliente-grupo-header">
             <span class="cliente-grupo-nombre">${cl.nombre}</span>
-            <div style="display:flex;align-items:center;gap:.25rem;flex-shrink:0">
-              ${tramite > 0 ? `<span class="cliente-grupo-count">${tramite} en trámite</span>` : ''}
-              <button class="btn-editar-cliente" onclick="abrirModalEditar(${cl.id})" title="Editar cliente">✎</button>
-            </div>
+            <button class="btn-editar-cliente" onclick="abrirModalEditar(${cl.id})" title="Editar cliente">✎</button>
           </div>
           ${cl.causas.length === 0
             ? '<div class="causa-fila-vacia">Sin causas registradas</div>'
