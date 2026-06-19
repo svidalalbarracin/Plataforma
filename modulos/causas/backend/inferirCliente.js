@@ -80,6 +80,7 @@ function extraerDePJN(caratula) {
 
   const patrones = [
     /IMPUTADO:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|\s+QUERELLANTE|$)/i,
+    /DENUNCIADO:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|\s+QUERELLANTE|$)/i,
     /CONTRIBUYENTE:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|$)/i,
     /^(.+?)\s*\(TF[\s\d\-A-Z]+\)\s+c\//i,
     /REQUERIDO:\s*(.+?)(?=\s+s\/|\s+Y\s+OTRO|$)/i,
@@ -258,6 +259,72 @@ async function inferirTodos() {
 }
 
 /**
+ * Crea automáticamente una causa por cada número de expediente nuevo encontrado en
+ * las notificaciones (PJN, TAD, SICNEA) que todavía no tiene una causa registrada.
+ *
+ * Se llama antes de vincularNotificacionesPendientes() para cerrar el ciclo:
+ *   scraper → autoCrearCausas → vincular → inferirTodos
+ *
+ * @returns {{ pjn: number, tad: number, sicnea: number }} Causas creadas por origen.
+ */
+function autoCrearCausas() {
+  // PJN: tomar caratula y autor (juzgado) de la notificación más reciente
+  const newPjn = db.prepare(`
+    SELECT
+      n.numero_expediente,
+      (SELECT caratula FROM notificaciones_pjn WHERE numero_expediente = n.numero_expediente ORDER BY fecha_envio DESC LIMIT 1) AS caratula,
+      (SELECT autor    FROM notificaciones_pjn WHERE numero_expediente = n.numero_expediente ORDER BY fecha_envio DESC LIMIT 1) AS juzgado
+    FROM notificaciones_pjn n
+    WHERE n.causa_id IS NULL
+      AND n.numero_expediente IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = n.numero_expediente)
+    GROUP BY n.numero_expediente
+  `).all();
+
+  const insertCausa = db.prepare(
+    `INSERT INTO causas (numero_expediente, tipo, caratula, juzgado) VALUES (?, ?, ?, ?)`
+  );
+  for (const r of newPjn) {
+    insertCausa.run(r.numero_expediente, 'pjn', r.caratula ?? null, r.juzgado ?? null);
+  }
+
+  // TAD: usar nombre de la notificación como caratula (suele ser genérico, mejor que nada)
+  const newTad = db.prepare(`
+    SELECT
+      n.numero_tramite,
+      (SELECT nombre FROM notificaciones_tad WHERE numero_tramite = n.numero_tramite ORDER BY fecha DESC LIMIT 1) AS caratula
+    FROM notificaciones_tad n
+    WHERE n.causa_id IS NULL
+      AND n.numero_tramite IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = n.numero_tramite)
+    GROUP BY n.numero_tramite
+  `).all();
+
+  for (const r of newTad) {
+    insertCausa.run(r.numero_tramite, 'tad', r.caratula ?? null, null);
+  }
+
+  // SICNEA: motivo como caratula, aduana como juzgado
+  const newSicnea = db.prepare(`
+    SELECT
+      n.documento_ref,
+      (SELECT motivo FROM notificaciones_sicnea WHERE documento_ref = n.documento_ref ORDER BY fecha_alta DESC LIMIT 1) AS caratula,
+      (SELECT aduana FROM notificaciones_sicnea WHERE documento_ref = n.documento_ref ORDER BY fecha_alta DESC LIMIT 1) AS juzgado
+    FROM notificaciones_sicnea n
+    WHERE n.causa_id IS NULL
+      AND n.documento_ref IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM causas WHERE numero_expediente = n.documento_ref)
+    GROUP BY n.documento_ref
+  `).all();
+
+  for (const r of newSicnea) {
+    insertCausa.run(r.documento_ref, 'sicnea', r.caratula ?? null, r.juzgado ?? null);
+  }
+
+  return { pjn: newPjn.length, tad: newTad.length, sicnea: newSicnea.length };
+}
+
+/**
  * Recorre las notificaciones sin causa_id y las vincula a la causa cuyo
  * numero_expediente coincida exactamente. Se llama después de cada ciclo de scrapers,
  * antes de inferirTodos(), para que la inferencia tenga datos disponibles.
@@ -292,4 +359,4 @@ function vincularNotificacionesPendientes() {
   return { pjn, tad, sicnea };
 }
 
-module.exports = { inferirParaCausa, inferirTodos, vincularNotificacionesPendientes, extraerDePJN, extraerDeTAD, extraerDeTADTextoPDF };
+module.exports = { inferirParaCausa, inferirTodos, autoCrearCausas, vincularNotificacionesPendientes, extraerDePJN, extraerDeTAD, extraerDeTADTextoPDF };

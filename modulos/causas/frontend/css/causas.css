@@ -1463,6 +1463,7 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
 
 .biblioteca-panel-der {
   flex: 1;
+  overflow-x: hidden;
   overflow-y: auto;
   background: var(--bg);
   display: flex;
@@ -1511,6 +1512,8 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
 
 .causa-preview-meta-item dd {
   font-size: .875rem;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .causa-preview-cols {
@@ -1519,6 +1522,8 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
   gap: 1.5rem;
   margin-bottom: 1.25rem;
 }
+
+.causa-preview-cols > div { min-width: 0; overflow: hidden; }
 
 .causa-preview-header {
   display: flex;
@@ -1535,6 +1540,8 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
   font-weight: 700;
   line-height: 1.4;
   margin-bottom: .4rem;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .causa-preview-subtitulo {
@@ -1601,6 +1608,8 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
   font-size: .8125rem;
   color: var(--text-muted);
   flex-wrap: wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 /* ── Editar cliente ──────────────────────────────── */
@@ -1646,4 +1655,94 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
   font-size: .8125rem;
   color: var(--text-muted);
   text-align: center;
+}
+
+/* ── Timeline de actividad (detalle-causa) ───────── */
+.tl-item {
+  display: flex;
+  gap: .875rem;
+  padding: .875rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tl-item:last-child { border-bottom: none; }
+
+.tl-marker {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .7rem;
+  font-weight: 700;
+  margin-top: .1rem;
+}
+
+.tl-marker-nota     { background: var(--warning-light);  color: var(--warning-text); }
+.tl-marker-pend     { border: 2px solid var(--border);   background: transparent;   color: var(--text-muted); }
+.tl-marker-pend-ok  { background: var(--success);        color: #fff; }
+.tl-marker-pjn      { background: var(--primary-light); }
+.tl-marker-tad      { background: var(--success-light); }
+.tl-marker-sicnea   { background: var(--warning-light); }
+
+.tl-body { flex: 1; min-width: 0; }
+
+.tl-fecha {
+  font-size: .8125rem;
+  color: var(--text-muted);
+  margin-bottom: .2rem;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex-wrap: wrap;
+}
+
+.tl-desc {
+  font-size: .9rem;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.tl-desc.tachado { text-decoration: line-through; color: var(--text-muted); }
+
+.tl-sub {
+  font-size: .8125rem;
+  color: var(--text-muted);
+  margin-top: .2rem;
+  word-break: break-word;
+}
+
+.tl-acciones { margin-top: .4rem; display: flex; gap: .25rem; flex-wrap: wrap; }
+
+.tl-inline-form {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .875rem;
+  margin-bottom: 1rem;
+  background: var(--bg);
+}
+
+.tl-inline-form textarea,
+.tl-inline-form input[type="text"],
+.tl-inline-form input[type="date"] {
+  width: 100%;
+  font-size: .875rem;
+}
+
+.tl-inline-actions {
+  margin-top: .5rem;
+  display: flex;
+  gap: .375rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tl-inline-actions .tl-date-field {
+  margin-right: auto;
+  font-size: .875rem;
+  width: auto;
+  flex-shrink: 0;
 }

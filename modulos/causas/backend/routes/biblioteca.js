@@ -29,7 +29,7 @@ const fs              = require('fs');
 const express         = require('express');
 const router          = express.Router();
 const db              = require('../../../../core/database');
-const { inferirTodos } = require('../inferirCliente');
+const { inferirTodos, autoCrearCausas, vincularNotificacionesPendientes } = require('../inferirCliente');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -121,8 +121,10 @@ router.get('/stats', (req, res) => {
  */
 router.post('/inferir-clientes', async (req, res) => {
   try {
+    const nuevas   = autoCrearCausas();
+    const vinc     = vincularNotificacionesPendientes();
     const resultado = await inferirTodos();
-    res.json(resultado);
+    res.json({ nuevas_causas: nuevas, vinculaciones: vinc, ...resultado });
   } catch (err) {
     console.error('[inferir-clientes]', err);
     res.status(500).json({ error: err.message });
@@ -309,11 +311,16 @@ router.get('/:id', (req, res) => {
   `).all(causa.id);
 
   const pendientes = db.prepare(`
-    SELECT id, descripcion, fecha_limite, completado, origen, nota
+    SELECT id, descripcion, fecha_limite, completado, origen, nota, created_at
     FROM pendientes WHERE causa_id = ? ORDER BY completado ASC, fecha_limite ASC
   `).all(causa.id);
 
-  res.json({ ...causa, clientes, notif_pjn, notif_tad, notif_sicnea, carpetas, pendientes });
+  const causa_notas = db.prepare(`
+    SELECT id, texto, fecha, created_at
+    FROM causa_notas WHERE causa_id = ? ORDER BY fecha DESC, created_at DESC
+  `).all(causa.id);
+
+  res.json({ ...causa, clientes, notif_pjn, notif_tad, notif_sicnea, carpetas, pendientes, causa_notas });
 });
 
 // ── Causas — CRUD ─────────────────────────────────────────────────────────────
@@ -479,6 +486,50 @@ router.patch('/notif/:origen/:nId/causa', (req, res) => {
     .run(causa_id ?? null, req.params.nId);
 
   if (result.changes === 0) return res.status(404).json({ error: 'Notificación no encontrada' });
+  res.json({ ok: true });
+});
+
+// ── Notas manuales ────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/causas/biblioteca/:id/notas
+ * Crea una nota manual vinculada a una causa.
+ * Body: { texto, fecha? }
+ */
+router.post('/:id/notas', (req, res) => {
+  const causa = getCausa(req.params.id);
+  if (!causa) return res.status(404).json({ error: 'Causa no encontrada' });
+  const { texto, fecha } = req.body;
+  if (!texto?.trim()) return res.status(400).json({ error: 'El texto es requerido' });
+  const hoy = new Date().toLocaleDateString('sv'); // YYYY-MM-DD local
+  const r = db.prepare('INSERT INTO causa_notas (causa_id, texto, fecha) VALUES (?, ?, ?)')
+    .run(causa.id, texto.trim(), fecha || hoy);
+  res.status(201).json(db.prepare('SELECT id, texto, fecha, created_at FROM causa_notas WHERE id = ?').get(r.lastInsertRowid));
+});
+
+/**
+ * PATCH /api/causas/biblioteca/notas/:notaId
+ * Actualiza texto y/o fecha de una nota.
+ */
+router.patch('/notas/:notaId', (req, res) => {
+  const { texto, fecha } = req.body;
+  const sets = [];
+  const vals = [];
+  if (texto !== undefined) { sets.push('texto = ?'); vals.push(texto.trim()); }
+  if (fecha !== undefined) { sets.push('fecha = ?'); vals.push(fecha); }
+  if (!sets.length) return res.status(400).json({ error: 'Nada que actualizar' });
+  const r = db.prepare(`UPDATE causa_notas SET ${sets.join(', ')} WHERE id = ?`).run(...vals, req.params.notaId);
+  if (r.changes === 0) return res.status(404).json({ error: 'Nota no encontrada' });
+  res.json(db.prepare('SELECT id, texto, fecha, created_at FROM causa_notas WHERE id = ?').get(req.params.notaId));
+});
+
+/**
+ * DELETE /api/causas/biblioteca/notas/:notaId
+ * Elimina una nota manual.
+ */
+router.delete('/notas/:notaId', (req, res) => {
+  const r = db.prepare('DELETE FROM causa_notas WHERE id = ?').run(req.params.notaId);
+  if (r.changes === 0) return res.status(404).json({ error: 'Nota no encontrada' });
   res.json({ ok: true });
 });
 

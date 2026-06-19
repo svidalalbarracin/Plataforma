@@ -235,6 +235,18 @@ if (cuitNotnull) {
   }
 }
 
+// Notas manuales por causa
+db.exec(`
+  CREATE TABLE IF NOT EXISTS causa_notas (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    causa_id   INTEGER NOT NULL,
+    texto      TEXT NOT NULL,
+    fecha      TEXT NOT NULL DEFAULT (date('now', 'localtime')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE CASCADE
+  );
+`);
+
 // Agrega causa_id a las tablas de notificaciones si todavía no existe.
 // SQLite no soporta ALTER TABLE ADD COLUMN IF NOT EXISTS, así que se verifica
 // con PRAGMA antes de intentar la migración.
