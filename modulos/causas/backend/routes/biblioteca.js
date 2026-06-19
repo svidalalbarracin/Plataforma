@@ -137,10 +137,12 @@ router.post('/inferir-clientes', async (req, res) => {
 router.get('/clientes', (req, res) => {
   const rows = db.prepare(`
     SELECT
-      cl.id   AS cliente_id,
+      cl.id       AS cliente_id,
       cl.nombre,
       cl.cuit,
-      c.id    AS causa_id,
+      cl.email,
+      cl.telefono,
+      c.id        AS causa_id,
       c.numero_expediente,
       c.caratula,
       c.tipo,
@@ -166,7 +168,10 @@ router.get('/clientes', (req, res) => {
   const mapa = new Map();
   for (const row of rows) {
     if (!mapa.has(row.cliente_id)) {
-      mapa.set(row.cliente_id, { id: row.cliente_id, nombre: row.nombre, cuit: row.cuit, causas: [] });
+      mapa.set(row.cliente_id, {
+        id: row.cliente_id, nombre: row.nombre, cuit: row.cuit,
+        email: row.email, telefono: row.telefono, causas: [],
+      });
     }
     if (row.causa_id !== null) {
       mapa.get(row.cliente_id).causas.push({
@@ -183,7 +188,55 @@ router.get('/clientes', (req, res) => {
     }
   }
 
-  res.json([...mapa.values()]);
+  // Causas sin cliente asignado
+  const sinCliente = db.prepare(`
+    SELECT
+      c.id, c.numero_expediente, c.caratula, c.tipo, c.estado,
+      c.juzgado, c.fecha_inicio, c.created_at,
+      (SELECT COUNT(*) FROM pendientes p WHERE p.causa_id = c.id AND p.completado = 0) AS pendientes_activos,
+      (SELECT MAX(f) FROM (
+        SELECT fecha_envio AS f FROM notificaciones_pjn    WHERE causa_id = c.id
+        UNION ALL
+        SELECT fecha      AS f FROM notificaciones_tad    WHERE causa_id = c.id
+        UNION ALL
+        SELECT fecha_alta AS f FROM notificaciones_sicnea WHERE causa_id = c.id
+      )) AS ultima_actividad
+    FROM causas c
+    WHERE c.id NOT IN (SELECT causa_id FROM causa_cliente WHERE causa_id IS NOT NULL)
+    ORDER BY c.created_at DESC
+  `).all();
+
+  const result = [...mapa.values()];
+  if (sinCliente.length > 0) {
+    result.push({ id: null, nombre: null, cuit: null, email: null, telefono: null, causas: sinCliente, sinCliente: true });
+  }
+
+  res.json(result);
+});
+
+/**
+ * PATCH /api/causas/biblioteca/clientes/:id
+ * Actualiza los datos de un cliente (nombre, cuit, email, telefono).
+ */
+router.patch('/clientes/:id', (req, res) => {
+  const cliente = db.prepare('SELECT id FROM clientes WHERE id = ?').get(req.params.id);
+  if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+  const campos = ['nombre', 'cuit', 'email', 'telefono'];
+  const sets   = [];
+  const vals   = [];
+  for (const campo of campos) {
+    if (campo in req.body) {
+      sets.push(`${campo} = ?`);
+      vals.push(req.body[campo]?.trim() || null);
+    }
+  }
+
+  if (sets.length) {
+    db.prepare(`UPDATE clientes SET ${sets.join(', ')} WHERE id = ?`).run(...vals, cliente.id);
+  }
+
+  res.json(db.prepare('SELECT id, nombre, cuit, email, telefono FROM clientes WHERE id = ?').get(cliente.id));
 });
 
 /**

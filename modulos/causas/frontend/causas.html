@@ -69,6 +69,38 @@
 
 </div>
 
+<!-- Modal: Editar cliente -->
+<div class="modal-backdrop" id="modal-editar-cliente">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <span class="modal-title">Editar cliente</span>
+      <button class="modal-close" onclick="cerrarModalEditar()">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="ec-nombre">Nombre <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="ec-nombre">
+      </div>
+      <div class="form-group">
+        <label for="ec-cuit">CUIT</label>
+        <input type="text" id="ec-cuit" placeholder="20-12345678-9">
+      </div>
+      <div class="form-group">
+        <label for="ec-email">Email</label>
+        <input type="email" id="ec-email">
+      </div>
+      <div class="form-group">
+        <label for="ec-telefono">Teléfono</label>
+        <input type="text" id="ec-telefono">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModalEditar()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-cliente">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Nueva causa -->
 <div class="modal-backdrop" id="modal-nueva">
   <div class="modal" style="max-width:560px">
@@ -192,17 +224,18 @@
   }
 
   function sortClientes(lista) {
-    const c = [...lista];
+    const sinCliente = lista.find(cl => cl.sinCliente);
+    const regulares  = lista.filter(cl => !cl.sinCliente);
     if (sortActivo === 'alfabetico')
-      return c.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
-    if (sortActivo === 'actividad')
-      return c.sort((a, b) => maxActividad(b) - maxActividad(a));
-    if (sortActivo === 'pendientes')
-      return c.sort((a, b) => {
+      regulares.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    else if (sortActivo === 'actividad')
+      regulares.sort((a, b) => maxActividad(b) - maxActividad(a));
+    else if (sortActivo === 'pendientes')
+      regulares.sort((a, b) => {
         const suma = x => x.causas.reduce((s, c) => s + (c.pendientes_activos || 0), 0);
         return suma(b) - suma(a);
       });
-    return c;
+    return sinCliente ? [...regulares, sinCliente] : regulares;
   }
 
   // ── Filtrado ──────────────────────────────────────
@@ -213,7 +246,7 @@
       causas: cl.causas.filter(c => {
         const matchEstado = !filtroActivo || c.estado === filtroActivo;
         const matchBusq   = !q
-          || cl.nombre.toLowerCase().includes(q)
+          || (cl.nombre || '').toLowerCase().includes(q)
           || (c.numero_expediente || '').toLowerCase().includes(q)
           || (c.caratula || '').toLowerCase().includes(q)
           || (c.juzgado || '').toLowerCase().includes(q);
@@ -233,14 +266,27 @@
     }
 
     el.innerHTML = visibles.map(cl => {
+      if (cl.sinCliente) {
+        return `
+          <div class="cliente-grupo cliente-grupo-sin-cliente">
+            <div class="cliente-grupo-header">
+              <span class="cliente-grupo-nombre">Sin cliente asignado</span>
+              ${cl.causas.length > 0
+                ? `<span class="cliente-grupo-count">${cl.causas.length}</span>`
+                : ''}
+            </div>
+            ${cl.causas.map(htmlCausaFila).join('')}
+          </div>`;
+      }
       const tramite = cl.causas.filter(c => c.estado === 'en_tramite').length;
       return `
         <div class="cliente-grupo">
           <div class="cliente-grupo-header">
             <span class="cliente-grupo-nombre">${cl.nombre}</span>
-            ${tramite > 0
-              ? `<span class="cliente-grupo-count">${tramite} en trámite</span>`
-              : ''}
+            <div style="display:flex;align-items:center;gap:.25rem;flex-shrink:0">
+              ${tramite > 0 ? `<span class="cliente-grupo-count">${tramite} en trámite</span>` : ''}
+              <button class="btn-editar-cliente" onclick="abrirModalEditar(${cl.id})" title="Editar cliente">✎</button>
+            </div>
           </div>
           ${cl.causas.length === 0
             ? '<div class="causa-fila-vacia">Sin causas registradas</div>'
@@ -272,9 +318,9 @@
             ${inactiva ? '<span class="causa-fila-alerta">⚠</span>' : ''}
           </span>
         </span>
-        ${c.estado !== 'en_tramite'
-          ? `<span class="causa-fila-estado">${c.estado === 'archivada' ? 'arch.' : 'cerrada'}</span>`
-          : ''}
+        <span class="causa-fila-estado causa-fila-estado-${c.estado}">
+          ${c.estado === 'en_tramite' ? 'en trámite' : c.estado === 'archivada' ? 'arch.' : 'cerrada'}
+        </span>
       </button>`;
   }
 
@@ -359,6 +405,28 @@
             Ver completo →
           </a>
         </div>
+
+        ${!cliente ? `
+        <div class="causa-preview-seccion" style="margin-bottom:1.5rem;padding-bottom:1.25rem;border-bottom:1px solid var(--border)">
+          <div class="causa-preview-seccion-titulo">Asignar cliente</div>
+          <div class="asignar-form">
+            <div class="asignar-fila">
+              <select id="sel-cliente-asignar">
+                <option value="">— Seleccionar existente —</option>
+                ${CLIENTES.filter(cl => !cl.sinCliente && cl.id).map(cl =>
+                  `<option value="${cl.id}">${cl.nombre}${cl.cuit ? ' — ' + cl.cuit : ''}</option>`
+                ).join('')}
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="asignarClienteExistente(${c.id})">Asignar</button>
+            </div>
+            <div class="asignar-separador">— o crear nuevo —</div>
+            <div class="asignar-fila">
+              <input type="text" id="inp-nuevo-cliente-nombre" placeholder="Nombre *">
+              <input type="text" id="inp-nuevo-cliente-cuit" placeholder="CUIT (opcional)">
+              <button class="btn btn-ghost btn-sm" onclick="crearYAsignarCliente(${c.id})">Crear y asignar</button>
+            </div>
+          </div>
+        </div>` : ''}
 
         ${metaItems ? `<div class="causa-preview-meta">${metaItems}</div>` : ''}
 
@@ -489,6 +557,100 @@
       btn.textContent = 'Crear causa';
     }
   });
+
+  // ── Editar cliente ───────────────────────────────
+  let _clienteEditandoId = null;
+
+  function abrirModalEditar(clienteId) {
+    const cl = CLIENTES.find(c => c.id === clienteId);
+    if (!cl) return;
+    _clienteEditandoId = clienteId;
+    document.getElementById('ec-nombre').value   = cl.nombre   || '';
+    document.getElementById('ec-cuit').value     = cl.cuit     || '';
+    document.getElementById('ec-email').value    = cl.email    || '';
+    document.getElementById('ec-telefono').value = cl.telefono || '';
+    document.getElementById('modal-editar-cliente').classList.add('open');
+  }
+
+  function cerrarModalEditar() {
+    document.getElementById('modal-editar-cliente').classList.remove('open');
+  }
+
+  document.getElementById('modal-editar-cliente').addEventListener('click', e => {
+    if (e.target === e.currentTarget) cerrarModalEditar();
+  });
+
+  document.getElementById('btn-guardar-cliente').addEventListener('click', async () => {
+    const nombre = document.getElementById('ec-nombre').value.trim();
+    if (!nombre) { toast('El nombre es obligatorio', 'error'); return; }
+
+    const btn = document.getElementById('btn-guardar-cliente');
+    btn.disabled    = true;
+    btn.textContent = 'Guardando…';
+
+    try {
+      const res = await fetch(`/api/causas/biblioteca/clientes/${_clienteEditandoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre,
+          cuit:     document.getElementById('ec-cuit').value.trim()     || null,
+          email:    document.getElementById('ec-email').value.trim()    || null,
+          telefono: document.getElementById('ec-telefono').value.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      cerrarModalEditar();
+      toast('Cliente actualizado');
+      await init();
+      if (causaSeleccionada) await seleccionarCausa(causaSeleccionada);
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = 'Guardar';
+    }
+  });
+
+  // ── Asignar cliente ───────────────────────────────
+  async function asignarClienteExistente(causaId) {
+    const clienteId = parseInt(document.getElementById('sel-cliente-asignar')?.value);
+    if (!clienteId) { toast('Seleccioná un cliente', 'error'); return; }
+
+    try {
+      const res = await fetch(`/api/causas/biblioteca/${causaId}/clientes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cliente_id: clienteId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast('Cliente asignado');
+      await init();
+      await seleccionarCausa(causaId);
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+    }
+  }
+
+  async function crearYAsignarCliente(causaId) {
+    const nombre = document.getElementById('inp-nuevo-cliente-nombre')?.value.trim();
+    const cuit   = document.getElementById('inp-nuevo-cliente-cuit')?.value.trim();
+    if (!nombre) { toast('El nombre es obligatorio', 'error'); return; }
+
+    try {
+      const res = await fetch(`/api/causas/biblioteca/${causaId}/clientes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, cuit: cuit || undefined }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast('Cliente creado y asignado');
+      await init();
+      await seleccionarCausa(causaId);
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+    }
+  }
 
   // ── Toast ─────────────────────────────────────────
   function toast(msg, tipo = 'success') {

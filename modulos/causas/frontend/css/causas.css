@@ -1433,10 +1433,23 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
 
 .causa-fila-estado {
   font-size: .625rem;
-  color: var(--text-muted);
+  font-weight: 600;
   margin-left: auto;
   flex-shrink: 0;
   align-self: center;
+  padding: .15rem .4rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.causa-fila-estado-en_tramite {
+  background: var(--primary-light);
+  color: var(--primary-text);
+}
+
+.causa-fila-estado-archivada,
+.causa-fila-estado-cerrada {
+  color: var(--text-muted);
 }
 
 .causa-fila-vacia {
@@ -1588,4 +1601,49 @@ html.dark .causa-fila.activa { background: var(--primary-light); }
   font-size: .8125rem;
   color: var(--text-muted);
   flex-wrap: wrap;
+}
+
+/* ── Editar cliente ──────────────────────────────── */
+.btn-editar-cliente {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: .8125rem;
+  padding: .15rem .3rem;
+  border-radius: 4px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity .15s, color .15s;
+  flex-shrink: 0;
+}
+
+.cliente-grupo-header:hover .btn-editar-cliente { opacity: 1; }
+.btn-editar-cliente:hover { color: var(--text); }
+
+/* ── Sin cliente ─────────────────────────────────── */
+.cliente-grupo-sin-cliente { border-top: 2px dashed var(--border); }
+
+.cliente-grupo-sin-cliente .cliente-grupo-nombre {
+  font-style: italic;
+  color: var(--warning-text);
+}
+
+/* ── Asignar cliente (panel derecho) ─────────────── */
+.asignar-form { display: flex; flex-direction: column; gap: .75rem; }
+
+.asignar-fila {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.asignar-fila select,
+.asignar-fila input { flex: 1; min-width: 0; font-size: .875rem; }
+
+.asignar-separador {
+  font-size: .8125rem;
+  color: var(--text-muted);
+  text-align: center;
 }
