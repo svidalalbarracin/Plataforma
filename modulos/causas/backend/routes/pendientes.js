@@ -49,6 +49,13 @@ router.post('/', (req, res) => {
   if (!fecha_limite)        return res.status(400).json({ error: 'fecha_limite es obligatoria' });
   if (!fecha_aviso)         return res.status(400).json({ error: 'fecha_aviso es obligatoria' });
 
+  // Resolver causa_id por numero_expediente si no viene explícito
+  let resolvedCausaId = causa_id ?? null;
+  if (!resolvedCausaId && numero_expediente?.trim()) {
+    const causa = db.prepare('SELECT id FROM causas WHERE numero_expediente = ?').get(numero_expediente.trim());
+    resolvedCausaId = causa?.id ?? null;
+  }
+
   const r = db.prepare(`
     INSERT INTO pendientes
       (descripcion, causa_id, fecha_limite, dias_aviso, fecha_aviso, nota,
@@ -56,7 +63,7 @@ router.post('/', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     descripcion.trim(),
-    causa_id ?? null,
+    resolvedCausaId,
     fecha_limite,
     dias_aviso ?? 3,
     fecha_aviso,
