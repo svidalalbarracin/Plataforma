@@ -216,6 +216,10 @@ async function extraerFilas(ctx) {
     table.querySelectorAll('tbody tr').forEach((tr, index) => {
       const celdas = [...tr.querySelectorAll('td')].map(td => limpiar(td.innerText));
       if (celdas.length >= 5 && celdas[0] && /\d/.test(celdas[0])) {
+        const tieneVer = [...tr.querySelectorAll('td')].some(td =>
+          td.innerText.trim() === 'Ver' ||
+          !!td.querySelector('a, button, input[type=button], input[type=submit], input[value="Ver"]')
+        );
         filas.push({
           rowIndex:     index,
           numero:       celdas[0],
@@ -224,7 +228,7 @@ async function extraerFilas(ctx) {
           motivo:       celdas[3],
           fecha_envio:  celdas[4],
           vencimiento:  celdas[5],
-          tieneVer:     !!tr.querySelector('a, input[type=button], button'),
+          tieneVer,
         });
       }
     });
@@ -232,16 +236,21 @@ async function extraerFilas(ctx) {
   });
 }
 
-async function abrirDetalle(ctx, rowIndex) {
+// "Ver" abre un popup con el detalle — capturamos esa nueva ventana
+async function abrirDetalle(context, ctx, rowIndex) {
   const filas  = ctx.locator('table#dgdNotificacion tbody tr');
   const fila   = filas.nth(rowIndex);
-  const btnVer = fila.locator('a, input[type=button], button').first();
-  if ((await btnVer.count()) === 0) return false;
+  const btnVer = fila.locator('a, button, input[type=button], input[type=submit], input[value="Ver"], :text("Ver")').first();
+  if ((await btnVer.count()) === 0) return null;
 
+  const popupPromise = context.waitForEvent('page', { timeout: 30000 });
   await btnVer.click();
-  await ctx.waitForSelector('input#txtNroCedula', { timeout: 30000 });
-  console.log(`    [detalle] ${ctx.url?.() ?? ''}`);
-  return true;
+  const detallePage = await popupPromise;
+  detallePage.setDefaultTimeout(60000);
+  await detallePage.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+  await detallePage.waitForSelector('input#txtNroCedula', { timeout: 30000 });
+  console.log(`    [detalle] ${detallePage.url()}`);
+  return detallePage;
 }
 
 async function extraerDetalle(ctx) {
@@ -327,7 +336,8 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
     console.log('\n4. Procesando notificaciones...');
 
     const filas = await extraerFilas(consultaCtx);
-    console.log(`  ${filas.length} fila(s) encontradas`);
+    const conVer = filas.filter(f => f.tieneVer).length;
+    console.log(`  ${filas.length} fila(s) encontradas (${conVer} con botón Ver)`);
 
     let examinadas = 0;
     for (const fila of filas) {
@@ -348,14 +358,11 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
       let detalleDatos  = {};
       let archivosPaths = [];
       if (fila.tieneVer) {
-        const ok = await abrirDetalle(consultaCtx, fila.rowIndex);
-        if (ok) {
-          detalleDatos  = await extraerDetalle(consultaCtx);
-          archivosPaths = await descargarAdjuntos(context, consultaCtx, numero);
-
-          // Volver a la tabla
-          await consultaCtx.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-          await consultaCtx.waitForSelector('table#dgdNotificacion', { timeout: 30000 });
+        const detallePage = await abrirDetalle(context, consultaCtx, fila.rowIndex);
+        if (detallePage) {
+          detalleDatos  = await extraerDetalle(detallePage);
+          archivosPaths = await descargarAdjuntos(context, detallePage, numero);
+          await detallePage.close();
           await new Promise(r => setTimeout(r, 1000));
         }
       }
