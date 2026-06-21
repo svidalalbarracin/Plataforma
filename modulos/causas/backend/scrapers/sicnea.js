@@ -181,7 +181,7 @@ async function irAConsulta(mainPage) {
 
   // Esperar a que los resultados carguen — el sistema es lento, puede tardar bastante
   // El formulario de búsqueda ya tiene ~8 filas de layout; esperamos que aparezcan muchas más
-  console.log('  Esperando resultados (sistema lento)...');
+  process.stdout.write('  Esperando resultados');
   let intentos = 0;
   while (intentos < 30) {
     await new Promise(r => setTimeout(r, 4000));
@@ -189,9 +189,11 @@ async function irAConsulta(mainPage) {
       const tablas = [...document.querySelectorAll('table')];
       return Math.max(...tablas.map(t => t.querySelectorAll('tbody tr').length), 0);
     }).catch(() => 0);
-    console.log(`  [${++intentos}] Mayor tabla en frame consulta: ${filas} filas`);
+    process.stdout.write('.');
+    intentos++;
     if (filas >= 20) break;
   }
+  process.stdout.write('\n');
 
   // Verificar que dgdNotificacion esté en el frame de consulta
   const tieneTabla = await frameConsulta.evaluate(
@@ -402,7 +404,7 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
         archivos_paths: archivosPaths,
       });
 
-      console.log(`  [OK] ${numero}  ${fila.motivo || ''}  ${fila.fecha_envio || ''}`);
+      console.log(`  [OK] ${numero}  ${detalleDatos.motivo || ''}  ${detalleDatos.fecha_alta || ''}`);
       nuevas++;
       examinadas++;
 
