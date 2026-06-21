@@ -273,6 +273,29 @@ async function extraerDetalle(ctx) {
 async function descargarAdjuntos(context, ctx, numero) {
   fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
+  const archivos = [];
+
+  // PDF de la notificación en sí (botón "Imprimir" dentro del detalle)
+  const notifPath = path.join(STORAGE_DIR, `${numero}_notif.pdf`);
+  if (!fs.existsSync(notifPath)) {
+    try {
+      const btnImprimir = ctx.locator('input[value="Imprimir"], button:has-text("Imprimir")').first();
+      if (await btnImprimir.count() > 0) {
+        const downloadPromise = context.waitForEvent('download', { timeout: 60000 });
+        await btnImprimir.click();
+        const download = await downloadPromise;
+        await download.saveAs(notifPath);
+        archivos.push(notifPath);
+        console.log(`    [PDF] notificación → ${path.basename(notifPath)}`);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    } catch (e) {
+      console.log(`    [!] PDF notificación no descargado (${e.message.split('\n')[0].substring(0, 80)})`);
+    }
+  } else {
+    archivos.push(notifPath);
+  }
+
   const archivosLista = await ctx.evaluate(() => {
     const tabla = document.getElementById('dgdArchivoAdjuntos');
     if (!tabla) return [];
@@ -282,9 +305,8 @@ async function descargarAdjuntos(context, ctx, numero) {
     }).filter(r => r.nombre && r.nombre.length > 0);
   });
 
-  if (archivosLista.length === 0) return [];
+  if (archivosLista.length === 0) return archivos;
 
-  const archivos = [];
   for (let i = 0; i < archivosLista.length; i++) {
     const nombreOriginal = archivosLista[i].nombre;
     const filePath = path.join(STORAGE_DIR, `${numero}_${i + 1}.pdf`);
