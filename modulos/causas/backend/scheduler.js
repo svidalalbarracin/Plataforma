@@ -51,14 +51,10 @@ async function ejecutarCiclo() {
   }
 }
 
-/**
- * Ejecuta el scraper de SICNEA Abogados, pero solo si el día actual es sábado.
- * La práctica del estudio es abrir las notificaciones aduaneras los sábados
- * para que queden registradas el lunes siguiente y así los plazos no corran antes.
- */
 async function ejecutarSICNEA() {
-  if (new Date().getDay() !== 6) return;
-  console.log('[causas-scheduler] Sábado — ejecutando SICNEA...');
+  const dia = new Date().getDay();
+  if (dia !== 6 && dia !== 0) return; // solo sábado (6) o domingo (0)
+  console.log(`[causas-scheduler] ${dia === 6 ? 'Sábado' : 'Domingo'} — ejecutando SICNEA...`);
   try {
     await obtenerNotificacionesSICNEA();
     autoCrearCausas();

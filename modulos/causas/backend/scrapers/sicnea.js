@@ -364,20 +364,26 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
     console.log(`  ${filas.length} fila(s) encontradas (${conVer} con botón Ver)`);
 
     let examinadas = 0;
+    let duplicadosConsecutivos = 0;
     for (const fila of filas) {
       const numero = fila.numero?.trim();
       if (!numero) continue;
 
       if (yaExiste(numero)) {
         if (modoAuto) {
-          console.log(`  [>>] ${numero} ya existe → deteniendo`);
-          break;
+          duplicadosConsecutivos++;
+          console.log(`  [>>] ${numero} ya existe (${duplicadosConsecutivos}/2)`);
+          if (duplicadosConsecutivos >= 2) break;
+          examinadas++;
+          continue;
         }
         console.log(`  [--] ${numero} ya existe`);
         examinadas++;
         if (limite && examinadas >= limite) break;
         continue;
       }
+
+      duplicadosConsecutivos = 0;
 
       let detalleDatos  = {};
       let archivosPaths = [];
