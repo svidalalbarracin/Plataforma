@@ -298,16 +298,28 @@ async function login(context) {
  */
 async function abrirRCEL(context, portalPage) {
   console.log('  Buscando "Comprobantes en línea"...');
+  const urlAntes = portalPage.url();
+
   const [rcelPage] = await Promise.all([
     context.waitForEvent('page', { timeout: 20000 }),
     portalPage.locator('text=Comprobantes en línea').first().click(),
   ]).catch(async () => {
+    // Si no se abrió nueva pestaña, verificar si alguna ya existe en el contexto
+    const extra = context.pages().find(p => p !== portalPage && p.url() !== 'about:blank');
+    if (extra) {
+      console.log('  Pestaña RCEL encontrada post-timeout:', extra.url());
+      return [extra];
+    }
+    // Último recurso: la misma pestaña pudo haber navegado — esperar que estabilice
     console.log('  Fallback: esperando navegación en la misma pestaña...');
-    await portalPage.waitForLoadState('networkidle');
+    await portalPage.waitForURL(url => url !== urlAntes, { timeout: 15000 }).catch(() => {});
+    await portalPage.waitForLoadState('networkidle', { timeout: 30000 });
+    console.log('  URL post-fallback:', portalPage.url());
     return [portalPage];
   });
+
   rcelPage.setDefaultTimeout(45000);
-  await rcelPage.waitForLoadState('networkidle');
+  await rcelPage.waitForLoadState('networkidle', { timeout: 30000 });
   console.log('  RCEL abierto:', rcelPage.url());
   return rcelPage;
 }
@@ -319,9 +331,14 @@ async function abrirRCEL(context, portalPage) {
  */
 async function seleccionarRepresentado(rcelPage) {
   console.log('  Seleccionando representado (CUIT del abogado)...');
-  await rcelPage.waitForLoadState('networkidle');
-  await rcelPage.waitForSelector('input.btn_empresa', { timeout: 20000 });
-  await rcelPage.locator('input.btn_empresa').first().click();
+  console.log('  URL actual:', rcelPage.url());
+  await rcelPage.waitForLoadState('networkidle', { timeout: 30000 });
+  console.log('  URL post-carga:', rcelPage.url());
+
+  // ARCA usa input.btn_empresa (forma histórica); tolerar también a y button con esa clase
+  const SELECTOR = 'input.btn_empresa, a.btn_empresa, button.btn_empresa';
+  await rcelPage.waitForSelector(SELECTOR, { timeout: 20000 });
+  await rcelPage.locator(SELECTOR).first().click();
   await rcelPage.waitForLoadState('networkidle');
   console.log('  Representado seleccionado:', rcelPage.url());
   return rcelPage;
