@@ -4,7 +4,8 @@ const path = require('path');
 const fs   = require('fs');
 const db   = require('../../../../core/database');
 
-const STORAGE_DIR = path.join(__dirname, '../../storage/sicnea');
+const STORAGE_DIR  = path.join(__dirname, '../../storage/sicnea');
+const FECHA_LIMITE = '2026-06-01'; // no importar notificaciones anteriores a esta fecha
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -390,7 +391,15 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
       if (fila.tieneVer) {
         const detallePage = await abrirDetalle(context, consultaCtx, fila.rowIndex);
         if (detallePage) {
-          detalleDatos  = await extraerDetalle(detallePage);
+          detalleDatos = await extraerDetalle(detallePage);
+
+          const fechaNotif = isoFecha(detalleDatos.fecha_alta);
+          if (fechaNotif && fechaNotif < FECHA_LIMITE) {
+            console.log(`  [<<] ${numero} (${fechaNotif}) anterior al ${FECHA_LIMITE} → deteniendo`);
+            await detallePage.close();
+            break;
+          }
+
           archivosPaths = await descargarAdjuntos(context, detallePage, numero);
           await detallePage.close();
           await new Promise(r => setTimeout(r, 1000));
