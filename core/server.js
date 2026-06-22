@@ -75,5 +75,9 @@ app.use('/causas/storage', express.static(path.join(__dirname, '../modulos/causa
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
   require('../modulos/facturacion/backend/scheduler');
-  require('../modulos/causas/backend/scheduler');
+  const { primerCiclo } = require('../modulos/causas/backend/scheduler');
+  const { importarFacturas } = require('../modulos/facturacion/backend/arca/scraper');
+  primerCiclo.then(() => importarFacturas()).catch(err =>
+    console.error(`[${new Date().toISOString()}] [facturacion/arca] Error al importar:`, err.message)
+  );
 });

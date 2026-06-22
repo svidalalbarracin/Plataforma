@@ -67,22 +67,18 @@ async function ejecutarSICNEA() {
   }
 }
 
-/**
- * Programa el aviso diario de pendientes a las 9:00hs.
- * Calcula el delay hasta la próxima 9am y repite cada 24hs.
- */
-/**
- * Programa el resumen diario de notificaciones a las 18:00hs.
- */
-function programarResumenDiario() {
+/** Milisegundos hasta la próxima `hora`:00 en Argentina (UTC-3, sin DST). */
+function msHastaHoraArg(hora) {
   const ahora = new Date();
-  const proximas18 = new Date(ahora);
-  proximas18.setHours(18, 0, 0, 0);
-  if (proximas18 <= ahora) proximas18.setDate(proximas18.getDate() + 1);
+  const objetivo = new Date(ahora);
+  objetivo.setUTCHours((hora + 3) % 24, 0, 0, 0);
+  if (objetivo <= ahora) objetivo.setUTCDate(objetivo.getUTCDate() + 1);
+  return objetivo - ahora;
+}
 
-  const delay = proximas18 - ahora;
-  console.log(`[causas-scheduler] Resumen diario: próximo envío a las 18:00 (en ${Math.round(delay / 60000)} min)`);
-
+function programarResumenDiario() {
+  const delay = msHastaHoraArg(18);
+  console.log(`[causas-scheduler] Resumen diario: próximo envío a las 18:00 ARG (en ${Math.round(delay / 60000)} min)`);
   setTimeout(() => {
     notificarNotificacionesDiarias().catch(err =>
       console.error(`[${new Date().toISOString()}] [causas/mail-diario] Error:`, err.message)
@@ -96,14 +92,8 @@ function programarResumenDiario() {
 }
 
 function programarAvisoDiario() {
-  const ahora = new Date();
-  const proximas9 = new Date(ahora);
-  proximas9.setHours(9, 0, 0, 0);
-  if (proximas9 <= ahora) proximas9.setDate(proximas9.getDate() + 1);
-
-  const delay = proximas9 - ahora;
-  console.log(`[causas-scheduler] Aviso pendientes: próximo envío a las 09:00 (en ${Math.round(delay / 60000)} min)`);
-
+  const delay = msHastaHoraArg(9);
+  console.log(`[causas-scheduler] Aviso pendientes: próximo envío a las 09:00 ARG (en ${Math.round(delay / 60000)} min)`);
   setTimeout(() => {
     notificarAvisoPendientes().catch(err =>
       console.error(`[${new Date().toISOString()}] [causas/aviso-pendientes] Error:`, err.message)
@@ -118,9 +108,11 @@ function programarAvisoDiario() {
 
 console.log(`[causas-scheduler] Iniciado. Intervalo PJN+TAD: cada ${INTERVALO_MIN} min. SICNEA: solo sábados al iniciar.`);
 
-ejecutarCiclo();
+const primerCiclo = ejecutarCiclo();
 ejecutarSICNEA();
 programarResumenDiario();
 programarAvisoDiario();
 
 setInterval(ejecutarCiclo, INTERVALO_MIN * 60 * 1000);
+
+module.exports = { primerCiclo };

@@ -10,18 +10,12 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'), quiet: true });
 const cron = require('node-cron');
 const { notificarResumenDiario, notificarRecurrentes } = require('./notificaciones');
-const { importarFacturas } = require('./arca/scraper');
 
 /** Hora en que se envía el resumen diario (solo la hora, minuto = 0). */
 const HORA = process.env.NOTIF_HORA || '9';
 const expr = `0 ${HORA} * * *`;
 
 console.log(`[scheduler] Iniciado. Notificaciones diarias: ${HORA}:00 AM | Honorarios recurrentes: 8:00 AM día 1 de cada mes.`);
-
-// Importación automática de ARCA al iniciar — últimos 30 días
-importarFacturas().catch(err =>
-  console.error(`[${new Date().toISOString()}] [facturacion/arca] Error al importar:`, err.message)
-);
 
 /** Resumen diario de facturas impagás vencidas (>DIAS_DEMORA días). */
 cron.schedule(expr, async () => {
