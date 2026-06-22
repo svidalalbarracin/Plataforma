@@ -5,7 +5,7 @@
  *
  * Uso: node scripts/seed-causas.js
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../.env'), quiet: true });
 const db = require('../core/database');
 
 function insertar({ numero_expediente, caratula, tipo, estado, juzgado, fecha_inicio }) {

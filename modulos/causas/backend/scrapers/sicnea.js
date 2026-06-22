@@ -1,4 +1,4 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), quiet: true });
 const { chromium } = require('playwright');
 const path = require('path');
 const fs   = require('fs');

@@ -7,7 +7,7 @@
  *
  * @module causas/notificaciones
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'), quiet: true });
 const nodemailer = require('nodemailer');
 const db = require('../../../core/database');
 

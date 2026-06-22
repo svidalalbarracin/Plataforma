@@ -4,7 +4,7 @@
  * Monta todas las rutas API, sirve los archivos estáticos de cada módulo
  * e inicia los schedulers de facturación y causas.
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../.env'), quiet: true });
 const express = require('express');
 const path    = require('path');
 

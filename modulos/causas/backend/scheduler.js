@@ -6,7 +6,7 @@
  * CAUSAS_INTERVALO_MIN minutos. SICNEA solo corre cuando la plataforma arranca
  * un sábado — no tiene intervalo periódico.
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'), quiet: true });
 const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
 const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
 const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');

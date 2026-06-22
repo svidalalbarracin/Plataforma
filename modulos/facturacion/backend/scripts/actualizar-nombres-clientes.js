@@ -5,7 +5,7 @@
  *
  * Uso: node backend/scripts/actualizar-nombres-clientes.js
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), quiet: true });
 const path = require('path');
 const fs = require('fs');
 const pdfParse = require('pdf-parse');

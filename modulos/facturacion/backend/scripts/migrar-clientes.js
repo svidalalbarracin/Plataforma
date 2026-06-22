@@ -5,7 +5,7 @@
 //
 // Uso: node backend/scripts/migrar-clientes.js
 
-require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), quiet: true });
 const db = require('../../../../core/database');
 
 const PATRONES = [

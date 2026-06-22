@@ -7,7 +7,7 @@
  *
  * Zona horaria: America/Argentina/Buenos_Aires.
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'), quiet: true });
 const cron = require('node-cron');
 const { notificarResumenDiario, notificarRecurrentes } = require('./notificaciones');
 const { importarFacturas } = require('./arca/scraper');
