@@ -115,8 +115,12 @@ router.get('/', (req, res) => {
     }),
 
     ...sicnea.map(r => {
-      const paths    = JSON.parse(r.archivos_paths || '[]');
-      const archivos = paths.map((p, i) => ({ nombre: `Adjunto ${i + 1}`, url: pathAUrl(p, 'sicnea') }));
+      const paths = JSON.parse(r.archivos_paths || '[]');
+      let adjNum  = 1;
+      const archivos = paths.map(p => ({
+        nombre: p.includes('_notif.') ? 'Notificación' : `Adjunto ${adjNum++}`,
+        url:    pathAUrl(p, 'sicnea'),
+      }));
       return {
         id:          r.id,
         numero:      r.numero,
@@ -156,19 +160,44 @@ router.patch('/marcar-todas', (req, res) => {
 
 /**
  * POST /api/causas/notificaciones/ejecutar
- * Dispara el scraper de PJN de forma manual.
- * Acepta `limite` en el body para limitar cuántas notificaciones procesar.
+ * Dispara los scrapers de PJN y TAD en secuencia.
+ * Acepta `limite` en el body (solo aplica a PJN).
  *
- * @returns {{ nuevas: number }}
+ * @returns {{ nuevas_pjn: number, nuevas_tad: number, nuevas_docs_tad: number }}
  */
 router.post('/ejecutar', async (req, res) => {
   try {
     const { obtenerNotificacionesPJN } = require('../scrapers/pjn');
-    const limite = req.body?.limite ? parseInt(req.body.limite, 10) : null;
-    const nuevas = await obtenerNotificacionesPJN({ limite });
-    res.json({ nuevas });
+    const { obtenerNotificacionesTAD } = require('../scrapers/tad');
+    const limite    = req.body?.limite ? parseInt(req.body.limite, 10) : null;
+    const nuevas_pjn                    = await obtenerNotificacionesPJN({ limite });
+    const { nuevasNotif, nuevosDocs }   = await obtenerNotificacionesTAD();
+    res.json({ nuevas_pjn, nuevas_tad: nuevasNotif, nuevas_docs_tad: nuevosDocs });
   } catch (e) {
     console.error('[causas/ejecutar]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /api/causas/notificaciones/ejecutar-sicnea
+ * Dispara el scraper de SICNEA manualmente.
+ * Solo permitido sábado (6) o domingo (0) — el servidor rechaza cualquier otro día.
+ *
+ * @returns {{ nuevas: number }}
+ */
+router.post('/ejecutar-sicnea', async (req, res) => {
+  const dia = new Date().getDay();
+  if (dia !== 6 && dia !== 0) {
+    return res.status(403).json({ error: 'El scraper de SICNEA solo puede ejecutarse sábado o domingo.' });
+  }
+  try {
+    const { obtenerNotificacionesSICNEA } = require('../scrapers/sicnea');
+    const limite = req.body?.limite ? parseInt(req.body.limite, 10) : null;
+    const nuevas = await obtenerNotificacionesSICNEA({ limite });
+    res.json({ nuevas });
+  } catch (e) {
+    console.error('[causas/ejecutar-sicnea]', e.message);
     res.status(500).json({ error: e.message });
   }
 });

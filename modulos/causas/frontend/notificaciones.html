@@ -32,8 +32,10 @@
     <div class="flex gap-2 items-center flex-wrap">
       <input type="number" id="inp-limite" min="1" placeholder="Límite (opcional)"
              style="width:9rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:.875rem">
-      <button class="btn btn-ghost btn-sm" id="btn-ejecutar" onclick="ejecutarScraper()">↻ Actualizar ahora</button>
+      <button class="btn btn-ghost btn-sm" id="btn-ejecutar" onclick="ejecutarScraper()">↻ PJN + TAD</button>
       <span id="scraper-estado" class="text-muted" style="font-size:.8125rem"></span>
+      <button class="btn btn-ghost btn-sm" id="btn-ejecutar-sicnea" onclick="ejecutarSICNEA()">↻ SICNEA</button>
+      <span id="scraper-estado-sicnea" class="text-muted" style="font-size:.8125rem"></span>
       <span class="text-muted" style="font-size:.8125rem">Próxima auto: <span id="ultima-auto">—</span></span>
       <button class="btn btn-ghost btn-sm" onclick="marcarTodasLeidas()">Marcar todas como leídas</button>
     </div>
@@ -231,13 +233,23 @@
     });
   });
 
+  async function recargarNotificaciones() {
+    const resp = await fetch('/api/causas/notificaciones').then(r => r.json());
+    notificaciones = resp.notificaciones;
+    ultimaAuto     = resp.ultima_auto;
+    intervaloMin   = resp.intervalo_min ?? 30;
+    iniciarCountdown();
+    actualizarContadores();
+    renderNotificaciones(filtroActivo);
+  }
+
   async function ejecutarScraper() {
     const limite = parseInt(document.getElementById('inp-limite').value) || null;
     const btn    = document.getElementById('btn-ejecutar');
     const estado = document.getElementById('scraper-estado');
 
-    btn.disabled    = true;
-    btn.textContent = '↻ Ejecutando…';
+    btn.disabled       = true;
+    btn.textContent    = '↻ Ejecutando…';
     estado.textContent = '';
 
     try {
@@ -249,36 +261,65 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
 
-      estado.textContent = `${data.nuevas} nueva(s)`;
-      const resp = await fetch('/api/causas/notificaciones').then(r => r.json());
-      notificaciones = resp.notificaciones;
-      ultimaAuto     = resp.ultima_auto;
-      intervaloMin   = resp.intervalo_min ?? 30;
-      iniciarCountdown();
-      actualizarContadores();
-      renderNotificaciones(filtroActivo);
-      toast(`${data.nuevas} notificación(es) nueva(s)`, 'success');
+      const total = (data.nuevas_pjn || 0) + (data.nuevas_tad || 0);
+      estado.textContent = `${data.nuevas_pjn} PJN · ${data.nuevas_tad} TAD`;
+      await recargarNotificaciones();
+      toast(`${total} notificación(es) nueva(s)`, 'success');
     } catch (e) {
       estado.textContent = 'Error';
       toast('Error al ejecutar el scraper', 'error');
       console.error(e);
     } finally {
       btn.disabled    = false;
-      btn.textContent = '↻ Actualizar ahora';
+      btn.textContent = '↻ PJN + TAD';
+    }
+  }
+
+  async function ejecutarSICNEA() {
+    const limite = parseInt(document.getElementById('inp-limite').value) || null;
+    const btn    = document.getElementById('btn-ejecutar-sicnea');
+    const estado = document.getElementById('scraper-estado-sicnea');
+
+    btn.disabled       = true;
+    btn.textContent    = '↻ Ejecutando…';
+    estado.textContent = '(tarda varios minutos)';
+
+    try {
+      const res  = await fetch('/api/causas/notificaciones/ejecutar-sicnea', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(limite ? { limite } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+
+      estado.textContent = `${data.nuevas} nueva(s)`;
+      await recargarNotificaciones();
+      toast(`SICNEA: ${data.nuevas} notificación(es) nueva(s)`, 'success');
+    } catch (e) {
+      estado.textContent = 'Error';
+      toast('Error al ejecutar SICNEA', 'error');
+      console.error(e);
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = '↻ SICNEA';
     }
   }
 
   async function init() {
+    // Bloquear botón SICNEA si hoy no es sábado (6) ni domingo (0)
+    const dia = new Date().getDay();
+    const btnSicnea = document.getElementById('btn-ejecutar-sicnea');
+    if (dia !== 6 && dia !== 0) {
+      btnSicnea.disabled = true;
+      btnSicnea.title    = 'Solo disponible sábado y domingo';
+      btnSicnea.style.opacity = '0.45';
+    }
+
     document.getElementById('lista-notificaciones').innerHTML =
       '<div class="empty">Cargando…</div>';
     try {
-      const resp = await fetch('/api/causas/notificaciones').then(r => r.json());
-      notificaciones = resp.notificaciones;
-      ultimaAuto     = resp.ultima_auto;
-      intervaloMin   = resp.intervalo_min ?? 30;
-      iniciarCountdown();
-      actualizarContadores();
-      renderNotificaciones(filtroActivo);
+      await recargarNotificaciones();
     } catch (e) {
       document.getElementById('lista-notificaciones').innerHTML =
         '<div class="empty">Error al cargar notificaciones</div>';
