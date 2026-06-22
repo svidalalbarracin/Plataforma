@@ -17,19 +17,18 @@ const { inferirTodos, autoCrearCausas, vincularNotificacionesPendientes } = requ
 const INTERVALO_MIN = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
 
 /**
- * Corre PJN y TAD en paralelo, luego notifica por mail si hay novedades.
+ * Corre PJN y luego TAD en serie, para evitar contención de recursos con
+ * los tres Chromium simultáneos (ARCA + PJN + TAD) al iniciar la plataforma.
  * Los errores de cada scraper se loguean de forma independiente para que
  * un fallo en uno no impida al otro ni al envío del mail.
  */
 async function ejecutarCiclo() {
-  await Promise.all([
-    obtenerNotificacionesPJN().catch(err =>
-      console.error(`[${new Date().toISOString()}] [causas/pjn] Error:`, err.message)
-    ),
-    obtenerNotificacionesTAD().catch(err =>
-      console.error(`[${new Date().toISOString()}] [causas/tad] Error:`, err.message)
-    ),
-  ]);
+  await obtenerNotificacionesPJN().catch(err =>
+    console.error(`[${new Date().toISOString()}] [causas/pjn] Error:`, err.message)
+  );
+  await obtenerNotificacionesTAD().catch(err =>
+    console.error(`[${new Date().toISOString()}] [causas/tad] Error:`, err.message)
+  );
 
   try {
     const nuevas = autoCrearCausas();
