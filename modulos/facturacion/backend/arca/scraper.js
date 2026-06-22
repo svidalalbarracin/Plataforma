@@ -301,7 +301,11 @@ async function abrirRCEL(context, portalPage) {
   const [rcelPage] = await Promise.all([
     context.waitForEvent('page', { timeout: 20000 }),
     portalPage.locator('text=Comprobantes en línea').first().click(),
-  ]);
+  ]).catch(async () => {
+    console.log('  Fallback: esperando navegación en la misma pestaña...');
+    await portalPage.waitForLoadState('networkidle');
+    return [portalPage];
+  });
   rcelPage.setDefaultTimeout(45000);
   await rcelPage.waitForLoadState('networkidle');
   console.log('  RCEL abierto:', rcelPage.url());
