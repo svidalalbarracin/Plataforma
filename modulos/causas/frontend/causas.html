@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Causas — Plataforma Memo</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="css/causas.css">
+</head>
+<body class="has-sidebar">
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">Causas</a>
+  <div class="navbar-links">
+    <a href="index.html">Calendario</a>
+    <a href="pendientes.html">Pendientes</a>
+    <a href="notificaciones.html">
+      Notificaciones
+      <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
+    </a>
+    <a href="causas.html" class="active">Causas</a>
+  </div>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="biblioteca-layout">
+
+  <!-- ── Panel izquierdo ── -->
+  <div class="biblioteca-panel-izq">
+
+    <div class="biblioteca-toolbar">
+      <input type="text" id="buscador" class="biblioteca-search-input"
+             placeholder="Buscar cliente, expediente…">
+      <div class="biblioteca-filtros">
+        <button class="filter-tab active" data-filtro="">Todas</button>
+        <button class="filter-tab" data-filtro="en_tramite">En trámite</button>
+        <button class="filter-tab" data-filtro="archivada">Archivadas</button>
+        <button class="filter-tab" data-filtro="cerrada">Cerradas</button>
+        <select id="sort-select" class="biblioteca-sort">
+          <option value="actividad">↓ Actividad</option>
+          <option value="alfabetico">A → Z</option>
+          <option value="pendientes">↓ Pendientes</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="biblioteca-lista" id="biblioteca-lista">
+      <div class="empty" style="padding:2rem 1rem">Cargando…</div>
+    </div>
+
+    <div class="biblioteca-footer">
+      <button class="btn btn-primary btn-sm" onclick="abrirModalNueva()" style="width:100%">
+        + Nueva causa
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ── Panel derecho ── -->
+  <div class="biblioteca-panel-der" id="biblioteca-panel-der">
+    <div class="biblioteca-vacio">
+      <div class="biblioteca-vacio-ico">⚖</div>
+      <div class="biblioteca-vacio-texto">Seleccioná una causa para ver el detalle</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal: Editar cliente -->
+<div class="modal-backdrop" id="modal-editar-cliente">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <span class="modal-title">Editar cliente</span>
+      <button class="modal-close" onclick="cerrarModalEditar()">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="ec-nombre">Nombre <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="ec-nombre">
+      </div>
+      <div class="form-group">
+        <label for="ec-cuit">CUIT</label>
+        <input type="text" id="ec-cuit" placeholder="20-12345678-9">
+      </div>
+      <div class="form-group">
+        <label for="ec-email">Email</label>
+        <input type="email" id="ec-email">
+      </div>
+      <div class="form-group">
+        <label for="ec-telefono">Teléfono</label>
+        <input type="text" id="ec-telefono">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModalEditar()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-cliente">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Nueva causa -->
+<div class="modal-backdrop" id="modal-nueva">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <span class="modal-title">Nueva causa</span>
+      <button class="modal-close" onclick="cerrarModalNueva()">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="n-expediente">Nro. expediente</label>
+        <input type="text" id="n-expediente" placeholder="Ej: 12345/2024">
+      </div>
+      <div class="form-group">
+        <label for="n-tipo">Tipo <span style="color:var(--danger)">*</span></label>
+        <select id="n-tipo">
+          <option value="pjn">Poder Judicial (PJN)</option>
+          <option value="tad">TAD</option>
+          <option value="sicnea">SICNEA / Aduanero</option>
+          <option value="aduanero">Aduanero (papel)</option>
+          <option value="papel">Carpeta física</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="n-caratula">Carátula</label>
+        <input type="text" id="n-caratula" placeholder="Ej: García, Juan c/ Empresa S.A. s/ despido">
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="n-juzgado">Tribunal / Juzgado</label>
+        <input type="text" id="n-juzgado" placeholder="Ej: CNAT Sala III">
+      </div>
+      <div class="form-group">
+        <label for="n-estado">Estado</label>
+        <select id="n-estado">
+          <option value="en_tramite">En trámite</option>
+          <option value="archivada">Archivada</option>
+          <option value="cerrada">Cerrada</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="n-fecha">Fecha de inicio</label>
+        <input type="date" id="n-fecha">
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="n-notas">Notas <span class="text-muted" style="font-weight:400">(opcional)</span></label>
+        <textarea id="n-notas" placeholder="Observaciones iniciales…" style="min-height:72px"></textarea>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="n-cliente-sel">Cliente</label>
+        <select id="n-cliente-sel">
+          <option value="">— Sin asignar por ahora —</option>
+          <option value="__nuevo__">+ Nuevo cliente…</option>
+        </select>
+      </div>
+      <div id="n-cliente-nuevo" style="display:none;grid-column:1/-1">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.25rem">
+          <div class="form-group">
+            <label for="n-cliente-nombre">Nombre *</label>
+            <input type="text" id="n-cliente-nombre" placeholder="Nombre del cliente">
+          </div>
+          <div class="form-group">
+            <label for="n-cliente-cuit">CUIT</label>
+            <input type="text" id="n-cliente-cuit" placeholder="20-12345678-9">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModalNueva()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-guardar-nueva">Crear causa</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="js/causas.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+  // ── Estado ────────────────────────────────────────
+  let CLIENTES          = [];
+  let causaSeleccionada = null;
+  let filtroActivo      = '';
+  let busqueda          = '';
+  let sortActivo        = 'actividad';
+
+  const DIAS_INACTIVA = 30;
+
+  // ── Helpers ───────────────────────────────────────
+  function tiempoRelativo(iso) {
+    if (!iso) return null;
+    const t   = new Date(iso.length === 10 ? iso + 'T00:00:00' : iso).getTime();
+    const dias = Math.floor((Date.now() - t) / 86400000);
+    if (dias <= 0)  return 'hoy';
+    if (dias === 1) return 'ayer';
+    if (dias < 7)   return `hace ${dias} días`;
+    if (dias < 30)  return `hace ${Math.floor(dias / 7)} sem.`;
+    if (dias < 365) return `hace ${Math.floor(dias / 30)} meses`;
+    return `hace ${Math.floor(dias / 365)} años`;
+  }
+
+  function diasDesde(iso) {
+    if (!iso) return Infinity;
+    return Math.floor((Date.now() - new Date(iso.length === 10 ? iso + 'T00:00:00' : iso).getTime()) / 86400000);
+  }
+
+  function tipoCls(tipo) {
+    if (!tipo) return '';
+    const t = tipo.toLowerCase();
+    return t === 'pjn' ? 'badge-tipo-pjn'
+         : t === 'tad' ? 'badge-tipo-tad'
+         : t === 'sicnea' ? 'badge-tipo-sicnea'
+         : 'badge-tipo-fisica';
+  }
+
+  function tipoLabel(tipo) {
+    if (!tipo) return '';
+    return tipo === 'pjn' ? 'PJN'
+         : tipo === 'tad' ? 'TAD'
+         : tipo === 'sicnea' ? 'SICNEA'
+         : tipo === 'aduanero' ? 'ADU'
+         : 'PAPEL';
+  }
+
+  function nombreCausa(c) {
+    return c.caratula || c.numero_expediente || '(sin título)';
+  }
+
+  function formatFecha(iso) {
+    if (!iso) return '—';
+    const [y, m, d] = iso.slice(0, 10).split('-');
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    return `${parseInt(d)} ${meses[parseInt(m) - 1]} ${y}`;
+  }
+
+  // ── Ordenamiento ──────────────────────────────────
+  function maxActividad(cl) {
+    return Math.max(0, ...cl.causas.map(c =>
+      c.ultima_actividad ? new Date(c.ultima_actividad).getTime() : 0
+    ));
+  }
+
+  function sortClientes(lista) {
+    const sinCliente = lista.find(cl => cl.sinCliente);
+    const regulares  = lista.filter(cl => !cl.sinCliente);
+    if (sortActivo === 'alfabetico')
+      regulares.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    else if (sortActivo === 'actividad')
+      regulares.sort((a, b) => maxActividad(b) - maxActividad(a));
+    else if (sortActivo === 'pendientes')
+      regulares.sort((a, b) => {
+        const suma = x => x.causas.reduce((s, c) => s + (c.pendientes_activos || 0), 0);
+        return suma(b) - suma(a);
+      });
+    return sinCliente ? [...regulares, sinCliente] : regulares;
+  }
+
+  // ── Filtrado ──────────────────────────────────────
+  function filtrarClientes() {
+    const q = busqueda.toLowerCase();
+    return CLIENTES.map(cl => ({
+      ...cl,
+      causas: cl.causas.filter(c => {
+        const matchEstado = !filtroActivo || c.estado === filtroActivo;
+        const matchBusq   = !q
+          || (cl.nombre || '').toLowerCase().includes(q)
+          || (c.numero_expediente || '').toLowerCase().includes(q)
+          || (c.caratula || '').toLowerCase().includes(q)
+          || (c.juzgado || '').toLowerCase().includes(q);
+        return matchEstado && matchBusq;
+      }),
+    })).filter(cl => (filtroActivo || q) ? cl.causas.length > 0 : true);
+  }
+
+  // ── Render lista ──────────────────────────────────
+  function renderLista() {
+    const el      = document.getElementById('biblioteca-lista');
+    const visibles = sortClientes(filtrarClientes());
+
+    if (!visibles.length) {
+      el.innerHTML = '<div class="empty" style="padding:2rem 1rem">No hay resultados</div>';
+      return;
+    }
+
+    el.innerHTML = visibles.map(cl => {
+      if (cl.sinCliente) {
+        return `
+          <div class="cliente-grupo cliente-grupo-sin-cliente">
+            <div class="cliente-grupo-header">
+              <span class="cliente-grupo-nombre">Sin cliente asignado</span>
+              ${cl.causas.length > 0
+                ? `<span class="cliente-grupo-count">${cl.causas.length}</span>`
+                : ''}
+            </div>
+            ${cl.causas.map(htmlCausaFila).join('')}
+          </div>`;
+      }
+      return `
+        <div class="cliente-grupo">
+          <div class="cliente-grupo-header">
+            <span class="cliente-grupo-nombre">${cl.nombre}</span>
+            <button class="btn-editar-cliente" onclick="abrirModalEditar(${cl.id})" title="Editar cliente">✎</button>
+          </div>
+          ${cl.causas.length === 0
+            ? '<div class="causa-fila-vacia">Sin causas registradas</div>'
+            : cl.causas.map(htmlCausaFila).join('')}
+        </div>`;
+    }).join('');
+
+    if (causaSeleccionada) {
+      const btn = el.querySelector(`.causa-fila[data-id="${causaSeleccionada}"]`);
+      if (btn) btn.classList.add('activa');
+    }
+  }
+
+  function htmlCausaFila(c) {
+    const inactiva  = c.estado === 'en_tramite' && diasDesde(c.ultima_actividad) > DIAS_INACTIVA;
+    const actividad = tiempoRelativo(c.ultima_actividad);
+
+    return `
+      <button class="causa-fila${inactiva ? ' causa-fila-inactiva' : ''}"
+              data-id="${c.id}" onclick="seleccionarCausa(${c.id})">
+        <span class="causa-fila-tipo badge-tipo ${tipoCls(c.tipo)}">${tipoLabel(c.tipo)}</span>
+        <span class="causa-fila-cuerpo">
+          <span class="causa-fila-caratula">${nombreCausa(c)}</span>
+          <span class="causa-fila-meta">
+            ${actividad ? `<span class="causa-fila-actividad">${actividad}</span>` : ''}
+            ${c.pendientes_activos > 0
+              ? `<span class="causa-fila-pend">● ${c.pendientes_activos}</span>`
+              : ''}
+            ${inactiva ? '<span class="causa-fila-alerta">⚠</span>' : ''}
+          </span>
+        </span>
+        <span class="causa-fila-estado causa-fila-estado-${c.estado}">
+          ${c.estado === 'en_tramite' ? 'en trámite' : c.estado === 'archivada' ? 'arch.' : 'cerrada'}
+        </span>
+      </button>`;
+  }
+
+  // ── Seleccionar causa ─────────────────────────────
+  async function seleccionarCausa(id) {
+    causaSeleccionada = id;
+    localStorage.setItem('causas_seleccion', id);
+    history.replaceState(null, '', `?id=${id}`);
+    document.querySelectorAll('.causa-fila').forEach(el =>
+      el.classList.toggle('activa', parseInt(el.dataset.id) === id)
+    );
+    document.querySelector(`.causa-fila[data-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    const panel = document.getElementById('biblioteca-panel-der');
+    panel.innerHTML = '<div class="biblioteca-vacio"><div class="biblioteca-vacio-texto">Cargando…</div></div>';
+
+    try {
+      const c = await fetch(`/api/causas/biblioteca/${id}`).then(r => r.json());
+      renderDetalle(c);
+    } catch {
+      panel.innerHTML = '<div class="biblioteca-vacio"><div class="biblioteca-vacio-texto">Error al cargar</div></div>';
+    }
+  }
+
+  // ── Render detalle (panel derecho) ────────────────
+  function renderDetalle(c) {
+    const panel   = document.getElementById('biblioteca-panel-der');
+    const titulo  = c.caratula || c.numero_expediente || '(sin título)';
+    const cliente = c.clientes?.[0];
+
+    const notifs = [
+      ...(c.notif_pjn    || []).map(n => ({
+        tipo: 'pjn',    fecha: n.fecha_envio, titulo: n.caratula || n.numero || '—', sub: n.autor || '',
+      })),
+      ...(c.notif_tad    || []).map(n => ({
+        tipo: 'tad',    fecha: n.fecha,       titulo: n.nombre   || n.mensaje || '—', sub: n.numero_tramite || '',
+      })),
+      ...(c.notif_sicnea || []).map(n => ({
+        tipo: 'sicnea', fecha: n.fecha_alta,  titulo: n.motivo   || n.numero || '—', sub: n.aduana || '',
+      })),
+    ].sort((a, b) => {
+      if (!a.fecha && !b.fecha) return 0;
+      if (!a.fecha) return 1;
+      if (!b.fecha) return -1;
+      return new Date(b.fecha) - new Date(a.fecha);
+    }).slice(0, 5);
+
+    const pendientesActivos = (c.pendientes || []).filter(p => !p.completado);
+
+    // Construir items de meta
+    const metaItems = [
+      cliente ? `<dl class="causa-preview-meta-item">
+        <dt>Cliente</dt>
+        <dd style="font-weight:500">${cliente.nombre}${cliente.cuit ? `<span style="display:block;font-weight:400;color:var(--text-muted)">${cliente.cuit}</span>` : ''}</dd>
+      </dl>` : '',
+      c.numero_expediente && c.caratula ? `<dl class="causa-preview-meta-item">
+        <dt>Expediente</dt>
+        <dd style="font-family:ui-monospace,monospace;font-size:.8125rem">${c.numero_expediente}</dd>
+      </dl>` : '',
+      c.juzgado ? `<dl class="causa-preview-meta-item">
+        <dt>Tribunal</dt>
+        <dd>${c.juzgado}</dd>
+      </dl>` : '',
+      c.fecha_inicio ? `<dl class="causa-preview-meta-item">
+        <dt>Inicio</dt>
+        <dd>${formatFecha(c.fecha_inicio)}</dd>
+      </dl>` : '',
+    ].filter(Boolean).join('');
+
+    panel.innerHTML = `
+      <div class="causa-preview">
+
+        <div class="causa-preview-header">
+          <div style="min-width:0;flex:1">
+            <div class="causa-preview-titulo">${titulo}</div>
+            <div class="causa-preview-subtitulo">
+              <span class="badge-tipo ${tipoCls(c.tipo)}">${tipoLabel(c.tipo)}</span>
+              ${c.estado === 'archivada' ? '<span class="badge badge-muted">Archivada</span>' : ''}
+              ${c.estado === 'cerrada'   ? '<span class="badge badge-muted">Cerrada</span>'   : ''}
+            </div>
+          </div>
+          <a href="detalle-causa.html?id=${c.id}" class="btn btn-ghost btn-sm" style="flex-shrink:0">
+            Ver completo →
+          </a>
+        </div>
+
+        ${!cliente ? `
+        <div class="causa-preview-seccion" style="margin-bottom:1.5rem;padding-bottom:1.25rem;border-bottom:1px solid var(--border)">
+          <div class="causa-preview-seccion-titulo">Asignar cliente</div>
+          <div class="asignar-form">
+            <div class="asignar-fila">
+              <select id="sel-cliente-asignar">
+                <option value="">— Seleccionar existente —</option>
+                ${CLIENTES.filter(cl => !cl.sinCliente && cl.id).map(cl =>
+                  `<option value="${cl.id}">${cl.nombre}${cl.cuit ? ' — ' + cl.cuit : ''}</option>`
+                ).join('')}
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="asignarClienteExistente(${c.id})">Asignar</button>
+            </div>
+            <div class="asignar-separador">— o crear nuevo —</div>
+            <div class="asignar-fila">
+              <input type="text" id="inp-nuevo-cliente-nombre" placeholder="Nombre *">
+              <input type="text" id="inp-nuevo-cliente-cuit" placeholder="CUIT (opcional)">
+              <button class="btn btn-ghost btn-sm" onclick="crearYAsignarCliente(${c.id})">Crear y asignar</button>
+            </div>
+          </div>
+        </div>` : ''}
+
+        ${metaItems ? `<div class="causa-preview-meta">${metaItems}</div>` : ''}
+
+        <div class="causa-preview-cols">
+
+          <div>
+            <div class="causa-preview-seccion-titulo">
+              Pendientes activos${pendientesActivos.length > 0 ? ` (${pendientesActivos.length})` : ''}
+            </div>
+            <div class="causa-preview-lista">
+              ${pendientesActivos.length === 0
+                ? '<div style="font-size:.875rem;color:var(--text-muted);padding:.25rem 0">Sin pendientes activos</div>'
+                : pendientesActivos.slice(0, 6).map(p => `
+                    <div class="causa-preview-pend-item">
+                      <span class="causa-preview-pend-desc">${p.descripcion}</span>
+                      <span class="causa-preview-pend-fecha">vence ${formatFecha(p.fecha_limite)}</span>
+                    </div>`).join('') +
+                  (pendientesActivos.length > 6
+                    ? `<div style="font-size:.8125rem;color:var(--text-muted);padding:.4rem 0">y ${pendientesActivos.length - 6} más…</div>`
+                    : '')
+              }
+            </div>
+          </div>
+
+          <div>
+            <div class="causa-preview-seccion-titulo">Últimas notificaciones</div>
+            <div class="causa-preview-lista">
+              ${notifs.length === 0
+                ? '<div style="font-size:.875rem;color:var(--text-muted);padding:.25rem 0">Sin notificaciones registradas</div>'
+                : notifs.map(n => `
+                    <div class="causa-preview-notif-item">
+                      <div class="causa-preview-notif-titulo">${n.titulo}</div>
+                      <div class="causa-preview-notif-meta">
+                        <span class="badge-tipo ${tipoCls(n.tipo)}">${tipoLabel(n.tipo)}</span>
+                        ${n.fecha ? `<span>${tiempoRelativo(n.fecha)}</span>` : ''}
+                        ${n.sub   ? `<span>${n.sub}</span>` : ''}
+                      </div>
+                    </div>`).join('')
+              }
+            </div>
+          </div>
+
+        </div>
+
+        ${c.notas ? `
+        <div class="causa-preview-seccion">
+          <div class="causa-preview-seccion-titulo">Notas</div>
+          <div style="font-size:.875rem;color:var(--text-muted);line-height:1.6;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word">${c.notas}</div>
+        </div>` : ''}
+
+      </div>`;
+  }
+
+  // ── Filtros / búsqueda / sort ─────────────────────
+  document.querySelectorAll('.filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filtroActivo = btn.dataset.filtro;
+      renderLista();
+    });
+  });
+
+  document.getElementById('buscador').addEventListener('input', e => {
+    busqueda = e.target.value.trim();
+    renderLista();
+  });
+
+  document.getElementById('sort-select').addEventListener('change', e => {
+    sortActivo = e.target.value;
+    renderLista();
+  });
+
+  // ── Modal nueva causa ──────────────────────────────
+  function abrirModalNueva() {
+    const sel = document.getElementById('n-cliente-sel');
+    sel.innerHTML = `<option value="">— Sin asignar por ahora —</option>
+      ${CLIENTES.filter(cl => !cl.sinCliente && cl.id).map(cl =>
+        `<option value="${cl.id}">${cl.nombre}${cl.cuit ? ' — ' + cl.cuit : ''}</option>`
+      ).join('')}
+      <option value="__nuevo__">+ Nuevo cliente…</option>`;
+    document.getElementById('modal-nueva').classList.add('open');
+  }
+
+  function cerrarModalNueva() {
+    document.getElementById('modal-nueva').classList.remove('open');
+    ['n-expediente','n-caratula','n-juzgado','n-notas','n-cliente-nombre','n-cliente-cuit'].forEach(id =>
+      document.getElementById(id).value = ''
+    );
+    document.getElementById('n-tipo').value        = 'pjn';
+    document.getElementById('n-estado').value      = 'en_tramite';
+    document.getElementById('n-fecha').value       = '';
+    document.getElementById('n-cliente-sel').value = '';
+    document.getElementById('n-cliente-nuevo').style.display = 'none';
+  }
+
+  document.getElementById('n-cliente-sel').addEventListener('change', e => {
+    document.getElementById('n-cliente-nuevo').style.display =
+      e.target.value === '__nuevo__' ? '' : 'none';
+  });
+
+  document.getElementById('modal-nueva').addEventListener('click', e => {
+    if (e.target === e.currentTarget) cerrarModalNueva();
+  });
+
+  document.getElementById('btn-guardar-nueva').addEventListener('click', async () => {
+    const tipo = document.getElementById('n-tipo').value;
+    if (!tipo) { toast('Seleccioná un tipo', 'error'); return; }
+
+    const btn = document.getElementById('btn-guardar-nueva');
+    btn.disabled    = true;
+    btn.textContent = 'Guardando…';
+
+    try {
+      const clienteSel = document.getElementById('n-cliente-sel').value;
+      const body = {
+        numero_expediente: document.getElementById('n-expediente').value.trim() || null,
+        caratula:          document.getElementById('n-caratula').value.trim()   || null,
+        tipo,
+        estado:            document.getElementById('n-estado').value,
+        juzgado:           document.getElementById('n-juzgado').value.trim()   || null,
+        fecha_inicio:      document.getElementById('n-fecha').value             || null,
+        notas:             document.getElementById('n-notas').value.trim()      || null,
+      };
+
+      // Si se seleccionó un cliente existente, pasarlo en el body
+      if (clienteSel && clienteSel !== '__nuevo__') {
+        body.clientes = [parseInt(clienteSel)];
+      }
+
+      const res = await fetch('/api/causas/biblioteca', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+      const nueva = await res.json();
+
+      // Si se pidió crear un cliente nuevo, vincularlo ahora
+      if (clienteSel === '__nuevo__') {
+        const nombre = document.getElementById('n-cliente-nombre').value.trim();
+        if (nombre) {
+          await fetch(`/api/causas/biblioteca/${nueva.id}/clientes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              nombre,
+              cuit: document.getElementById('n-cliente-cuit').value.trim() || undefined,
+            }),
+          });
+        }
+      }
+
+      cerrarModalNueva();
+      toast('Causa creada');
+      await init();
+      await seleccionarCausa(nueva.id);
+    } catch (err) {
+      toast('Error al crear: ' + err.message, 'error');
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = 'Crear causa';
+    }
+  });
+
+  // ── Editar cliente ───────────────────────────────
+  let _clienteEditandoId = null;
+
+  function abrirModalEditar(clienteId) {
+    const cl = CLIENTES.find(c => c.id === clienteId);
+    if (!cl) return;
+    _clienteEditandoId = clienteId;
+    document.getElementById('ec-nombre').value   = cl.nombre   || '';
+    document.getElementById('ec-cuit').value     = cl.cuit     || '';
+    document.getElementById('ec-email').value    = cl.email    || '';
+    document.getElementById('ec-telefono').value = cl.telefono || '';
+    document.getElementById('modal-editar-cliente').classList.add('open');
+  }
+
+  function cerrarModalEditar() {
+    document.getElementById('modal-editar-cliente').classList.remove('open');
+  }
+
+  document.getElementById('modal-editar-cliente').addEventListener('click', e => {
+    if (e.target === e.currentTarget) cerrarModalEditar();
+  });
+
+  document.getElementById('btn-guardar-cliente').addEventListener('click', async () => {
+    const nombre = document.getElementById('ec-nombre').value.trim();
+    if (!nombre) { toast('El nombre es obligatorio', 'error'); return; }
+
+    const btn = document.getElementById('btn-guardar-cliente');
+    btn.disabled    = true;
+    btn.textContent = 'Guardando…';
+
+    try {
+      const res = await fetch(`/api/causas/biblioteca/clientes/${_clienteEditandoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre,
+          cuit:     document.getElementById('ec-cuit').value.trim()     || null,
+          email:    document.getElementById('ec-email').value.trim()    || null,
+          telefono: document.getElementById('ec-telefono').value.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      cerrarModalEditar();
+      toast('Cliente actualizado');
+      await init();
+      if (causaSeleccionada) await seleccionarCausa(causaSeleccionada);
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = 'Guardar';
+    }
+  });
+
+  // ── Asignar cliente ───────────────────────────────
+  async function asignarClienteExistente(causaId) {
+    const clienteId = parseInt(document.getElementById('sel-cliente-asignar')?.value);
+    if (!clienteId) { toast('Seleccioná un cliente', 'error'); return; }
+
+    try {
+      const res = await fetch(`/api/causas/biblioteca/${causaId}/clientes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cliente_id: clienteId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast('Cliente asignado');
+      await init();
+      await seleccionarCausa(causaId);
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+    }
+  }
+
+  async function crearYAsignarCliente(causaId) {
+    const nombre = document.getElementById('inp-nuevo-cliente-nombre')?.value.trim();
+    const cuit   = document.getElementById('inp-nuevo-cliente-cuit')?.value.trim();
+    if (!nombre) { toast('El nombre es obligatorio', 'error'); return; }
+
+    try {
+      const res = await fetch(`/api/causas/biblioteca/${causaId}/clientes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, cuit: cuit || undefined }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast('Cliente creado y asignado');
+      await init();
+      await seleccionarCausa(causaId);
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+    }
+  }
+
+  // ── Toast ─────────────────────────────────────────
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className  = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  // ── Init ─────────────────────────────────────────
+  async function init() {
+    try {
+      CLIENTES = await fetch('/api/causas/biblioteca/clientes').then(r => r.json());
+      renderLista();
+      // Restaurar causa seleccionada: URL tiene prioridad, localStorage como fallback
+      const idEnUrl    = parseInt(new URLSearchParams(location.search).get('id'));
+      const idGuardado = parseInt(localStorage.getItem('causas_seleccion'));
+      const idRestaurar = idEnUrl || idGuardado;
+      if (idRestaurar) await seleccionarCausa(idRestaurar);
+    } catch {
+      document.getElementById('biblioteca-lista').innerHTML =
+        '<div class="empty" style="padding:2rem 1rem">Error al cargar. Verificá que el servidor esté corriendo.</div>';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+
+  // Si el browser restaura la página desde bfcache (back/forward), DOMContentLoaded
+  // no se dispara de nuevo pero el estado JS se preserva — solo necesitamos re-marcar
+  // el activo en la lista por si se perdió el estilo.
+  window.addEventListener('pageshow', e => {
+    if (e.persisted && causaSeleccionada) {
+      document.querySelectorAll('.causa-fila').forEach(el =>
+        el.classList.toggle('activa', parseInt(el.dataset.id) === causaSeleccionada)
+      );
+    }
+  });
+</script>
+</body>
+</html>

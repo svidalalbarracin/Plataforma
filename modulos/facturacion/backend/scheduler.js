@@ -1,13 +1,23 @@
+/**
+ * Scheduler del módulo de facturación.
+ *
+ * Corre dos tareas programadas:
+ * 1. Resumen diario de facturas vencidas sin cobrar — hora configurable (NOTIF_HORA, default 9 AM).
+ * 2. Aviso de facturación recurrente — día 1 de cada mes a las 8:00 AM.
+ *
+ * Zona horaria: America/Argentina/Buenos_Aires.
+ */
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
 const cron = require('node-cron');
 const { notificarResumenDiario, notificarRecurrentes } = require('./notificaciones');
 
+/** Hora en que se envía el resumen diario (solo la hora, minuto = 0). */
 const HORA = process.env.NOTIF_HORA || '9';
 const expr = `0 ${HORA} * * *`;
 
 console.log(`[scheduler] Iniciado. Notificaciones diarias: ${HORA}:00 AM | Honorarios recurrentes: 8:00 AM día 1 de cada mes.`);
 
-// Resumen diario de facturas impagás vencidas
+/** Resumen diario de facturas impagás vencidas (>DIAS_DEMORA días). */
 cron.schedule(expr, async () => {
   console.log(`[${new Date().toISOString()}] Ejecutando chequeo de notificaciones...`);
   try {
@@ -17,7 +27,7 @@ cron.schedule(expr, async () => {
   }
 }, { timezone: 'America/Argentina/Buenos_Aires' });
 
-// Avisos de honorarios recurrentes — día 1 de cada mes a las 8:00 AM
+/** Aviso de honorarios recurrentes: día 1 de cada mes a las 8:00 AM. */
 cron.schedule('0 8 1 * *', async () => {
   console.log(`[${new Date().toISOString()}] Enviando avisos de facturación recurrente...`);
   try {

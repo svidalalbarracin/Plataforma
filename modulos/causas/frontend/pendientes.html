@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pendientes — Causas</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="css/causas.css">
+</head>
+<body class="has-sidebar">
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">Causas</a>
+  <div class="navbar-links">
+    <a href="index.html">Calendario</a>
+    <a href="pendientes.html" class="active">Pendientes</a>
+    <a href="notificaciones.html">
+      Notificaciones
+      <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
+    </a>
+    <a href="causas.html">Causas</a>
+  </div>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h1 class="page-title">Pendientes y avisos</h1>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Nuevo pendiente</div>
+    <form id="form-pendiente" onsubmit="guardarPendiente(event)">
+      <div class="form-grid form-grid-causas">
+        <div class="form-group">
+          <label for="inp-expediente">Número de expediente</label>
+          <input type="text" id="inp-expediente" placeholder="Ej: EX-2026-12345">
+        </div>
+        <div class="form-group">
+          <label for="inp-caratula">Carátula</label>
+          <input type="text" id="inp-caratula" placeholder="Carátula de la causa">
+        </div>
+        <div class="form-group">
+          <label for="inp-origen">Origen</label>
+          <select id="inp-origen">
+            <option value="">— Sin especificar —</option>
+            <option value="PJN">PJN</option>
+            <option value="SICNEA">SICNEA</option>
+            <option value="TAD">TAD</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label for="inp-desc">Descripción de la acción <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="inp-desc" placeholder="Ej: Presentar escrito de apelación" required>
+        </div>
+        <div class="form-group">
+          <label for="inp-fecha">
+            Fecha de vencimiento <span style="color:var(--danger)">*</span>
+            <a href="https://servicios.infoleg.gob.ar/infolegInternet/verNorma.do?id=239340"
+               target="_blank" rel="noopener"
+               style="font-weight:400;font-size:.75rem;color:var(--primary);margin-left:.5rem">Ver plazos</a>
+          </label>
+          <input type="date" id="inp-fecha" required>
+        </div>
+        <div class="form-group">
+          <label for="inp-aviso">Avisar con</label>
+          <div class="aviso-input-wrap">
+            <input type="number" id="inp-aviso" min="0" max="90" value="3" style="width:80px">
+            <span class="aviso-label">días hábiles antes</span>
+          </div>
+          <div class="aviso-fecha-calc" id="aviso-calc"></div>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label for="inp-nota">Nota adicional <span class="label-opt">(opcional)</span></label>
+          <textarea id="inp-nota" placeholder="Información extra, referencias, etc." rows="2" style="min-height:60px"></textarea>
+        </div>
+      </div>
+      <input type="hidden" id="inp-notif-id">
+      <input type="hidden" id="inp-notif-tipo">
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Guardar pendiente</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="flex justify-between items-center" style="margin-bottom:1.25rem">
+      <div class="card-title" style="margin-bottom:0">Pendientes guardados</div>
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filtro="todos">Todos</button>
+        <button class="filter-tab" data-filtro="pendiente">Pendientes</button>
+        <button class="filter-tab" data-filtro="completado">Completados</button>
+      </div>
+    </div>
+    <div id="lista-pendientes"></div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="js/causas.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+  let PENDIENTES   = [];
+  let filtroActivo = 'todos';
+  let FERIADOS_SET = new Set();
+
+  // ── Pre-fill desde URL ───────────────────────────
+  (function prefillDesdeURL() {
+    const p = new URLSearchParams(location.search);
+    if (p.get('numero_expediente')) document.getElementById('inp-expediente').value = p.get('numero_expediente');
+    if (p.get('caratula'))          document.getElementById('inp-caratula').value   = p.get('caratula');
+    if (p.get('origen'))            document.getElementById('inp-origen').value     = p.get('origen');
+    if (p.get('notificacion_id'))   document.getElementById('inp-notif-id').value   = p.get('notificacion_id');
+    if (p.get('notificacion_tipo')) document.getElementById('inp-notif-tipo').value  = p.get('notificacion_tipo') || p.get('origen');
+  })();
+
+  // ── Feriados y días hábiles ──────────────────────
+  async function cargarFeriados() {
+    try {
+      const year = new Date().getFullYear();
+      const r = await fetch(`https://nolaborables.com.ar/api/v2/feriados/${year}`);
+      if (!r.ok) throw new Error();
+      const data = await r.json();
+      data.forEach(f => {
+        FERIADOS_SET.add(`${year}-${String(f.mes).padStart(2,'0')}-${String(f.dia).padStart(2,'0')}`);
+      });
+    } catch {}
+    actualizarCalcAviso();
+  }
+
+  function restarDiasHabiles(fechaIso, cantDias) {
+    if (!cantDias || cantDias <= 0) return fechaIso;
+    let d = new Date(fechaIso + 'T00:00:00');
+    let restantes = cantDias;
+    while (restantes > 0) {
+      d = new Date(d.getTime() - 86400000);
+      const dow = d.getDay();
+      const iso = d.toISOString().slice(0, 10);
+      if (dow !== 0 && dow !== 6 && !FERIADOS_SET.has(iso)) restantes--;
+    }
+    return d.toISOString().slice(0, 10);
+  }
+
+  function diasHabilesHasta(fechaIso) {
+    const hoy  = new Date(); hoy.setHours(0,0,0,0);
+    const hasta = new Date(fechaIso + 'T00:00:00');
+    if (hasta <= hoy) return 0;
+    let count = 0;
+    let d = new Date(hoy.getTime() + 86400000);
+    while (d <= hasta) {
+      const dow = d.getDay();
+      const iso = d.toISOString().slice(0, 10);
+      if (dow !== 0 && dow !== 6 && !FERIADOS_SET.has(iso)) count++;
+      d = new Date(d.getTime() + 86400000);
+    }
+    return count;
+  }
+
+  function formatFechaLarga(iso) {
+    if (!iso) return '';
+    const [y, m, dia] = iso.split('-');
+    const meses = ['enero','febrero','marzo','abril','mayo','junio',
+                   'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    return `${parseInt(dia)} de ${meses[parseInt(m)-1]} de ${y}`;
+  }
+
+  function actualizarCalcAviso() {
+    const fecha = document.getElementById('inp-fecha').value;
+    const dias  = parseInt(document.getElementById('inp-aviso').value) || 0;
+    const el    = document.getElementById('aviso-calc');
+    if (!fecha) { el.textContent = ''; return; }
+    if (dias === 0) { el.textContent = 'Aviso el mismo día del vencimiento'; return; }
+    el.textContent = `El aviso se programará para el ${formatFechaLarga(restarDiasHabiles(fecha, dias))}`;
+  }
+
+  document.getElementById('inp-fecha').addEventListener('change', actualizarCalcAviso);
+  document.getElementById('inp-aviso').addEventListener('input',  actualizarCalcAviso);
+
+  // ── API helpers ──────────────────────────────────
+  async function cargarPendientes() {
+    try {
+      PENDIENTES = await fetch('/api/causas/pendientes').then(r => r.json());
+      renderLista(filtroActivo);
+    } catch {
+      document.getElementById('lista-pendientes').innerHTML =
+        '<div class="empty">Error al cargar. Verificá que el servidor esté corriendo.</div>';
+    }
+  }
+
+  // ── Guardar pendiente ────────────────────────────
+  async function guardarPendiente(e) {
+    e.preventDefault();
+    const btn = e.target.querySelector('[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+
+    const fecha  = document.getElementById('inp-fecha').value;
+    const diasAv = parseInt(document.getElementById('inp-aviso').value) || 0;
+    const notifId   = document.getElementById('inp-notif-id').value;
+    const notifTipo = document.getElementById('inp-notif-tipo').value;
+
+    try {
+      const res = await fetch('/api/causas/pendientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          descripcion:       document.getElementById('inp-desc').value.trim(),
+          numero_expediente: document.getElementById('inp-expediente').value.trim() || null,
+          caratula:          document.getElementById('inp-caratula').value.trim()   || null,
+          origen:            document.getElementById('inp-origen').value             || null,
+          notificacion_id:   notifId   ? parseInt(notifId)  : null,
+          notificacion_tipo: notifTipo || null,
+          fecha_limite: fecha,
+          dias_aviso:   diasAv,
+          fecha_aviso:  restarDiasHabiles(fecha, diasAv),
+          nota:         document.getElementById('inp-nota').value.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      e.target.reset();
+      document.getElementById('aviso-calc').textContent = '';
+      // Limpiar hidden fields y URL
+      document.getElementById('inp-notif-id').value   = '';
+      document.getElementById('inp-notif-tipo').value = '';
+      history.replaceState(null, '', location.pathname);
+      toast('Pendiente guardado');
+      await cargarPendientes();
+    } catch (err) {
+      toast('Error al guardar: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Guardar pendiente';
+    }
+  }
+
+  // ── Origen badge ─────────────────────────────────
+  function origenBadge(origen) {
+    if (!origen) return '';
+    const cls = origen === 'PJN' ? 'badge-tipo-pjn' : origen === 'TAD' ? 'badge-tipo-tad' : origen === 'SICNEA' ? 'badge-tipo-sicnea' : '';
+    return `<span class="badge badge-tipo ${cls}">${origen}</span>`;
+  }
+
+  // ── Render lista ─────────────────────────────────
+  function renderLista(filtro) {
+    const el  = document.getElementById('lista-pendientes');
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    let lista = [...PENDIENTES];
+    if (filtro === 'pendiente')  lista = lista.filter(p => !p.completado);
+    if (filtro === 'completado') lista = lista.filter(p =>  p.completado);
+
+    if (!lista.length) {
+      el.innerHTML = '<div class="empty">No hay pendientes en esta categoría</div>';
+      return;
+    }
+
+    el.innerHTML = lista.map(p => {
+      const diasRestantes = diasHabilesHasta(p.fecha_limite);
+      const vencido       = p.fecha_limite < hoy && !p.completado;
+
+      let estadoHtml;
+      if (p.completado)            estadoHtml = '<span class="badge badge-success">Completado</span>';
+      else if (vencido)            estadoHtml = '<span class="badge badge-danger">Vencido</span>';
+      else if (diasRestantes <= 3) estadoHtml = `<span class="badge badge-danger">${diasRestantes} día${diasRestantes !== 1 ? 's' : ''} hábil${diasRestantes !== 1 ? 'es' : ''}</span>`;
+      else if (diasRestantes <= 7) estadoHtml = `<span class="badge badge-warning">${diasRestantes} días hábiles</span>`;
+      else                         estadoHtml = `<span class="badge badge-info">${diasRestantes} días hábiles</span>`;
+
+      return `
+        <div class="pendiente-card ${p.completado ? 'completado' : ''} ${vencido ? 'vencido' : ''}">
+          <div class="pendiente-card-left">
+            <button class="pendiente-check ${p.completado ? 'completada' : ''}"
+                    onclick="toggleCompletado(${p.id})"
+                    title="${p.completado ? 'Marcar como pendiente' : 'Marcar como completado'}">
+              ${p.completado ? '✓' : ''}
+            </button>
+          </div>
+          <div class="pendiente-card-body">
+            <div class="pendiente-card-top">
+              <span class="pend-desc ${p.completado ? 'tachado' : ''}">${p.descripcion}</span>
+              ${p.numero_expediente ? `<span class="pend-causa">${p.numero_expediente}</span>` : ''}
+              ${origenBadge(p.origen)}
+            </div>
+            ${p.caratula ? `<div class="pend-nota" style="font-style:normal;color:var(--text-muted)">${p.caratula}</div>` : ''}
+            <div class="pend-meta">
+              <span class="pend-fecha">Vence ${formatFechaLarga(p.fecha_limite)}</span>
+              ${p.dias_aviso > 0 ? `<span class="pend-aviso-fecha">· Aviso: ${formatFechaLarga(p.fecha_aviso)}</span>` : ''}
+            </div>
+            ${p.nota ? `<div class="pend-nota">${p.nota}</div>` : ''}
+          </div>
+          <div class="pendiente-card-right">
+            ${estadoHtml}
+            ${!p.completado
+              ? `<button class="btn btn-success btn-sm" onclick="toggleCompletado(${p.id})">Completar</button>`
+              : `<button class="btn btn-ghost btn-sm" onclick="toggleCompletado(${p.id})">Desmarcar</button>`
+            }
+            <button class="btn btn-ghost btn-sm btn-icon" onclick="eliminarPendiente(${p.id})" title="Eliminar">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Acciones ─────────────────────────────────────
+  async function toggleCompletado(id) {
+    const p = PENDIENTES.find(x => x.id === id);
+    if (!p) return;
+    try {
+      if (!p.completado) {
+        await fetch(`/api/causas/pendientes/${id}/completar`, { method: 'PUT' });
+      } else {
+        await fetch(`/api/causas/pendientes/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ completado: 0 }),
+        });
+      }
+      toast(p.completado ? 'Marcado como pendiente' : 'Marcado como completado');
+      await cargarPendientes();
+    } catch {
+      toast('Error al actualizar', 'error');
+    }
+  }
+
+  async function eliminarPendiente(id) {
+    if (!confirm('¿Eliminar este pendiente?')) return;
+    try {
+      await fetch(`/api/causas/pendientes/${id}`, { method: 'DELETE' });
+      toast('Pendiente eliminado');
+      await cargarPendientes();
+    } catch {
+      toast('Error al eliminar', 'error');
+    }
+  }
+
+  // ── Filter tabs ──────────────────────────────────
+  document.querySelectorAll('.filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filtroActivo = btn.dataset.filtro;
+      renderLista(filtroActivo);
+    });
+  });
+
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  // ── Init ─────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', async () => {
+    await cargarFeriados();
+    await cargarPendientes();
+    actualizarCalcAviso();
+  });
+</script>
+</body>
+</html>

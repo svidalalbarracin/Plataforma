@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notificaciones — Causas</title>
+  <script>if(localStorage.theme==='dark'||(!localStorage.theme&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')</script>
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="css/causas.css">
+</head>
+<body class="has-sidebar">
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">Causas</a>
+  <div class="navbar-links">
+    <a href="index.html">Calendario</a>
+    <a href="pendientes.html">Pendientes</a>
+    <a href="notificaciones.html" class="active">
+      Notificaciones
+      <span class="navbar-badge navbar-badge-danger" id="badge-notif"></span>
+    </a>
+    <a href="causas.html">Causas</a>
+  </div>
+  <a href="/configuracion" class="btn-config" title="Configuración">⚙</a>
+  <button class="btn-theme" id="btn-theme">☾</button>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h1 class="page-title">Notificaciones</h1>
+    <div class="flex gap-2 items-center flex-wrap">
+      <input type="number" id="inp-limite" min="1" placeholder="Límite (opcional)"
+             style="width:9rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:.875rem">
+      <button class="btn btn-ghost btn-sm" id="btn-ejecutar" onclick="ejecutarScraper()">↻ PJN + TAD</button>
+      <span id="scraper-estado" class="text-muted" style="font-size:.8125rem"></span>
+      <button class="btn btn-ghost btn-sm" id="btn-ejecutar-sicnea" onclick="ejecutarSICNEA()">↻ SICNEA</button>
+      <span id="scraper-estado-sicnea" class="text-muted" style="font-size:.8125rem"></span>
+      <span class="text-muted" style="font-size:.8125rem">Próxima auto: <span id="ultima-auto">—</span></span>
+      <button class="btn btn-ghost btn-sm" onclick="marcarTodasLeidas()">Marcar todas como leídas</button>
+    </div>
+  </div>
+
+  <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px,1fr))">
+    <div class="stat-card">
+      <div class="stat-label">Sin leer</div>
+      <div class="stat-value is-danger" id="stat-sin-leer">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">PJN</div>
+      <div class="stat-value is-primary" id="stat-pjn">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">TAD</div>
+      <div class="stat-value is-success" id="stat-tad">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">SICNEA</div>
+      <div class="stat-value is-warning" id="stat-sicnea">—</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="flex justify-between items-center" style="margin-bottom:1.25rem">
+      <div class="card-title" style="margin-bottom:0">Movimientos de causas</div>
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filtro="todas">Todas</button>
+        <button class="filter-tab" data-filtro="sin-leer">Sin leer</button>
+        <button class="filter-tab" data-filtro="PJN">PJN</button>
+        <button class="filter-tab" data-filtro="TAD">TAD</button>
+        <button class="filter-tab" data-filtro="SICNEA">SICNEA</button>
+      </div>
+    </div>
+    <div id="lista-notificaciones"></div>
+  </div>
+</div>
+
+<!-- Modal documentos -->
+<div id="modal-docs" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-box-header">
+      <span class="modal-box-titulo" id="modal-docs-titulo"></span>
+      <button class="modal-box-cerrar" id="modal-docs-cerrar">✕</button>
+    </div>
+    <div id="modal-docs-lista" class="doc-lista"></div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="js/causas.js"></script>
+<script src="/js/layout.js"></script>
+<script>
+  let notificaciones  = [];
+  let filtroActivo    = 'todas';
+  let ultimaAuto      = null;
+  let intervaloMin    = 30;
+  let countdownTimer  = null;
+
+  function toast(msg, tipo = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${tipo}`;
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  function formatFechaNotif(iso) {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  function iniciarCountdown() {
+    if (countdownTimer) clearInterval(countdownTimer);
+    const el = document.getElementById('ultima-auto');
+    if (!el) return;
+
+    function tick() {
+      if (!ultimaAuto) { el.textContent = '—'; return; }
+      const proxima = new Date(ultimaAuto).getTime() + intervaloMin * 60 * 1000;
+      const restMs  = proxima - Date.now();
+      if (restMs <= 0) {
+        el.textContent = 'ahora';
+        return;
+      }
+      const m = Math.floor(restMs / 60000);
+      const s = Math.floor((restMs % 60000) / 1000);
+      el.textContent = `en ${m}m ${String(s).padStart(2, '0')}s`;
+    }
+
+    tick();
+    countdownTimer = setInterval(tick, 1000);
+  }
+
+  function origenBadge(origen) {
+    if (origen === 'PJN')    return '<span class="badge badge-tipo badge-tipo-pjn">PJN</span>';
+    if (origen === 'TAD')    return '<span class="badge badge-tipo badge-tipo-tad">TAD</span>';
+    if (origen === 'SICNEA') return '<span class="badge badge-tipo badge-tipo-sicnea">SICNEA</span>';
+    return `<span class="badge badge-tipo">${origen}</span>`;
+  }
+
+  function actualizarContadores() {
+    const sinLeer = notificaciones.filter(n => !n.leida).length;
+    const pjn     = notificaciones.filter(n => n.origen === 'PJN').length;
+    const tad     = notificaciones.filter(n => n.origen === 'TAD').length;
+    const sicnea  = notificaciones.filter(n => n.origen === 'SICNEA').length;
+
+    document.getElementById('stat-sin-leer').textContent  = sinLeer;
+    document.getElementById('stat-pjn').textContent       = pjn;
+    document.getElementById('stat-tad').textContent       = tad;
+    document.getElementById('stat-sicnea').textContent    = sicnea;
+    document.getElementById('badge-notif').textContent    = sinLeer || '';
+  }
+
+  function renderNotificaciones(filtro) {
+    let lista = [...notificaciones].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+
+    if (filtro === 'sin-leer') lista = lista.filter(n => !n.leida);
+    if (filtro === 'PJN')      lista = lista.filter(n => n.origen === 'PJN');
+    if (filtro === 'TAD')      lista = lista.filter(n => n.origen === 'TAD');
+    if (filtro === 'SICNEA')   lista = lista.filter(n => n.origen === 'SICNEA');
+
+    const el = document.getElementById('lista-notificaciones');
+
+    if (lista.length === 0) {
+      el.innerHTML = '<div class="empty">No hay notificaciones en esta categoría</div>';
+      return;
+    }
+
+    el.innerHTML = lista.map(n => `
+      <div class="notif-item ${n.leida ? 'leida' : 'no-leida'}">
+        <div class="notif-indicador ${n.leida ? '' : 'activo'}"></div>
+        <div class="notif-body">
+          <div class="notif-top">
+            <span class="notif-causa">${n.expediente || n.numero || '—'}</span>
+            ${origenBadge(n.origen)}
+            <span class="notif-fecha">${formatFechaNotif(n.fecha)}</span>
+          </div>
+          ${n.caratula ? `<div class="notif-desc">${n.caratula}</div>` : ''}
+          ${n.autor    ? `<div class="notif-autor">${n.autor}</div>`   : ''}
+          ${n.origen === 'SICNEA' && (n.dependencia || n.aduana || n.estado) ? `
+            <div class="notif-autor">${[n.dependencia, n.aduana, n.estado].filter(Boolean).join(' · ')}</div>` : ''}
+        </div>
+        <div class="notif-acciones">
+          ${n.archivos?.length
+            ? `<button class="btn-adjunto" onclick="verDocumentos(${n.id},'${n.origen}')" title="Ver adjuntos">${n.archivos.length} adj.</button>`
+            : ''}
+          <button class="btn-toggle-leida ${n.leida ? 'es-leida' : ''}"
+                  onclick="marcarLeida(${n.id}, '${n.origen}')">
+            ${n.leida ? 'Desmarcar' : 'Marcar leída'}
+          </button>
+          <button class="btn-toggle-leida" onclick="agregarPendiente(${n.id},'${n.origen}')" title="Crear pendiente desde esta notificación">
+            + Pendiente
+          </button>
+        </div>
+      </div>`
+    ).join('');
+  }
+
+  async function marcarLeida(id, origen = 'PJN') {
+    try {
+      const res  = await fetch(`/api/causas/notificaciones/${id}/leida?origen=${origen}`, { method: 'PATCH' });
+      const data = await res.json();
+      const n = notificaciones.find(x => x.id === id && x.origen === origen);
+      if (n) n.leida = data.leida;
+      actualizarContadores();
+      renderNotificaciones(filtroActivo);
+      toast(data.leida ? 'Marcada como leída' : 'Desmarcada', 'success');
+    } catch (e) {
+      toast('Error al actualizar', 'error');
+    }
+  }
+
+  async function marcarTodasLeidas() {
+    try {
+      await fetch('/api/causas/notificaciones/marcar-todas', { method: 'PATCH' });
+      notificaciones.forEach(n => n.leida = true);
+      actualizarContadores();
+      renderNotificaciones(filtroActivo);
+      toast('Todas marcadas como leídas', 'success');
+    } catch (e) {
+      toast('Error al marcar como leídas', 'error');
+    }
+  }
+
+  document.querySelectorAll('.filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filtroActivo = btn.dataset.filtro;
+      renderNotificaciones(filtroActivo);
+    });
+  });
+
+  async function recargarNotificaciones() {
+    const resp = await fetch('/api/causas/notificaciones').then(r => r.json());
+    notificaciones = resp.notificaciones;
+    ultimaAuto     = resp.ultima_auto;
+    intervaloMin   = resp.intervalo_min ?? 30;
+    iniciarCountdown();
+    actualizarContadores();
+    renderNotificaciones(filtroActivo);
+  }
+
+  async function ejecutarScraper() {
+    const limite = parseInt(document.getElementById('inp-limite').value) || null;
+    const btn    = document.getElementById('btn-ejecutar');
+    const estado = document.getElementById('scraper-estado');
+
+    btn.disabled       = true;
+    btn.textContent    = '↻ Ejecutando…';
+    estado.textContent = '';
+
+    try {
+      const res  = await fetch('/api/causas/notificaciones/ejecutar', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(limite ? { limite } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+
+      const total = (data.nuevas_pjn || 0) + (data.nuevas_tad || 0);
+      estado.textContent = `${data.nuevas_pjn} PJN · ${data.nuevas_tad} TAD`;
+      await recargarNotificaciones();
+      toast(`${total} notificación(es) nueva(s)`, 'success');
+    } catch (e) {
+      estado.textContent = 'Error';
+      toast('Error al ejecutar el scraper', 'error');
+      console.error(e);
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = '↻ PJN + TAD';
+    }
+  }
+
+  async function ejecutarSICNEA() {
+    const limite = parseInt(document.getElementById('inp-limite').value) || null;
+    const btn    = document.getElementById('btn-ejecutar-sicnea');
+    const estado = document.getElementById('scraper-estado-sicnea');
+
+    btn.disabled       = true;
+    btn.textContent    = '↻ Ejecutando…';
+    estado.textContent = '(tarda varios minutos)';
+
+    try {
+      const res  = await fetch('/api/causas/notificaciones/ejecutar-sicnea', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(limite ? { limite } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+
+      estado.textContent = `${data.nuevas} nueva(s)`;
+      await recargarNotificaciones();
+      toast(`SICNEA: ${data.nuevas} notificación(es) nueva(s)`, 'success');
+    } catch (e) {
+      estado.textContent = 'Error';
+      toast('Error al ejecutar SICNEA', 'error');
+      console.error(e);
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = '↻ SICNEA';
+    }
+  }
+
+  async function init() {
+    // Bloquear botón SICNEA si hoy no es sábado (6) ni domingo (0)
+    const dia = new Date().getDay();
+    const btnSicnea = document.getElementById('btn-ejecutar-sicnea');
+    if (dia !== 6 && dia !== 0) {
+      btnSicnea.disabled = true;
+      btnSicnea.title    = 'Solo disponible sábado y domingo';
+      btnSicnea.style.opacity = '0.45';
+    }
+
+    document.getElementById('lista-notificaciones').innerHTML =
+      '<div class="empty">Cargando…</div>';
+    try {
+      await recargarNotificaciones();
+    } catch (e) {
+      document.getElementById('lista-notificaciones').innerHTML =
+        '<div class="empty">Error al cargar notificaciones</div>';
+      console.error(e);
+    }
+  }
+
+  function verDocumentos(id, origen) {
+    const n = origen
+      ? notificaciones.find(x => x.id === id && x.origen === origen)
+      : notificaciones.find(x => x.id === id);
+    if (!n?.archivos?.length) return;
+
+    document.getElementById('modal-docs-titulo').textContent = n.expediente || n.numero || '—';
+    document.getElementById('modal-docs-lista').innerHTML = n.archivos.map(a => `
+      <a href="${a.url}" target="_blank" rel="noopener" class="doc-link">
+        <span class="doc-link-icono">📄</span>
+        <span>${a.nombre}</span>
+      </a>
+    `).join('');
+
+    document.getElementById('modal-docs').classList.add('open');
+  }
+
+  document.getElementById('modal-docs-cerrar').addEventListener('click', () => {
+    document.getElementById('modal-docs').classList.remove('open');
+  });
+
+  document.getElementById('modal-docs').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+  });
+
+  function agregarPendiente(id, origen) {
+    const n = notificaciones.find(x => x.id === id && x.origen === origen);
+    if (!n) return;
+    const p = new URLSearchParams();
+    if (n.expediente) p.set('numero_expediente', n.expediente);
+    if (n.caratula)   p.set('caratula', n.caratula);
+    if (n.origen)     p.set('origen', n.origen);
+    p.set('notificacion_id', n.id);
+    location.href = `pendientes.html?${p.toString()}`;
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>

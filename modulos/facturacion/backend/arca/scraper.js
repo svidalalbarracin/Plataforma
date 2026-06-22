@@ -1,3 +1,17 @@
+/**
+ * Scraper de ARCA (ex-AFIP) — Importación de comprobantes desde RCEL.
+ *
+ * Flujo de navegación:
+ * 1. Login en afip.gob.ar con CUIT + clave fiscal (abre nueva pestaña).
+ * 2. Desde el portal, hace clic en "Comprobantes en línea" (abre RCEL en otra pestaña).
+ * 3. Selecciona el representado (el primer btn_empresa, que es el estudio).
+ * 4. Navega a la sección "Consultas" y completa el formulario de fechas/tipo.
+ * 5. Extrae las filas de resultados, descarga el PDF de cada una y guarda en DB.
+ *
+ * Variables de entorno requeridas: CUIT, CLAVE_FISCAL.
+ *
+ * @module facturacion/arca/scraper
+ */
 require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env') });
 const { chromium } = require('playwright');
 const path = require('path');
@@ -8,36 +22,58 @@ const db   = require('../../../../core/database');
 const PDF_DIR = path.join(__dirname, '../../storage/facturas');
 if (!fs.existsSync(PDF_DIR)) fs.mkdirSync(PDF_DIR, { recursive: true });
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers de formato ────────────────────────────────────────────────────────
 
+/**
+ * Formatea una fecha JS como DD/MM/AAAA (formato que espera el formulario de ARCA).
+ * @param {Date} d
+ * @returns {string}
+ */
 function fmtDDMMAAAA(d) {
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 }
 
+/**
+ * Mapea la descripción textual del tipo de comprobante que devuelve ARCA a un código corto.
+ * Ej: "Factura A" → "A", "Nota de Crédito B" → "NC B".
+ * @param {string|null} tipoComp - Texto tal como aparece en la tabla de resultados.
+ * @returns {string|null} Código corto o null si no se reconoce.
+ */
 function mapearTipo(tipoComp) {
   if (!tipoComp) return null;
   const t = tipoComp.trim();
-  if (/Factura\s+A\b/i.test(t))                  return 'A';
-  if (/Factura\s+B\b/i.test(t))                  return 'B';
-  if (/Factura\s+C\b/i.test(t))                  return 'C';
-  if (/Nota\s+de\s+Cr[eé]dito\s+A\b/i.test(t))          return 'NC A';
-  if (/Nota\s+de\s+Cr[eé]dito\s+B\b/i.test(t))          return 'NC B';
-  if (/Nota\s+de\s+Cr[eé]dito\s+C\b/i.test(t))          return 'NC C';
-  if (/Nota\s+de\s+Cr[eé]dito/i.test(t))                return 'NC';
-  if (/FCE|Factura\s+de\s+Cr[eé]dito/i.test(t))         return 'FCE';
+  if (/Factura\s+A\b/i.test(t))                              return 'A';
+  if (/Factura\s+B\b/i.test(t))                              return 'B';
+  if (/Factura\s+C\b/i.test(t))                              return 'C';
+  if (/Nota\s+de\s+Cr[eé]dito\s+A\b/i.test(t))              return 'NC A';
+  if (/Nota\s+de\s+Cr[eé]dito\s+B\b/i.test(t))              return 'NC B';
+  if (/Nota\s+de\s+Cr[eé]dito\s+C\b/i.test(t))              return 'NC C';
+  if (/Nota\s+de\s+Cr[eé]dito/i.test(t))                    return 'NC';
+  if (/FCE|Factura\s+de\s+Cr[eé]dito/i.test(t))             return 'FCE';
   if (/Factura\s+de\s+Exportaci[oó]n|Exportaci[oó]n/i.test(t)) return 'E';
   return t || null;
 }
 
-// ── Helpers de tipo ───────────────────────────────────────────────────────────
-
+/**
+ * Indica si el tipo de comprobante corresponde a una Nota de Crédito.
+ * @param {string|null} tipo
+ * @returns {boolean}
+ */
 function esNotaCredito(tipo) {
   return tipo != null && tipo.startsWith('NC');
 }
 
-// ── Extracción de nombre desde PDF ───────────────────────────────────────────
+// ── Extracción de datos desde el PDF ─────────────────────────────────────────
 
-async function extraerNombreDesedePDF(pdfPath) {
+/**
+ * Extrae el nombre del receptor desde el PDF del comprobante.
+ * Soporta dos patrones:
+ * - Entidad argentina: CUIT de 11 dígitos seguido del nombre en mayúsculas.
+ * - Entidad extranjera: primera línea de contenido real bajo "Apellido y Nombre".
+ * @param {string} pdfPath - Ruta absoluta al PDF.
+ * @returns {Promise<string|null>} Nombre o null si no se puede extraer.
+ */
+async function extraerNombreDesdePDF(pdfPath) {
   try {
     const buf = fs.readFileSync(pdfPath);
     const { text } = await pdfParse(buf);
@@ -60,13 +96,15 @@ async function extraerNombreDesedePDF(pdfPath) {
   return null;
 }
 
-// ── Detección de moneda desde PDF ────────────────────────────────────────────
-
+/**
+ * Detecta si el comprobante está emitido en USD leyendo la línea "Moneda:" del PDF.
+ * @param {string} pdfPath
+ * @returns {Promise<'USD'|'ARS'>}
+ */
 async function extraerMoneda(pdfPath) {
   try {
     const buf = fs.readFileSync(pdfPath);
     const { text } = await pdfParse(buf);
-    // ARCA indica "Moneda: USD - Dólar Estadounidense" o "Moneda: Pesos Argentinos"
     const m = text.match(/Moneda:\s*([^\n]{3,60})/i);
     if (m && /d[oó]lar|USD/i.test(m[1])) return 'USD';
   } catch (e) {
@@ -75,11 +113,16 @@ async function extraerMoneda(pdfPath) {
   return 'ARS';
 }
 
+/**
+ * Extrae el tipo de cambio consignado en el PDF (solo para facturas USD).
+ * ARCA imprime: "tipo de cambio consignado de 1349.000000".
+ * @param {string} pdfPath
+ * @returns {Promise<number|null>}
+ */
 async function extraerTipoCambio(pdfPath) {
   try {
     const buf = fs.readFileSync(pdfPath);
     const { text } = await pdfParse(buf);
-    // ARCA: "tipo de cambio consignado de 1349.000000"
     const m = text.match(/tipo de cambio\D{0,30}?([\d]+(?:[.,]\d+)?)/i);
     if (m) return parseFloat(m[1].replace(',', '.'));
   } catch (e) {
@@ -88,18 +131,20 @@ async function extraerTipoCambio(pdfPath) {
   return null;
 }
 
-// ── Extracción de comprobante asociado desde PDF (para notas de crédito) ─────
-
+/**
+ * Extrae el número de la factura original asociada a una nota de crédito.
+ * Intenta dos patrones: "Fac. A: 00002-00000669" y la sección "Comprobante Asociado".
+ * @param {string} pdfPath
+ * @returns {Promise<string|null>} Número normalizado (PPPP-NNNNNNN) o null.
+ */
 async function extraerComprobanteAsociado(pdfPath) {
   try {
     const buf = fs.readFileSync(pdfPath);
     const { text } = await pdfParse(buf);
 
-    // Patrón ARCA más común: "Fac. A: 00002-00000669" en descripción del ítem
     const m0 = text.match(/Fac\.\s+[A-Z]:\s*(\d{1,5}-\d{6,8})/i);
     if (m0) return normalizarNumero(m0[1]);
 
-    // Patrón alternativo: sección "Comprobante Asociado" con PV-NRO
     const idx = text.search(/Comprobantes?\s+Asoc/i);
     if (idx !== -1) {
       const sector = text.slice(idx, idx + 500);
@@ -116,12 +161,18 @@ async function extraerComprobanteAsociado(pdfPath) {
 
 // ── Persistencia ──────────────────────────────────────────────────────────────
 
+/**
+ * Busca un cliente por CUIT y lo crea si no existe.
+ * Si existe pero su nombre es el CUIT (placeholder) y ahora tenemos el nombre real, lo actualiza.
+ * @param {string|number} nroDoc - CUIT del receptor.
+ * @param {string|null} nombre   - Nombre extraído del PDF.
+ * @returns {number} ID del cliente.
+ */
 function obtenerOCrearCliente(nroDoc, nombre = null) {
   const cuit = String(nroDoc);
   let cliente = db.prepare('SELECT id, nombre FROM clientes WHERE cuit = ?').get(cuit);
 
   if (cliente) {
-    // Actualizar nombre si el actual es solo el CUIT y ahora tenemos el nombre real
     if (nombre && cliente.nombre === cuit) {
       db.prepare('UPDATE clientes SET nombre = ? WHERE cuit = ?').run(nombre, cuit);
     }
@@ -133,10 +184,21 @@ function obtenerOCrearCliente(nroDoc, nombre = null) {
   return res.lastInsertRowid;
 }
 
+/**
+ * Indica si una factura con ese número ya está importada en la DB.
+ * @param {string} numero
+ * @returns {boolean}
+ */
 function yaImportada(numero) {
   return !!db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero);
 }
 
+/**
+ * Inserta o actualiza una factura en la DB.
+ * Si `forzar` es true y la factura ya existe, la actualiza (útil para reimportar).
+ * El monto_neto se calcula asumiendo IVA 21% sobre el monto_total.
+ * @param {{ clienteId, numero, fecha, montoTotal, pdfPath, tipo?, facturaAsociadaNumero?, moneda?, tipoCambio?, forzar? }} opts
+ */
 function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, facturaAsociadaNumero = null, moneda = 'ARS', tipoCambio = null, forzar = false }) {
   const montoNeto = Math.round((montoTotal / 1.21) * 100) / 100;
   const iva       = Math.round((montoTotal - montoNeto) * 100) / 100;
@@ -153,22 +215,27 @@ function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = 
   }
 }
 
-// ── Parseo de tabla ───────────────────────────────────────────────────────────
+// ── Parseo de tabla de resultados ─────────────────────────────────────────────
 
+/**
+ * Extrae todas las filas de resultados de la tabla de RCEL mediante `page.evaluate`.
+ * Solo considera filas con ≥7 columnas y fecha en columna 0 (dd/mm/aaaa).
+ * @param {import('playwright').Page} page
+ * @returns {Promise<Array<{fecha, tipoComp, nroComp, tipoDoc, nroDoc, cae, importeTotal}>>}
+ */
 async function extraerFilas(page) {
   return page.evaluate(() => {
     const filas = [];
     document.querySelectorAll('table tbody tr').forEach(tr => {
       const celdas = [...tr.querySelectorAll('td')].map(td => td.innerText.trim());
-      // Espera al menos 7 columnas y que la primera sea una fecha (dd/mm/aaaa)
       if (celdas.length >= 7 && /^\d{2}\/\d{2}\/\d{4}$/.test(celdas[0])) {
         filas.push({
-          fecha:       celdas[0],   // dd/mm/aaaa
-          tipoComp:    celdas[1],
-          nroComp:     celdas[2],   // puede ser "PPPP-NNNNNNN" o similar
-          tipoDoc:     celdas[3],
-          nroDoc:      celdas[4],
-          cae:         celdas[5],
+          fecha:        celdas[0],   // dd/mm/aaaa
+          tipoComp:     celdas[1],
+          nroComp:      celdas[2],   // "PPPP-NNNNNNN"
+          tipoDoc:      celdas[3],
+          nroDoc:       celdas[4],
+          cae:          celdas[5],
           importeTotal: celdas[6],
         });
       }
@@ -177,8 +244,15 @@ async function extraerFilas(page) {
   });
 }
 
-// ── Login ─────────────────────────────────────────────────────────────────────
+// ── Navegación ────────────────────────────────────────────────────────────────
 
+/**
+ * Hace login en ARCA con las credenciales del .env (CUIT + CLAVE_FISCAL).
+ * El botón "Ingresar con Clave Fiscal" abre una nueva pestaña; si falla, navega directo.
+ * @param {import('playwright').BrowserContext} context
+ * @returns {Promise<import('playwright').Page>} Página del portal de servicios post-login.
+ * @throws {Error} Si la URL final no contiene 'portalcf'.
+ */
 async function login(context) {
   const page = await context.newPage();
   page.setDefaultTimeout(45000);
@@ -186,12 +260,10 @@ async function login(context) {
   console.log('  Navegando a afip.gob.ar...');
   await page.goto('https://www.afip.gob.ar/', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-  // El click en "Ingresar con Clave Fiscal" abre nueva pestaña
   const [authPage] = await Promise.all([
     context.waitForEvent('page', { timeout: 15000 }),
     page.locator('a:has-text("Ingresar con Clave Fiscal"), a:has-text("ingresar")').first().click(),
   ]).catch(async () => {
-    // Fallback: navegar directo al login
     console.log('  Fallback: navegando directo al login...');
     await page.goto('https://auth.afip.gob.ar/contribuyente_/login.xhtml', { waitUntil: 'networkidle', timeout: 60000 });
     return [page];
@@ -215,15 +287,17 @@ async function login(context) {
     throw new Error(`Login fallido. URL actual: ${auth.url()}`);
   }
   console.log('  Login OK');
-  return auth; // página del portal de servicios
+  return auth;
 }
 
-// ── Navegar a RCEL ────────────────────────────────────────────────────────────
-
+/**
+ * Hace clic en "Comprobantes en línea" en el portal, lo que abre RCEL en una nueva pestaña.
+ * @param {import('playwright').BrowserContext} context
+ * @param {import('playwright').Page} portalPage
+ * @returns {Promise<import('playwright').Page>} Página de RCEL.
+ */
 async function abrirRCEL(context, portalPage) {
   console.log('  Buscando "Comprobantes en línea"...');
-
-  // El click abre nueva pestaña
   const [rcelPage] = await Promise.all([
     context.waitForEvent('page', { timeout: 20000 }),
     portalPage.locator('text=Comprobantes en línea').first().click(),
@@ -234,26 +308,25 @@ async function abrirRCEL(context, portalPage) {
   return rcelPage;
 }
 
-// ── Seleccionar representado ──────────────────────────────────────────────────
-
+/**
+ * Selecciona el representado en RCEL (el primer botón `input.btn_empresa`).
+ * @param {import('playwright').Page} rcelPage
+ * @returns {Promise<import('playwright').Page>} La misma página tras el submit.
+ */
 async function seleccionarRepresentado(rcelPage) {
   console.log('  Seleccionando representado (CUIT del abogado)...');
-
-  // Esperar a que la página cargue contenido
   await rcelPage.waitForLoadState('networkidle');
-
-  // El portal muestra un <input type="button" class="btn_empresa"> por cada empresa
-  // El onclick setea el hidden idContribuyente y hace submit del form
   await rcelPage.waitForSelector('input.btn_empresa', { timeout: 20000 });
   await rcelPage.locator('input.btn_empresa').first().click();
   await rcelPage.waitForLoadState('networkidle');
-
   console.log('  Representado seleccionado:', rcelPage.url());
   return rcelPage;
 }
 
-// ── Navegar a Consultas ───────────────────────────────────────────────────────
-
+/**
+ * Hace clic en el link "Consultas" para ir a la sección de búsqueda de comprobantes.
+ * @param {import('playwright').Page} page
+ */
 async function irAConsultas(page) {
   console.log('  Haciendo click en "Consultas"...');
   await page.locator('a:has-text("Consultas")').first().click();
@@ -261,27 +334,26 @@ async function irAConsultas(page) {
   console.log('  En Consultas:', page.url());
 }
 
-// ── Completar formulario de consulta ─────────────────────────────────────────
-
+/**
+ * Completa el formulario de búsqueda de comprobantes con el rango de fechas y filtros opcionales.
+ * @param {import('playwright').Page} page
+ * @param {{ fechaDesde: Date, fechaHasta: Date, tipoComprobante?: number|null, puntoVenta?: number|null }} opts
+ */
 async function completarFormulario(page, { fechaDesde, fechaHasta, tipoComprobante, puntoVenta }) {
   console.log('  Completando formulario de consulta...');
-
   const desde = fmtDDMMAAAA(fechaDesde);
-  const hasta = fmtDDMMAAAA(fechaHasta);
+  const hasta  = fmtDDMMAAAA(fechaHasta);
 
-  // Fechas
   const inputDesde = page.locator('input[name*="esde"], input[id*="esde"]').first();
   const inputHasta = page.locator('input[name*="asta"], input[id*="asta"]').first();
   await inputDesde.fill(desde);
   await inputHasta.fill(hasta);
 
-  // Tipo de comprobante (dropdown)
   if (tipoComprobante != null) {
     const selectTipo = page.locator('select').first();
     await selectTipo.selectOption({ value: String(tipoComprobante) }).catch(() => null);
   }
 
-  // Punto de venta (dropdown)
   if (puntoVenta != null) {
     const selectPV = page.locator('select').nth(1);
     await selectPV.selectOption({ value: String(puntoVenta) }).catch(() => null);
@@ -290,8 +362,14 @@ async function completarFormulario(page, { fechaDesde, fechaHasta, tipoComproban
   console.log(`  Formulario: ${desde} → ${hasta}  tipo=${tipoComprobante ?? 'todos'}  PV=${puntoVenta ?? 'todos'}`);
 }
 
-// ── Buscar y procesar resultados ──────────────────────────────────────────────
-
+/**
+ * Hace clic en "Buscar", parsea los resultados y para cada fila descarga el PDF,
+ * extrae los datos del receptor y guarda la factura en la DB.
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').BrowserContext} context
+ * @param {{ forzar?: boolean }} opts - Si forzar=true, actualiza facturas ya importadas.
+ * @returns {Promise<{importadas, actualizadas, omitidas, errores, numerosImportados: string[]}>}
+ */
 async function buscarYProcesar(page, context, { forzar = false } = {}) {
   console.log('  Haciendo click en "Buscar"...');
   await page.locator('input[type="submit"], button[type="submit"], input[value*="uscar"]').first().click();
@@ -313,21 +391,18 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
     const numero = normalizarNumero(fila.nroComp);
     const existe = yaImportada(numero);
 
-    if (existe && !forzar) {
-      omitidas++;
-      continue;
-    }
+    if (existe && !forzar) { omitidas++; continue; }
 
     try {
       const montoTotal = parsearMonto(fila.importeTotal);
       console.log(`  [raw] ${numero}  importe="${fila.importeTotal}" → ${montoTotal}`);
 
-      const pdfPath   = await descargarPDF(page, context, fila, numero);
-      const nombre    = await extraerNombreDesedePDF(pdfPath);
+      const pdfPath = await descargarPDF(page, context, fila, numero);
+      const nombre  = await extraerNombreDesdePDF(pdfPath);
       if (nombre) console.log(`  [nombre] ${nombre}`);
       const clienteId = obtenerOCrearCliente(fila.nroDoc, nombre);
-      const fecha     = isoFecha(fila.fecha);
-      const tipo      = mapearTipo(fila.tipoComp);
+      const fecha      = isoFecha(fila.fecha);
+      const tipo       = mapearTipo(fila.tipoComp);
 
       const moneda     = await extraerMoneda(pdfPath);
       const tipoCambio = moneda === 'USD' ? await extraerTipoCambio(pdfPath) : null;
@@ -357,42 +432,51 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
   return { importadas, actualizadas, omitidas, errores, numerosImportados };
 }
 
-// ── Descargar PDF ─────────────────────────────────────────────────────────────
-
+/**
+ * Descarga el PDF de un comprobante haciendo clic en el botón "Ver" de la fila correspondiente.
+ * Primero intenta capturar el evento `download`; si el archivo se abre en una nueva pestaña
+ * (como visor de PDF), captura esa pestaña y exporta con `page.pdf()`.
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').BrowserContext} context
+ * @param {{ nroComp: string }} fila
+ * @param {string} numero - Número normalizado, usado como nombre del archivo.
+ * @returns {Promise<string>} Ruta absoluta del PDF descargado.
+ */
 async function descargarPDF(page, context, fila, numero) {
   const pdfFile = path.join(PDF_DIR, `${numero}.pdf`);
 
-  // Buscar el botón/link "Ver" en la misma fila
   const verLink = page.locator(`tr:has-text("${fila.nroComp}") a:has-text("Ver"), tr:has-text("${fila.nroComp}") input[value="Ver"]`).first();
 
   const [download] = await Promise.all([
     context.waitForEvent('download', { timeout: 30000 }),
     verLink.click(),
   ]).catch(async () => {
-    // Si no dispara download, puede abrirse en nueva pestaña como PDF
     const [newTab] = await Promise.all([
       context.waitForEvent('page', { timeout: 10000 }),
       verLink.click(),
     ]);
     await newTab.waitForLoadState('load');
-    // Guardar el contenido de la pestaña como PDF
     await newTab.pdf({ path: pdfFile });
     await newTab.close();
     return [null];
   });
 
-  if (download) {
-    await download.saveAs(pdfFile);
-  }
+  if (download) await download.saveAs(pdfFile);
 
   return pdfFile;
 }
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Normaliza un número de comprobante al formato PPPP-NNNNNNNN (punto de venta 4 dígitos, número 8 dígitos).
+ * Ej: "2-669" → "0002-00000669".
+ * @param {string} raw
+ * @returns {string}
+ */
 function normalizarNumero(raw) {
   const limpio = raw.replace(/\s/g, '');
-  const match = limpio.match(/^(\d+)-(\d+)$/);
+  const match  = limpio.match(/^(\d+)-(\d+)$/);
   if (match) {
     const pv  = String(parseInt(match[1], 10)).padStart(4, '0');
     const nro = String(parseInt(match[2], 10)).padStart(8, '0');
@@ -401,31 +485,48 @@ function normalizarNumero(raw) {
   return limpio;
 }
 
+/**
+ * Convierte una fecha en formato dd/mm/aaaa al formato ISO YYYY-MM-DD.
+ * @param {string} ddmmaaaa
+ * @returns {string}
+ */
 function isoFecha(ddmmaaaa) {
   const [d, m, a] = ddmmaaaa.split('/');
   return `${a}-${m}-${d}`;
 }
 
+/**
+ * Parsea un string de monto argentino a un número float.
+ * Soporta tres formatos:
+ * - "1.234,56" → separador de miles punto, decimal coma.
+ * - "13451977.56" → un punto con ≤2 decimales.
+ * - "1.234.567" → múltiples puntos como separadores de miles.
+ * @param {string} str
+ * @returns {number}
+ */
 function parsearMonto(str) {
   const limpio = str.trim().replace(/[^\d.,]/g, '');
 
   if (limpio.includes(',')) {
-    // "1.234,56" → punto=miles, coma=decimal
     return parseFloat(limpio.replace(/\./g, '').replace(',', '.')) || 0;
   }
 
   const partes = limpio.split('.');
   if (partes.length === 2 && partes[1].length <= 2) {
-    // Un solo punto con ≤2 decimales → es separador decimal ("13451977.56")
     return parseFloat(limpio) || 0;
   }
 
-  // Sin coma y múltiples puntos, o punto con 3 dígitos → separadores de miles
   return parseFloat(limpio.replace(/\./g, '')) || 0;
 }
 
-// ── Función principal exportable ──────────────────────────────────────────────
+// ── Función principal ─────────────────────────────────────────────────────────
 
+/**
+ * Importa facturas desde RCEL para el período y filtros indicados.
+ * Período por defecto: últimos 30 días.
+ * @param {{ fechaDesde?: Date, fechaHasta?: Date, tipoComprobante?: number, puntoVenta?: number, forzar?: boolean }} [opts]
+ * @returns {Promise<{importadas, actualizadas, omitidas, errores, numerosImportados: string[]}>}
+ */
 async function importarFacturas({ fechaDesde, fechaHasta, tipoComprobante, puntoVenta, forzar = false } = {}) {
   const desde = fechaDesde ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const hasta  = fechaHasta ?? new Date();
@@ -435,32 +536,24 @@ async function importarFacturas({ fechaDesde, fechaHasta, tipoComprobante, punto
   console.log(`  Tipo: ${tipoComprobante ?? 'todos'}  PV: ${puntoVenta ?? 'todos'}  forzar: ${forzar}\n`);
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    acceptDownloads: true,
-  });
+  const context = await browser.newContext({ acceptDownloads: true });
 
   try {
-    // 1. Login
     console.log('1. Login en ARCA...');
     const portalPage = await login(context);
 
-    // 2. Abrir RCEL (Comprobantes en línea)
     console.log('\n2. Abriendo RCEL...');
     const rcelPage = await abrirRCEL(context, portalPage);
 
-    // 3. Seleccionar representado
     console.log('\n3. Seleccionando representado...');
     const repPage = await seleccionarRepresentado(rcelPage);
 
-    // 4. Ir a Consultas
     console.log('\n4. Navegando a Consultas...');
     await irAConsultas(repPage);
 
-    // 5. Completar formulario
     console.log('\n5. Completando formulario...');
     await completarFormulario(repPage, { fechaDesde: desde, fechaHasta: hasta, tipoComprobante, puntoVenta });
 
-    // 6. Buscar y procesar
     console.log('\n6. Buscando y procesando...');
     const totales = await buscarYProcesar(repPage, context, { forzar });
 

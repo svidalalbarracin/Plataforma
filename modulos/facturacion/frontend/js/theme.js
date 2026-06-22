@@ -1,3 +1,8 @@
+/**
+ * Toggle de tema claro/oscuro (módulo facturación).
+ * Idéntico a core/frontend/js/theme.js — se mantiene separado porque las páginas
+ * del módulo no comparten el bundle de core.
+ */
 (function () {
   function update() {
     const dark = document.documentElement.classList.contains('dark');
