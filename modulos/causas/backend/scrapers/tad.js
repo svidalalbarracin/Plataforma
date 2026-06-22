@@ -13,8 +13,9 @@ const path = require('path');
 const fs   = require('fs');
 const db   = require('../../../../core/database');
 
-const DIR_NOTIF = path.join(__dirname, '../../storage/tad/notificaciones');
-const DIR_DOCS  = path.join(__dirname, '../../storage/tad/documentos_externos');
+const DIR_NOTIF    = path.join(__dirname, '../../storage/tad/notificaciones');
+const DIR_DOCS     = path.join(__dirname, '../../storage/tad/documentos_externos');
+const FECHA_LIMITE = '2026-06-01';
 fs.mkdirSync(DIR_NOTIF, { recursive: true });
 fs.mkdirSync(DIR_DOCS,  { recursive: true });
 
@@ -353,6 +354,12 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
       }
 
       duplicadosConsecutivos = 0;
+
+      if (f.fecha && f.fecha < FECHA_LIMITE) {
+        console.log(`  [<<] ${f.numero_tramite} (${f.fecha}) anterior al ${FECHA_LIMITE} → deteniendo`);
+        break;
+      }
+
       console.log(`  [+]  ${f.numero_tramite}  ${f.fecha ?? ''}`);
       const archivePath = await descargarNotif(page, i, f.numero_tramite, f.fecha);
       guardarNotif({ ...f, archivo_path: archivePath });
@@ -379,6 +386,11 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
       if (docExiste(f.numero_tramite, f.fecha_envio)) {
         console.log(`  [=]  ${f.numero_tramite} doc ya existe`);
         continue;
+      }
+
+      if (f.fecha_envio && f.fecha_envio < FECHA_LIMITE) {
+        console.log(`  [<<] doc ${f.numero_tramite} (${f.fecha_envio}) anterior al ${FECHA_LIMITE} → deteniendo`);
+        break;
       }
 
       // El índice real en la tabla puede diferir del índice filtrado

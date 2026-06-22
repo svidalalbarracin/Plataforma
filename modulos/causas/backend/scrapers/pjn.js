@@ -18,6 +18,7 @@ const db   = require('../../../../core/database');
 
 const URL_NOTIFICACIONES = 'https://notif.pjn.gov.ar/recibidas';
 const STORAGE_DIR        = path.join(__dirname, '../../storage/pjn/notificaciones');
+const FECHA_LIMITE       = '2026-06-01';
 
 /** Selector del botón "siguiente página" del paginador de Material UI. */
 const SELECTOR_SIGUIENTE = 'button[aria-label="Ir a la siguiente página del listado"]';
@@ -347,6 +348,14 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
         }
 
         duplicadosConsecutivos = 0;
+
+        const fechaIso = isoFecha(fila.fecha_envio);
+        if (fechaIso && fechaIso < FECHA_LIMITE) {
+          console.log(`  [<<] ${fila.numero} (${fechaIso}) anterior al ${FECHA_LIMITE} → deteniendo`);
+          detener = true;
+          break;
+        }
+
         const { numero_expediente, caratula } = parsearExpediente(fila.expediente);
         const archivo_path = await descargarAdjunto(page, fila.rowIndex, fila.numero);
 
