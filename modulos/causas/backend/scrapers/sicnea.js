@@ -47,7 +47,6 @@ async function login(context) {
   await page.click('[id="F1:btnIngresar"]');
   await page.waitForLoadState('networkidle');
   if (!page.url().includes('portalcf')) throw new Error(`Login fallido. URL: ${page.url()}`);
-  console.log('  Login OK →', page.url());
   return page;
 }
 
@@ -64,50 +63,37 @@ async function abrirSICNEA(context, portalPage) {
   context.on('page', p => popups.push(p));
 
   await portalPage.locator('text=SICNEA Abogados').first().click();
-  console.log('  Click en SICNEA, esperando ventanas...');
 
   for (let i = 0; i < 20; i++) {
     await new Promise(r => setTimeout(r, 2000));
     if (popups.length >= 2) break;
-    console.log(`  Esperando segunda ventana... (${popups.length} abierta(s))`);
   }
-
-  console.log(`  Ventanas abiertas: ${popups.length}`);
-  popups.forEach((p, i) => console.log(`    [${i}] ${p.url()}`));
 
   const sicneaPage = popups.find(p => !p.url().includes('mgenEntrada.aspx')) ?? popups[popups.length - 1];
   if (!sicneaPage) throw new Error('No se abrió la ventana principal de SICNEA');
 
   sicneaPage.setDefaultTimeout(120000);
   await sicneaPage.waitForLoadState('domcontentloaded', { timeout: 60000 }).catch(() => {});
-  console.log('  Ventana SICNEA:', sicneaPage.url());
 
   await new Promise(r => setTimeout(r, 3000));
 
-  // Buscar "Ingresar" en todos los frames del popup
   let btnIngresar = null;
   const selectorIngresar = 'input[value="Ingresar"], button:has-text("Ingresar"), input#cmdAceptar';
 
   for (const frame of sicneaPage.frames()) {
     try {
       const el = frame.locator(selectorIngresar).first();
-      if (await el.count() > 0) {
-        btnIngresar = el;
-        console.log('  Botón "Ingresar" en frame:', frame.url());
-        break;
-      }
+      if (await el.count() > 0) { btnIngresar = el; break; }
     } catch (_) {}
   }
 
   if (!btnIngresar) throw new Error('No se encontró el botón "Ingresar"');
   await btnIngresar.click();
-  console.log('  "Ingresar" clickeado, esperando...');
 
   await new Promise(r => setTimeout(r, 5000));
   await sicneaPage.waitForLoadState('domcontentloaded', { timeout: 90000 }).catch(() => {});
   await new Promise(r => setTimeout(r, 3000));
 
-  console.log('  SICNEA cargado');
   return sicneaPage;
 }
 
@@ -119,29 +105,20 @@ async function abrirSICNEA(context, portalPage) {
 //   → esperar tabla de notificaciones
 
 async function irAConsulta(mainPage) {
-  console.log('  Abriendo sidebar...');
-
-  // El sidebar se despliega al pasar el mouse encima
   const selectorSidebar = 'aside, nav, [class*="sidebar"], [class*="menu"], [class*="nav"]';
   let hovereado = false;
 
   for (const ctx of [mainPage, ...mainPage.frames()]) {
     try {
       const el = ctx.locator(selectorSidebar).first();
-      if (await el.count() > 0) {
-        await el.hover({ timeout: 10000 });
-        hovereado = true;
-        break;
-      }
+      if (await el.count() > 0) { await el.hover({ timeout: 10000 }); hovereado = true; break; }
     } catch (_) {}
   }
 
   if (!hovereado) await mainPage.mouse.move(10, 300);
   await new Promise(r => setTimeout(r, 2000));
 
-  // Buscar ítem "Consulta" o "Consultas" en todos los frames, excluyendo "Ver Notificaciones"
   let btnConsulta = null;
-
   for (const ctx of [mainPage, ...mainPage.frames()]) {
     try {
       const candidatos = ctx.locator('a, button, li, span, td, div');
@@ -149,11 +126,7 @@ async function irAConsulta(mainPage) {
       for (let i = 0; i < count; i++) {
         const el = candidatos.nth(i);
         const texto = (await el.innerText().catch(() => '')).trim();
-        if (/^consulta/i.test(texto) && !/ver.?notificaci/i.test(texto)) {
-          btnConsulta = el;
-          console.log(`  Ítem encontrado: "${texto}"`);
-          break;
-        }
+        if (/^consulta/i.test(texto) && !/ver.?notificaci/i.test(texto)) { btnConsulta = el; break; }
       }
       if (btnConsulta) break;
     } catch (_) {}
@@ -164,25 +137,17 @@ async function irAConsulta(mainPage) {
   await btnConsulta.hover({ timeout: 10000 }).catch(() => {});
   await new Promise(r => setTimeout(r, 500));
   await btnConsulta.click();
-  console.log('  "Consulta" clickeado, esperando apartado...');
 
-  // Esperar a que cargue el frame de consulta (csicneaAboConsulta.aspx)
   await new Promise(r => setTimeout(r, 5000));
   await mainPage.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
 
-  // Buscar "Buscar" específicamente en el frame de consulta
   const frameConsulta = mainPage.frames().find(f => f.url().includes('Consulta'));
   if (!frameConsulta) throw new Error('No se encontró el frame csicneaAboConsulta');
-  console.log('  Frame consulta:', frameConsulta.url());
 
   const btnBuscar = frameConsulta.locator('input[value="Buscar"], button:has-text("Buscar")').first();
   await btnBuscar.waitFor({ timeout: 15000 });
   await btnBuscar.click();
-  console.log('  "Buscar" clickeado, esperando resultados...');
 
-  // Esperar a que los resultados carguen — el sistema es lento, puede tardar bastante
-  // El formulario de búsqueda ya tiene ~8 filas de layout; esperamos que aparezcan muchas más
-  process.stdout.write('  Esperando resultados');
   let intentos = 0;
   while (intentos < 30) {
     await new Promise(r => setTimeout(r, 4000));
@@ -190,20 +155,16 @@ async function irAConsulta(mainPage) {
       const tablas = [...document.querySelectorAll('table')];
       return Math.max(...tablas.map(t => t.querySelectorAll('tbody tr').length), 0);
     }).catch(() => 0);
-    process.stdout.write('.');
     intentos++;
     if (filas >= 20) break;
   }
-  process.stdout.write('\n');
 
-  // Verificar que dgdNotificacion esté en el frame de consulta
   const tieneTabla = await frameConsulta.evaluate(
     () => !!document.getElementById('dgdNotificacion')
   ).catch(() => false);
 
   if (!tieneTabla) throw new Error('No se encontró la tabla dgdNotificacion');
 
-  console.log('  Tabla "dgdNotificacion" cargada');
   return frameConsulta;
 }
 
@@ -252,7 +213,6 @@ async function abrirDetalle(context, ctx, rowIndex) {
   detallePage.setDefaultTimeout(60000);
   await detallePage.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
   await detallePage.waitForSelector('input#txtNroCedula', { timeout: 30000 });
-  console.log(`    [detalle] ${detallePage.url()}`);
   return detallePage;
 }
 
@@ -289,12 +249,9 @@ async function descargarAdjuntos(context, ctx, numero) {
         const download = await downloadPromise;
         await download.saveAs(notifPath);
         archivos.push(notifPath);
-        console.log(`    [PDF] notificación → ${path.basename(notifPath)}`);
         await new Promise(r => setTimeout(r, 1000));
       }
-    } catch (e) {
-      console.log(`    [!] PDF notificación no descargado (${e.message.split('\n')[0].substring(0, 80)})`);
-    }
+    } catch (e) { /* PDF no disponible */ }
   } else {
     archivos.push(notifPath);
   }
@@ -321,12 +278,9 @@ async function descargarAdjuntos(context, ctx, numero) {
       const download = await downloadPromise;
       await download.saveAs(filePath);
       archivos.push(filePath);
-      console.log(`    [PDF] ${nombreOriginal} → ${path.basename(filePath)}`);
       await ctx.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(() => {});
       await new Promise(r => setTimeout(r, 1000));
-    } catch (e) {
-      console.log(`    [!] ${nombreOriginal} no descargado (${e.message.split('\n')[0].substring(0, 80)})`);
-    }
+    } catch (e) { /* adjunto no disponible */ }
   }
   return archivos;
 }
@@ -336,11 +290,10 @@ async function descargarAdjuntos(context, ctx, numero) {
 async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = {}) {
   const modoAuto = limite === null;
 
-  console.log('\n══ Scraper SICNEA ════════════════════════════════════════════');
-  console.log(modoAuto
-    ? '  Modo: automático'
-    : `  Modo: prueba — límite ${limite}`
-  );
+  const paso = texto => {
+    process.stdout.write(`  [SICNEA] ${texto}`.padEnd(55) + ' ');
+    return () => process.stdout.write('OK!\n');
+  };
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -349,23 +302,22 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
   let nuevas = 0;
 
   try {
-    console.log('\n1. Login AFIP...');
+    let ok = paso('Login AFIP...');
     const portalPage = await login(context);
+    ok();
 
-    console.log('\n2. Abriendo SICNEA...');
+    ok = paso('Abriendo SICNEA...');
     const mainPage = await abrirSICNEA(context, portalPage);
+    ok();
 
-    console.log('\n3. Navegando a Consultas...');
+    ok = paso('Navegando a consultas...');
     const consultaCtx = await irAConsulta(mainPage);
+    ok();
 
-    console.log('\n4. Procesando notificaciones...');
-
+    ok = paso('Procesando notificaciones...');
     const filas = await extraerFilas(consultaCtx);
-    const conVer = filas.filter(f => f.tieneVer).length;
-    console.log(`  ${filas.length} fila(s) encontradas (${conVer} con botón Ver)`);
+    let examinadas = 0, duplicadosConsecutivos = 0;
 
-    let examinadas = 0;
-    let duplicadosConsecutivos = 0;
     for (const fila of filas) {
       const numero = fila.numero?.trim();
       if (!numero) continue;
@@ -373,12 +325,10 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
       if (yaExiste(numero)) {
         if (modoAuto) {
           duplicadosConsecutivos++;
-          console.log(`  [>>] ${numero} ya existe (${duplicadosConsecutivos}/2)`);
           if (duplicadosConsecutivos >= 2) break;
           examinadas++;
           continue;
         }
-        console.log(`  [--] ${numero} ya existe`);
         examinadas++;
         if (limite && examinadas >= limite) break;
         continue;
@@ -386,20 +336,16 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
 
       duplicadosConsecutivos = 0;
 
-      let detalleDatos  = {};
-      let archivosPaths = [];
+      let detalleDatos = {}, archivosPaths = [];
       if (fila.tieneVer) {
         const detallePage = await abrirDetalle(context, consultaCtx, fila.rowIndex);
         if (detallePage) {
           detalleDatos = await extraerDetalle(detallePage);
-
           const fechaNotif = isoFecha(detalleDatos.fecha_alta);
           if (fechaNotif && fechaNotif < FECHA_LIMITE) {
-            console.log(`  [<<] ${numero} (${fechaNotif}) anterior al ${FECHA_LIMITE} → deteniendo`);
             await detallePage.close();
             break;
           }
-
           archivosPaths = await descargarAdjuntos(context, detallePage, numero);
           await detallePage.close();
           await new Promise(r => setTimeout(r, 1000));
@@ -419,20 +365,14 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
         archivos_paths: archivosPaths,
       });
 
-      console.log(`  [OK] ${numero}  ${detalleDatos.motivo || ''}  ${detalleDatos.fecha_alta || ''}`);
       nuevas++;
       examinadas++;
-
-      if (limite && examinadas >= limite) {
-        console.log(`  Límite de ${limite} alcanzado`);
-        break;
-      }
+      if (limite && examinadas >= limite) break;
     }
+    ok();
 
     if (modoAuto) guardarMeta('sicnea_ultima_auto', new Date().toISOString());
-
-    console.log('\n══ Resultado ═════════════════════════════════════════════════');
-    console.log(`  ${nuevas} nueva(s)`);
+    console.log(`  [SICNEA] ${nuevas > 0 ? `${nuevas} nueva(s)` : 'Sin novedades'}`);
     return nuevas;
 
   } finally {

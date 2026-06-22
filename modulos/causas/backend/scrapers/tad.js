@@ -112,7 +112,6 @@ async function login(context) {
   await page.waitForURL(url => url.href.includes('tramitesadistancia.gob.ar'), { timeout: 60000, waitUntil: 'load' });
   await new Promise(r => setTimeout(r, 3000));
 
-  console.log('  Login OK');
   return page;
 }
 
@@ -127,7 +126,6 @@ async function irANotificaciones(page) {
   await page.locator('a[href*="notificaciones"]').first().click();
   await new Promise(r => setTimeout(r, 4000));
   await page.waitForSelector('table tbody tr', { timeout: 20000 });
-  console.log('  Página Notificaciones cargada');
 }
 
 /**
@@ -139,7 +137,6 @@ async function irAPestanaInterna(page, nombre) {
   await page.locator(`a[data-toggle="tab"]:has-text("${nombre}")`).click();
   await new Promise(r => setTimeout(r, 3000));
   await page.waitForSelector('table tbody tr', { timeout: 20000 });
-  console.log(`  Pestaña "${nombre}" activa`);
 }
 
 /**
@@ -153,11 +150,8 @@ async function mostrar10(page) {
     if (await btn.isVisible({ timeout: 5000 })) {
       await btn.click();
       await new Promise(r => setTimeout(r, 2000));
-      console.log('  Mostrando 10 por página');
     }
-  } catch {
-    console.log('  No se encontró selector de 10 — usando default');
-  }
+  } catch { /* default pagination */ }
 }
 
 // ── Extracción de datos ───────────────────────────────────────────────────────
@@ -237,10 +231,8 @@ async function descargarNotif(page, rowIndex, numero_tramite, fecha) {
       btn.click(),
     ]);
     await download.saveAs(destino);
-    console.log(`    Descargado: ${path.basename(destino)}`);
     return destino;
   } catch (e) {
-    console.log(`    Descarga fallida (${e.message.split('\n')[0]})`);
     return null;
   }
 }
@@ -278,10 +270,7 @@ async function descargarDocsDelOjo(page, rowIndex, numero_tramite, fecha_envio) 
       ]);
       await download.saveAs(destino);
       rutas.push(destino);
-      console.log(`    PDF ${i + 1}: ${path.basename(destino)}`);
-    } catch (e) {
-      console.log(`    PDF ${i + 1} fallido: ${e.message.split('\n')[0]}`);
-    }
+    } catch (e) { /* PDF no disponible */ }
   }
 
   // Cerrar el modal antes de continuar
@@ -308,33 +297,32 @@ async function descargarDocsDelOjo(page, rowIndex, numero_tramite, fecha_envio) 
  * @returns {Promise<{ nuevasNotif: number, nuevosDocs: number }>}
  */
 async function obtenerNotificacionesTAD({ headless = true } = {}) {
-  console.log('\n══ Scraper TAD ═══════════════════════════════════════════════');
+  const paso = texto => {
+    process.stdout.write(`  [TAD] ${texto}`.padEnd(55) + ' ');
+    return () => process.stdout.write('OK!\n');
+  };
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1280, height: 800 } });
   context.setDefaultTimeout(60000);
 
-  let nuevasNotif = 0;
-  let nuevosDocs  = 0;
+  let nuevasNotif = 0, nuevosDocs = 0;
 
   try {
-    console.log('\n1. Login TAD con ARCA...');
+    let ok = paso('Login ARCA...');
     const page = await login(context);
+    ok();
 
-    console.log('\n2. Navegando a Notificaciones...');
+    ok = paso('Navegando a notificaciones...');
     await irANotificaciones(page);
     await mostrar10(page);
+    ok();
 
-    // ── Parte 1: Notificaciones ───────────────────────────────────────────────
-
-    console.log('\n3. Extrayendo notificaciones...');
+    ok = paso('Procesando notificaciones...');
     const filasNotif = (await extraerFilasNotif(page))
       .map(f => ({ ...f, fecha: isoFecha(f.fecha), numero_tramite: f.numero_tramite?.trim() }))
       .filter(f => f.numero_tramite);
 
-    console.log(`  ${filasNotif.length} fila(s) encontradas`);
-
-    // Acumula los trámites vistos para filtrar documentos externos luego
     const tramitesNotif = new Set();
     const MAX_DUPLICADOS = 3;
     let duplicadosConsecutivos = 0;
@@ -345,68 +333,45 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
 
       if (notifExiste(f.numero_tramite, f.fecha, f.mensaje)) {
         duplicadosConsecutivos++;
-        console.log(`  [=]  ${f.numero_tramite} ya existe (${duplicadosConsecutivos}/${MAX_DUPLICADOS})`);
-        if (duplicadosConsecutivos >= MAX_DUPLICADOS) {
-          console.log(`  [>>] ${MAX_DUPLICADOS} duplicados consecutivos → deteniendo`);
-          break;
-        }
+        if (duplicadosConsecutivos >= MAX_DUPLICADOS) break;
         continue;
       }
 
       duplicadosConsecutivos = 0;
+      if (f.fecha && f.fecha < FECHA_LIMITE) break;
 
-      if (f.fecha && f.fecha < FECHA_LIMITE) {
-        console.log(`  [<<] ${f.numero_tramite} (${f.fecha}) anterior al ${FECHA_LIMITE} → deteniendo`);
-        break;
-      }
-
-      console.log(`  [+]  ${f.numero_tramite}  ${f.fecha ?? ''}`);
       const archivePath = await descargarNotif(page, i, f.numero_tramite, f.fecha);
       guardarNotif({ ...f, archivo_path: archivePath });
       nuevasNotif++;
     }
+    ok();
 
-    // ── Parte 2: Documentos Externos ─────────────────────────────────────────
-    // Solo se descargan documentos de trámites que tienen notificación,
-    // para evitar descargar documentos sin contexto.
-
-    console.log('\n4. Cambiando a Documentos Externos...');
+    ok = paso('Procesando documentos externos...');
     await irAPestanaInterna(page, 'Documentos Externos');
     await mostrar10(page);
 
-    console.log('\n5. Extrayendo documentos externos...');
     const todasFilasDocs = await extraerFilasDocs(page);
     const filasDocs = todasFilasDocs
       .map(f => ({ ...f, fecha_envio: isoFecha(f.fecha_envio), numero_tramite: f.numero_tramite?.trim() }))
       .filter(f => f.numero_tramite && tramitesNotif.has(f.numero_tramite));
 
-    console.log(`  ${todasFilasDocs.length} entradas totales → ${filasDocs.length} con notificación asociada`);
-
     for (const f of filasDocs) {
-      if (docExiste(f.numero_tramite, f.fecha_envio)) {
-        console.log(`  [=]  ${f.numero_tramite} doc ya existe`);
-        continue;
-      }
+      if (docExiste(f.numero_tramite, f.fecha_envio)) continue;
+      if (f.fecha_envio && f.fecha_envio < FECHA_LIMITE) break;
 
-      if (f.fecha_envio && f.fecha_envio < FECHA_LIMITE) {
-        console.log(`  [<<] doc ${f.numero_tramite} (${f.fecha_envio}) anterior al ${FECHA_LIMITE} → deteniendo`);
-        break;
-      }
-
-      // El índice real en la tabla puede diferir del índice filtrado
       const idx = todasFilasDocs.findIndex(
         r => r.numero_tramite?.trim() === f.numero_tramite && isoFecha(r.fecha_envio) === f.fecha_envio
       );
-
-      console.log(`  [+]  ${f.numero_tramite}  ${f.fecha_envio ?? ''}`);
       const rutas = await descargarDocsDelOjo(page, idx, f.numero_tramite, f.fecha_envio);
       guardarDoc({ fecha_envio: f.fecha_envio, nombre: f.nombre, numero_tramite: f.numero_tramite, motivo: f.motivo, archivos_paths: rutas });
       nuevosDocs++;
     }
+    ok();
 
-    console.log('\n══ Resultado ═════════════════════════════════════════════════');
-    console.log(`  Notificaciones nuevas:       ${nuevasNotif}`);
-    console.log(`  Documentos externos nuevos:  ${nuevosDocs}`);
+    const resumen = nuevasNotif > 0 || nuevosDocs > 0
+      ? `${nuevasNotif} notif. nueva(s)${nuevosDocs > 0 ? ` · ${nuevosDocs} doc(s)` : ''}`
+      : 'Sin novedades';
+    console.log(`  [TAD] ${resumen}`);
     return { nuevasNotif, nuevosDocs };
 
   } finally {

@@ -68,11 +68,12 @@ app.use('/configuracion',  express.static(path.join(__dirname, '../core/configur
 app.use('/pdfs',           express.static(path.join(__dirname, '../modulos/facturacion/storage/facturas')));
 app.use('/causas/storage', express.static(path.join(__dirname, '../modulos/causas/storage')));
 
-// ── Schedulers ────────────────────────────────────────────────────────────────
-
-require('../modulos/facturacion/backend/scheduler');
-require('../modulos/causas/backend/scheduler');
+// ── Arranque ──────────────────────────────────────────────────────────────────
+// El servidor escucha primero para que el mensaje de inicio no se intercale
+// con los logs de los scrapers que arrancan en los schedulers.
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  require('../modulos/facturacion/backend/scheduler');
+  require('../modulos/causas/backend/scheduler');
 });

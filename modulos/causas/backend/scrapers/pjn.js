@@ -136,14 +136,11 @@ async function esperarSPA(page, timeout = 30000) {
  * @param {import('playwright').Page} page - Página ya en el formulario SSO
  */
 async function login(page) {
-  console.log('  Esperando formulario SSO...');
   await page.waitForSelector('input[name="username"]', { timeout: 15000 });
   await page.fill('input[name="username"]', process.env.PJN_USUARIO);
   await page.fill('input[name="password"]', process.env.PJN_CLAVE);
   await page.click('input[type="submit"], #kc-login, button[type="submit"]');
-  console.log('  Esperando redirección post-login...');
   await page.waitForURL('**/notif.pjn.gov.ar/recibidas**', { timeout: 30000 });
-  console.log('  Login OK →', page.url());
 }
 
 /**
@@ -154,13 +151,9 @@ async function login(page) {
  */
 async function cambiarResultadosPorPagina(page, cantidad = 30) {
   const select = page.locator('select[aria-label*="Filas por página"]');
-  if ((await select.count()) === 0) {
-    console.log('  Selector de resultados por página no encontrado, usando default');
-    return;
-  }
+  if ((await select.count()) === 0) return;
   await select.selectOption(String(cantidad));
   await page.waitForFunction(() => !document.querySelector('table .MuiSkeleton-root'), { timeout: 30000 });
-  console.log(`  Resultados por página: ${cantidad}`);
 }
 
 /**
@@ -217,21 +210,16 @@ async function descargarAdjunto(page, rowIndex, numero) {
     const fila   = page.locator('table tbody tr').nth(rowIndex);
     const btnVer = fila.locator('button[aria-label*="PDF"]');
 
-    if ((await btnVer.count()) === 0) {
-      console.log(`  [!] Sin botón de descarga en fila ${rowIndex}`);
-      return null;
-    }
+    if ((await btnVer.count()) === 0) return null;
 
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 20000 }),
       btnVer.click(),
     ]);
     await download.saveAs(filePath);
-    console.log(`  [PDF] ${numero} → ${path.basename(filePath)}`);
     return filePath;
 
   } catch (e) {
-    console.log(`  [!] Descarga fallida para ${numero}: ${e.message}`);
     return null;
   }
 }
@@ -283,12 +271,10 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
   const modoAuto = limite === null;
   const MAX_DUPLICADOS_CONSECUTIVOS = 3;
 
-  console.log('\n══ Scraper PJN ═══════════════════════════════════════════════');
-  if (modoAuto) {
-    console.log(`  Modo: automático (para al encontrar ${MAX_DUPLICADOS_CONSECUTIVOS} duplicados consecutivos)\n`);
-  } else {
-    console.log(`  Modo: manual — límite de ${limite} notificación(es)\n`);
-  }
+  const paso = texto => {
+    process.stdout.write(`  [PJN] ${texto}`.padEnd(55) + ' ');
+    return () => process.stdout.write('OK!\n');
+  };
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext();
@@ -296,36 +282,28 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
   page.setDefaultTimeout(45000);
 
   try {
-    console.log('1. Navegando al portal...');
+    let ok = paso('Conectando...');
     await page.goto(URL_NOTIFICACIONES, { waitUntil: 'load', timeout: 60000 });
     await esperarSPA(page);
-    console.log('  URL:', page.url());
+    ok();
 
     if (page.url().includes('sso.pjn.gov.ar')) {
-      console.log('\n2. Login requerido (SSO)...');
+      ok = paso('Login SSO...');
       await login(page);
       await esperarSPA(page, 60000);
-    } else {
-      console.log('  Sesión activa, sin necesidad de login');
+      ok();
     }
 
-    console.log('\n3. Esperando carga de notificaciones...');
+    ok = paso('Cargando notificaciones...');
     await page.waitForSelector('table tbody tr', { timeout: 60000 });
-    console.log('  Tabla cargada');
     await cambiarResultadosPorPagina(page, 30);
+    ok();
 
-    console.log('\n4. Procesando notificaciones...');
-
-    let pagina                 = 1;
-    let nuevas                 = 0;
-    let examinadas             = 0;
-    let duplicadosConsecutivos = 0;
-    let detener                = false;
+    ok = paso('Procesando...');
+    let pagina = 1, nuevas = 0, examinadas = 0, duplicadosConsecutivos = 0, detener = false;
 
     while (!detener) {
-      console.log(`\n  ── Página ${pagina} ───────────────────────────────────────`);
       const filas = await extraerFilas(page);
-      console.log(`  ${filas.length} fila(s) encontradas`);
 
       for (const fila of filas) {
         if (!fila.numero) continue;
@@ -333,15 +311,9 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
         if (yaExiste(fila.numero)) {
           if (modoAuto) {
             duplicadosConsecutivos++;
-            console.log(`  [--] ${fila.numero}  ya existe (${duplicadosConsecutivos}/${MAX_DUPLICADOS_CONSECUTIVOS})`);
-            if (duplicadosConsecutivos >= MAX_DUPLICADOS_CONSECUTIVOS) {
-              console.log(`  [>>] ${MAX_DUPLICADOS_CONSECUTIVOS} duplicados consecutivos → deteniendo`);
-              detener = true;
-              break;
-            }
+            if (duplicadosConsecutivos >= MAX_DUPLICADOS_CONSECUTIVOS) { detener = true; break; }
             continue;
           }
-          console.log(`  [--] ${fila.numero}  ya existe`);
           examinadas++;
           if (examinadas >= limite) { detener = true; break; }
           continue;
@@ -350,11 +322,7 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
         duplicadosConsecutivos = 0;
 
         const fechaIso = isoFecha(fila.fecha_envio);
-        if (fechaIso && fechaIso < FECHA_LIMITE) {
-          console.log(`  [<<] ${fila.numero} (${fechaIso}) anterior al ${FECHA_LIMITE} → deteniendo`);
-          detener = true;
-          break;
-        }
+        if (fechaIso && fechaIso < FECHA_LIMITE) { detener = true; break; }
 
         const { numero_expediente, caratula } = parsearExpediente(fila.expediente);
         const archivo_path = await descargarAdjunto(page, fila.rowIndex, fila.numero);
@@ -368,30 +336,20 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
           archivo_path,
         });
 
-        console.log(`  [OK] ${fila.numero}  ${numero_expediente ?? '-'}  ${fila.fecha_envio}`);
         nuevas++;
         examinadas++;
-
-        if (limite !== null && examinadas >= limite) {
-          console.log(`  Límite de ${limite} examinadas alcanzado`);
-          detener = true;
-          break;
-        }
+        if (limite !== null && examinadas >= limite) { detener = true; break; }
       }
 
       if (detener) break;
       if (!(await hayPaginaSiguiente(page))) break;
-      console.log('  Navegando a página siguiente...');
       await irAPaginaSiguiente(page);
       pagina++;
     }
+    ok();
 
-    const ahora = new Date().toISOString();
-    if (modoAuto) guardarMeta('pjn_ultima_auto', ahora);
-
-    console.log('\n══ Resultado ═════════════════════════════════════════════════');
-    console.log(`  ${nuevas} nueva(s)`);
-    if (modoAuto) console.log(`  Última actualización automática: ${ahora}`);
+    if (modoAuto) guardarMeta('pjn_ultima_auto', new Date().toISOString());
+    console.log(`  [PJN] ${nuevas > 0 ? `${nuevas} nueva(s)` : 'Sin novedades'}`);
     return nuevas;
 
   } finally {
@@ -413,12 +371,12 @@ async function backfillAdjuntosPJN({ headless = true } = {}) {
     db.prepare('SELECT numero FROM notificaciones_pjn WHERE archivo_path IS NULL').all().map(r => r.numero)
   );
 
-  if (pendientes.size === 0) {
-    console.log('  Backfill PJN: sin notificaciones pendientes');
-    return 0;
-  }
+  if (pendientes.size === 0) return 0;
 
-  console.log(`\n══ Backfill PJN — ${pendientes.size} notificación(es) sin PDF ════`);
+  const paso = texto => {
+    process.stdout.write(`  [PJN] ${texto}`.padEnd(55) + ' ');
+    return () => process.stdout.write('OK!\n');
+  };
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext();
@@ -428,46 +386,34 @@ async function backfillAdjuntosPJN({ headless = true } = {}) {
   let descargados = 0;
 
   try {
+    const ok = paso(`Backfill — ${pendientes.size} PDF(s) faltante(s)...`);
     await page.goto(URL_NOTIFICACIONES, { waitUntil: 'load', timeout: 60000 });
     await esperarSPA(page);
-
     if (page.url().includes('sso.pjn.gov.ar')) await login(page);
-
     await page.waitForSelector('table tbody tr', { timeout: 30000 });
     await cambiarResultadosPorPagina(page, 30);
 
     let pagina = 1;
-
     while (pendientes.size > 0) {
-      console.log(`\n  ── Página ${pagina} (quedan ${pendientes.size}) ───────────────`);
       const filas = await extraerFilas(page);
-
       for (const fila of filas) {
         if (!pendientes.has(fila.numero)) continue;
-
         const archivo_path = await descargarAdjunto(page, fila.rowIndex, fila.numero);
-        if (archivo_path) {
-          actualizarArchivo(fila.numero, archivo_path);
-          descargados++;
-        }
+        if (archivo_path) { actualizarArchivo(fila.numero, archivo_path); descargados++; }
         pendientes.delete(fila.numero);
       }
-
       if (pendientes.size === 0) break;
       if (!(await hayPaginaSiguiente(page))) break;
       await irAPaginaSiguiente(page);
       pagina++;
     }
-
-    if (pendientes.size > 0) {
-      console.log(`\n  [!] No encontradas en portal: ${[...pendientes].join(', ')}`);
-    }
+    ok();
+    console.log(`  [PJN] Backfill: ${descargados} PDF(s) descargado(s)`);
 
   } finally {
     await browser.close();
   }
 
-  console.log(`\n══ Backfill completo — ${descargados} PDF(s) descargado(s) ════`);
   return descargados;
 }
 

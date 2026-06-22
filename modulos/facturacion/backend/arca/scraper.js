@@ -257,14 +257,12 @@ async function login(context) {
   const page = await context.newPage();
   page.setDefaultTimeout(45000);
 
-  console.log('  Navegando a afip.gob.ar...');
   await page.goto('https://www.afip.gob.ar/', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
   const [authPage] = await Promise.all([
     context.waitForEvent('page', { timeout: 15000 }),
     page.locator('a:has-text("Ingresar con Clave Fiscal"), a:has-text("ingresar")').first().click(),
   ]).catch(async () => {
-    console.log('  Fallback: navegando directo al login...');
     await page.goto('https://auth.afip.gob.ar/contribuyente_/login.xhtml', { waitUntil: 'networkidle', timeout: 60000 });
     return [page];
   });
@@ -273,12 +271,10 @@ async function login(context) {
   auth.setDefaultTimeout(45000);
   await auth.waitForLoadState('networkidle');
 
-  console.log('  Ingresando CUIT...');
   await auth.fill('[id="F1:username"]', process.env.CUIT);
   await auth.click('[id="F1:btnSiguiente"]');
   await auth.waitForLoadState('networkidle');
 
-  console.log('  Ingresando clave fiscal...');
   await auth.fill('[id="F1:password"]', process.env.CLAVE_FISCAL);
   await auth.click('[id="F1:btnIngresar"]');
   await auth.waitForLoadState('networkidle');
@@ -286,7 +282,6 @@ async function login(context) {
   if (!auth.url().includes('portalcf')) {
     throw new Error(`Login fallido. URL actual: ${auth.url()}`);
   }
-  console.log('  Login OK');
   return auth;
 }
 
@@ -297,30 +292,21 @@ async function login(context) {
  * @returns {Promise<import('playwright').Page>} Página de RCEL.
  */
 async function abrirRCEL(context, portalPage) {
-  console.log('  Buscando "Comprobantes en línea"...');
   const urlAntes = portalPage.url();
 
   const [rcelPage] = await Promise.all([
     context.waitForEvent('page', { timeout: 20000 }),
     portalPage.locator('text=Comprobantes en línea').first().click(),
   ]).catch(async () => {
-    // Si no se abrió nueva pestaña, verificar si alguna ya existe en el contexto
     const extra = context.pages().find(p => p !== portalPage && p.url() !== 'about:blank');
-    if (extra) {
-      console.log('  Pestaña RCEL encontrada post-timeout:', extra.url());
-      return [extra];
-    }
-    // Último recurso: la misma pestaña pudo haber navegado — esperar que estabilice
-    console.log('  Fallback: esperando navegación en la misma pestaña...');
+    if (extra) return [extra];
     await portalPage.waitForURL(url => url !== urlAntes, { timeout: 15000 }).catch(() => {});
     await portalPage.waitForLoadState('networkidle', { timeout: 30000 });
-    console.log('  URL post-fallback:', portalPage.url());
     return [portalPage];
   });
 
   rcelPage.setDefaultTimeout(45000);
   await rcelPage.waitForLoadState('networkidle', { timeout: 30000 });
-  console.log('  RCEL abierto:', rcelPage.url());
   return rcelPage;
 }
 
@@ -330,17 +316,11 @@ async function abrirRCEL(context, portalPage) {
  * @returns {Promise<import('playwright').Page>} La misma página tras el submit.
  */
 async function seleccionarRepresentado(rcelPage) {
-  console.log('  Seleccionando representado (CUIT del abogado)...');
-  console.log('  URL actual:', rcelPage.url());
   await rcelPage.waitForLoadState('networkidle', { timeout: 30000 });
-  console.log('  URL post-carga:', rcelPage.url());
-
-  // ARCA usa input.btn_empresa (forma histórica); tolerar también a y button con esa clase
   const SELECTOR = 'input.btn_empresa, a.btn_empresa, button.btn_empresa';
   await rcelPage.waitForSelector(SELECTOR, { timeout: 20000 });
   await rcelPage.locator(SELECTOR).first().click();
   await rcelPage.waitForLoadState('networkidle');
-  console.log('  Representado seleccionado:', rcelPage.url());
   return rcelPage;
 }
 
@@ -349,10 +329,8 @@ async function seleccionarRepresentado(rcelPage) {
  * @param {import('playwright').Page} page
  */
 async function irAConsultas(page) {
-  console.log('  Haciendo click en "Consultas"...');
   await page.locator('a:has-text("Consultas")').first().click();
   await page.waitForLoadState('networkidle');
-  console.log('  En Consultas:', page.url());
 }
 
 /**
@@ -361,7 +339,6 @@ async function irAConsultas(page) {
  * @param {{ fechaDesde: Date, fechaHasta: Date, tipoComprobante?: number|null, puntoVenta?: number|null }} opts
  */
 async function completarFormulario(page, { fechaDesde, fechaHasta, tipoComprobante, puntoVenta }) {
-  console.log('  Completando formulario de consulta...');
   const desde = fmtDDMMAAAA(fechaDesde);
   const hasta  = fmtDDMMAAAA(fechaHasta);
 
@@ -371,16 +348,11 @@ async function completarFormulario(page, { fechaDesde, fechaHasta, tipoComproban
   await inputHasta.fill(hasta);
 
   if (tipoComprobante != null) {
-    const selectTipo = page.locator('select').first();
-    await selectTipo.selectOption({ value: String(tipoComprobante) }).catch(() => null);
+    await page.locator('select').first().selectOption({ value: String(tipoComprobante) }).catch(() => null);
   }
-
   if (puntoVenta != null) {
-    const selectPV = page.locator('select').nth(1);
-    await selectPV.selectOption({ value: String(puntoVenta) }).catch(() => null);
+    await page.locator('select').nth(1).selectOption({ value: String(puntoVenta) }).catch(() => null);
   }
-
-  console.log(`  Formulario: ${desde} → ${hasta}  tipo=${tipoComprobante ?? 'todos'}  PV=${puntoVenta ?? 'todos'}`);
 }
 
 /**
@@ -392,16 +364,11 @@ async function completarFormulario(page, { fechaDesde, fechaHasta, tipoComproban
  * @returns {Promise<{importadas, actualizadas, omitidas, errores, numerosImportados: string[]}>}
  */
 async function buscarYProcesar(page, context, { forzar = false } = {}) {
-  console.log('  Haciendo click en "Buscar"...');
   await page.locator('input[type="submit"], button[type="submit"], input[value*="uscar"]').first().click();
   await page.waitForLoadState('networkidle');
 
   const filas = await extraerFilas(page);
-  console.log(`  Resultados: ${filas.length} fila(s)`);
-
   if (filas.length === 0) {
-    const texto = await page.textContent('body');
-    console.log('  Texto página:', texto.replace(/\s+/g, ' ').slice(0, 400));
     return { importadas: 0, actualizadas: 0, omitidas: 0, errores: 0, numerosImportados: [] };
   }
 
@@ -416,36 +383,20 @@ async function buscarYProcesar(page, context, { forzar = false } = {}) {
 
     try {
       const montoTotal = parsearMonto(fila.importeTotal);
-      console.log(`  [raw] ${numero}  importe="${fila.importeTotal}" → ${montoTotal}`);
-
-      const pdfPath = await descargarPDF(page, context, fila, numero);
-      const nombre  = await extraerNombreDesdePDF(pdfPath);
-      if (nombre) console.log(`  [nombre] ${nombre}`);
-      const clienteId = obtenerOCrearCliente(fila.nroDoc, nombre);
+      const pdfPath    = await descargarPDF(page, context, fila, numero);
+      const nombre     = await extraerNombreDesdePDF(pdfPath);
+      const clienteId  = obtenerOCrearCliente(fila.nroDoc, nombre);
       const fecha      = isoFecha(fila.fecha);
       const tipo       = mapearTipo(fila.tipoComp);
-
       const moneda     = await extraerMoneda(pdfPath);
       const tipoCambio = moneda === 'USD' ? await extraerTipoCambio(pdfPath) : null;
-      if (moneda === 'USD') console.log(`  [USD] ${numero}  TC: ${tipoCambio}`);
-
-      const facturaAsociadaNumero = esNotaCredito(tipo)
-        ? await extraerComprobanteAsociado(pdfPath)
-        : null;
-      if (facturaAsociadaNumero) console.log(`  [NC→] asociada a ${facturaAsociadaNumero}`);
+      const facturaAsociadaNumero = esNotaCredito(tipo) ? await extraerComprobanteAsociado(pdfPath) : null;
 
       guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo, facturaAsociadaNumero, moneda, tipoCambio, forzar });
 
-      if (existe) {
-        console.log(`  [UPD] ${numero}  ${fecha}  $${montoTotal}`);
-        actualizadas++;
-      } else {
-        console.log(`  [OK] ${numero}  ${fecha}  $${montoTotal}`);
-        numerosImportados.push(numero);
-        importadas++;
-      }
+      if (existe) { actualizadas++; } else { numerosImportados.push(numero); importadas++; }
     } catch (e) {
-      console.error(`  [ERR] ${numero}: ${e.message}`);
+      console.error(`  [ARCA] Error en ${numero}: ${e.message}`);
       errores++;
     }
   }
@@ -552,34 +503,40 @@ async function importarFacturas({ fechaDesde, fechaHasta, tipoComprobante, punto
   const desde = fechaDesde ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const hasta  = fechaHasta ?? new Date();
 
-  console.log('\n══ Importación RCEL ══════════════════════════════════════');
-  console.log(`  Período: ${fmtDDMMAAAA(desde)} → ${fmtDDMMAAAA(hasta)}`);
-  console.log(`  Tipo: ${tipoComprobante ?? 'todos'}  PV: ${puntoVenta ?? 'todos'}  forzar: ${forzar}\n`);
+  const paso = texto => {
+    process.stdout.write(`  [ARCA] ${texto}`.padEnd(55) + ' ');
+    return () => process.stdout.write('OK!\n');
+  };
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ acceptDownloads: true });
 
   try {
-    console.log('1. Login en ARCA...');
+    let ok = paso('Login...');
     const portalPage = await login(context);
+    ok();
 
-    console.log('\n2. Abriendo RCEL...');
+    ok = paso('Abriendo RCEL...');
     const rcelPage = await abrirRCEL(context, portalPage);
+    ok();
 
-    console.log('\n3. Seleccionando representado...');
+    ok = paso('Seleccionando representado...');
     const repPage = await seleccionarRepresentado(rcelPage);
+    ok();
 
-    console.log('\n4. Navegando a Consultas...');
+    ok = paso('Consultando comprobantes...');
     await irAConsultas(repPage);
-
-    console.log('\n5. Completando formulario...');
     await completarFormulario(repPage, { fechaDesde: desde, fechaHasta: hasta, tipoComprobante, puntoVenta });
+    ok();
 
-    console.log('\n6. Buscando y procesando...');
+    ok = paso('Importando...');
     const totales = await buscarYProcesar(repPage, context, { forzar });
+    ok();
 
-    console.log('\n══ Resultado ═════════════════════════════════════════════');
-    console.log(`  ${totales.importadas} importadas · ${totales.actualizadas} actualizadas · ${totales.omitidas} ya existían · ${totales.errores} errores`);
+    const resumen = totales.importadas > 0 || totales.actualizadas > 0
+      ? `${totales.importadas} importada(s)${totales.actualizadas > 0 ? ` · ${totales.actualizadas} actualizada(s)` : ''}${totales.omitidas > 0 ? ` · ${totales.omitidas} ya existían` : ''}`
+      : 'Sin novedades';
+    console.log(`  [ARCA] ${resumen}`);
     return totales;
 
   } finally {
