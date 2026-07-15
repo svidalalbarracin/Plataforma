@@ -109,19 +109,17 @@ function programarAvisoDiario() {
 
 console.log(`[causas-scheduler] Iniciado. Intervalo PJN+TAD: cada ${INTERVALO_MIN} min. SICNEA: solo sábados al iniciar.`);
 
-const primerCiclo  = ejecutarCiclo();
-const primerSICNEA = ejecutarSICNEA();
-programarResumenDiario();
-programarAvisoDiario();
-
-// Una vez que terminaron todos los scrapers del arranque, repara notificaciones
-// TAD cuyo archivo haya quedado pisado por otra del mismo trámite/día (bug ya
-// corregido hacia adelante en tad.js). Si no hay nada para reparar, no hace nada.
-Promise.all([primerCiclo, primerSICNEA]).then(() =>
-  repararDuplicadosTAD({ headless: true })
-).catch(err =>
+// Repara notificaciones TAD cuyo archivo haya quedado pisado por otra del mismo
+// trámite/día (bug ya corregido hacia adelante en tad.js) ANTES de correr
+// cualquier scraper del arranque. Si no hay nada para reparar, no hace nada.
+const reparacionInicial = repararDuplicadosTAD({ headless: true }).catch(err =>
   console.error(`[${new Date().toISOString()}] [causas/reparar-tad] Error:`, err.message)
 );
+
+const primerCiclo  = reparacionInicial.then(() => ejecutarCiclo());
+const primerSICNEA = reparacionInicial.then(() => ejecutarSICNEA());
+programarResumenDiario();
+programarAvisoDiario();
 
 setInterval(ejecutarCiclo, INTERVALO_MIN * 60 * 1000);
 

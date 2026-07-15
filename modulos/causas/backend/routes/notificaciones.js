@@ -169,7 +169,13 @@ router.post('/ejecutar', async (req, res) => {
   try {
     const { obtenerNotificacionesPJN } = require('../scrapers/pjn');
     const { obtenerNotificacionesTAD } = require('../scrapers/tad');
-    const limite    = req.body?.limite ? parseInt(req.body.limite, 10) : null;
+    const { main: repararDuplicadosTAD } = require('../scrapers/reparar-tad-duplicados');
+    const limite = req.body?.limite ? parseInt(req.body.limite, 10) : null;
+
+    await repararDuplicadosTAD({ headless: true }).catch(err =>
+      console.error('[causas/ejecutar] Error al reparar duplicados TAD:', err.message)
+    );
+
     const nuevas_pjn                    = await obtenerNotificacionesPJN({ limite });
     const { nuevasNotif, nuevosDocs }   = await obtenerNotificacionesTAD();
     res.json({ nuevas_pjn, nuevas_tad: nuevasNotif, nuevas_docs_tad: nuevosDocs });

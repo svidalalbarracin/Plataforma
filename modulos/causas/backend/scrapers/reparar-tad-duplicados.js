@@ -72,14 +72,19 @@ async function siguientePagina(page) {
  * @param {{ headless?: boolean }} [opts]
  */
 async function main({ headless = true } = {}) {
+  const paso = texto => {
+    process.stdout.write(`  [REPARAR-TAD] ${texto}`.padEnd(65) + ' ');
+    return () => process.stdout.write('OK!\n');
+  };
+
   const pendientes = buscarDuplicados();
   if (!pendientes.length) {
-    console.log('No se encontraron notificaciones con archivo_path duplicado.');
+    console.log('  [REPARAR-TAD] Sin archivos duplicados. Nada para reparar.');
     return;
   }
 
-  console.log(`Encontradas ${pendientes.length} notificaciones afectadas:`);
-  pendientes.forEach(p => console.log(`  id=${p.id} | ${p.numero_tramite} | ${p.fecha} | "${p.mensaje}"`));
+  console.log(`  [REPARAR-TAD] ${pendientes.length} notificación(es) con archivo duplicado:`);
+  pendientes.forEach(p => console.log(`  [REPARAR-TAD]   id=${p.id} | ${p.numero_tramite} | ${p.fecha} | "${p.mensaje}"`));
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1280, height: 800 } });
@@ -90,12 +95,14 @@ async function main({ headless = true } = {}) {
   const noEncontradas = [];
 
   try {
-    console.log('\nLogin ARCA...');
+    let ok = paso('Login ARCA...');
     const page = await login(context);
+    ok();
 
-    console.log('Navegando a notificaciones...');
+    ok = paso('Navegando a notificaciones...');
     await irANotificaciones(page);
     await mostrar10(page);
+    ok();
 
     let paginasRecorridas = 0;
     const MAX_PAGINAS = 20; // salvaguarda contra loop infinito
@@ -113,20 +120,21 @@ async function main({ headless = true } = {}) {
         );
         if (idx === -1) continue;
 
-        console.log(`Descargando de nuevo: id=${objetivo.id} (${objetivo.numero_tramite} | ${objetivo.mensaje})`);
+        console.log(`  [REPARAR-TAD] Descargando de nuevo: id=${objetivo.id} (${objetivo.numero_tramite} | ${objetivo.mensaje})`);
         const nuevoPath = await descargarNotif(page, idx, objetivo.numero_tramite, objetivo.fecha, objetivo.mensaje);
         if (nuevoPath) {
           actualizarArchivoPath(objetivo.id, nuevoPath);
           reparadas++;
-          console.log(`  OK -> ${nuevoPath}`);
+          console.log(`  [REPARAR-TAD]   -> OK: ${nuevoPath}`);
         } else {
-          console.log(`  Fallo la descarga para id=${objetivo.id}`);
+          console.log(`  [REPARAR-TAD]   -> Falló la descarga para id=${objetivo.id}`);
         }
         restantes.splice(i, 1);
       }
 
       if (!restantes.length) break;
       paginasRecorridas++;
+      console.log(`  [REPARAR-TAD] Pasando a la página siguiente (quedan ${restantes.length})...`);
       const avanzo = await siguientePagina(page);
       if (!avanzo) break;
     }
@@ -136,10 +144,10 @@ async function main({ headless = true } = {}) {
     await browser.close();
   }
 
-  console.log(`\nReparadas: ${reparadas}/${pendientes.length}`);
+  console.log(`  [REPARAR-TAD] Reparadas: ${reparadas}/${pendientes.length}`);
   if (noEncontradas.length) {
-    console.log('No encontradas en el portal (revisar manualmente):');
-    noEncontradas.forEach(p => console.log(`  id=${p.id} | ${p.numero_tramite} | ${p.fecha} | "${p.mensaje}"`));
+    console.log('  [REPARAR-TAD] No encontradas en el portal (revisar manualmente):');
+    noEncontradas.forEach(p => console.log(`  [REPARAR-TAD]   id=${p.id} | ${p.numero_tramite} | ${p.fecha} | "${p.mensaje}"`));
   }
 }
 
