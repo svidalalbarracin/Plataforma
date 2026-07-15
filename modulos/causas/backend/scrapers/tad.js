@@ -29,7 +29,7 @@ fs.mkdirSync(DIR_DOCS,  { recursive: true });
  */
 function notifExiste(numero_tramite, fecha, mensaje) {
   return !!db.prepare(
-    'SELECT id FROM notificaciones_tad WHERE numero_tramite = ? AND fecha = ? AND mensaje = ?'
+    'SELECT id FROM notificaciones_tad WHERE numero_tramite = ? AND fecha IS ? AND mensaje IS ?'
   ).get(numero_tramite, fecha, mensaje);
 }
 
@@ -211,19 +211,27 @@ async function extraerFilasDocs(page) {
 /**
  * Descarga el PDF de una notificación desde la columna Acciones.
  *
+ * El nombre del archivo incluye el mensaje (además de trámite y fecha) porque
+ * un mismo trámite puede recibir más de una notificación el mismo día (ej.
+ * "Alta Interviniente" y "Notificación Traslado inicial"); sin el mensaje,
+ * ambas colisionan en el mismo path y la segunda descarga pisa el PDF de la
+ * primera en disco.
+ *
  * @param {import('playwright').Page} page
  * @param {number} rowIndex       - Índice de la fila en tbody
  * @param {string} numero_tramite - Número de trámite (para el nombre del archivo)
  * @param {string|null} fecha     - Fecha en formato ISO (para el nombre del archivo)
+ * @param {string|null} mensaje   - Mensaje de la notificación (para el nombre del archivo)
  * @returns {Promise<string|null>} Ruta absoluta al PDF o null si falló
  */
-async function descargarNotif(page, rowIndex, numero_tramite, fecha) {
+async function descargarNotif(page, rowIndex, numero_tramite, fecha, mensaje) {
   const row = page.locator('table tbody tr').nth(rowIndex);
   const btn = row.locator('.acciones a, a:has(i.fa-download)').first();
 
-  const numLimpio   = (numero_tramite || 'sin-numero').replace(/[/\\:*?"<>|]/g, '-');
-  const fechaLimpia = (fecha         || 'sin-fecha'  ).replace(/[/\\:*?"<>|]/g, '-');
-  const destino     = path.join(DIR_NOTIF, `${numLimpio}_${fechaLimpia}.pdf`);
+  const numLimpio     = (numero_tramite || 'sin-numero').replace(/[/\\:*?"<>|]/g, '-');
+  const fechaLimpia   = (fecha          || 'sin-fecha'  ).replace(/[/\\:*?"<>|]/g, '-');
+  const mensajeLimpio = mensaje ? '_' + mensaje.replace(/[/\\:*?"<>|]/g, '-').slice(0, 40) : '';
+  const destino       = path.join(DIR_NOTIF, `${numLimpio}_${fechaLimpia}${mensajeLimpio}.pdf`);
 
   try {
     const [download] = await Promise.all([
@@ -340,7 +348,7 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
       duplicadosConsecutivos = 0;
       if (f.fecha && f.fecha < FECHA_LIMITE) break;
 
-      const archivePath = await descargarNotif(page, i, f.numero_tramite, f.fecha);
+      const archivePath = await descargarNotif(page, i, f.numero_tramite, f.fecha, f.mensaje);
       guardarNotif({ ...f, archivo_path: archivePath });
       nuevasNotif++;
     }
@@ -379,7 +387,11 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
   }
 }
 
-module.exports = { obtenerNotificacionesTAD };
+module.exports = {
+  obtenerNotificacionesTAD,
+  // Exportadas para reuso desde scripts puntuales de mantenimiento (ver reparar-tad-duplicados.js)
+  login, irANotificaciones, mostrar10, extraerFilasNotif, descargarNotif, isoFecha,
+};
 
 // node tad.js [--visible]
 if (require.main === module) {
