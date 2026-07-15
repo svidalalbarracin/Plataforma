@@ -32,7 +32,7 @@
   </div>
 
   <div class="card">
-    <div class="card-title">Nuevo pendiente</div>
+    <div class="card-title" id="form-title">Nuevo pendiente</div>
     <form id="form-pendiente" onsubmit="guardarPendiente(event)">
       <div class="form-grid form-grid-causas">
         <div class="form-group">
@@ -80,8 +80,10 @@
       </div>
       <input type="hidden" id="inp-notif-id">
       <input type="hidden" id="inp-notif-tipo">
+      <input type="hidden" id="inp-edit-id">
       <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Guardar pendiente</button>
+        <button type="submit" class="btn btn-primary" id="btn-submit-pendiente">Guardar pendiente</button>
+        <button type="button" class="btn btn-ghost" id="btn-cancelar-edicion" onclick="cancelarEdicion()" style="display:none">Cancelar</button>
       </div>
     </form>
   </div>
@@ -191,50 +193,88 @@
     }
   }
 
-  // ── Guardar pendiente ────────────────────────────
+  // ── Guardar pendiente (crear o editar) ───────────
   async function guardarPendiente(e) {
     e.preventDefault();
     const btn = e.target.querySelector('[type="submit"]');
     btn.disabled = true;
     btn.textContent = 'Guardando…';
 
-    const fecha  = document.getElementById('inp-fecha').value;
-    const diasAv = parseInt(document.getElementById('inp-aviso').value) || 0;
-    const notifId   = document.getElementById('inp-notif-id').value;
+    const fecha    = document.getElementById('inp-fecha').value;
+    const diasAv   = parseInt(document.getElementById('inp-aviso').value) || 0;
+    const notifId  = document.getElementById('inp-notif-id').value;
     const notifTipo = document.getElementById('inp-notif-tipo').value;
+    const editId   = document.getElementById('inp-edit-id').value;
+
+    const body = {
+      descripcion:       document.getElementById('inp-desc').value.trim(),
+      numero_expediente: document.getElementById('inp-expediente').value.trim() || null,
+      caratula:          document.getElementById('inp-caratula').value.trim()   || null,
+      origen:            document.getElementById('inp-origen').value             || null,
+      fecha_limite: fecha,
+      dias_aviso:   diasAv,
+      fecha_aviso:  restarDiasHabiles(fecha, diasAv),
+      nota:         document.getElementById('inp-nota').value.trim() || null,
+    };
+    if (!editId) {
+      body.notificacion_id   = notifId   ? parseInt(notifId)  : null;
+      body.notificacion_tipo = notifTipo || null;
+    }
 
     try {
-      const res = await fetch('/api/causas/pendientes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          descripcion:       document.getElementById('inp-desc').value.trim(),
-          numero_expediente: document.getElementById('inp-expediente').value.trim() || null,
-          caratula:          document.getElementById('inp-caratula').value.trim()   || null,
-          origen:            document.getElementById('inp-origen').value             || null,
-          notificacion_id:   notifId   ? parseInt(notifId)  : null,
-          notificacion_tipo: notifTipo || null,
-          fecha_limite: fecha,
-          dias_aviso:   diasAv,
-          fecha_aviso:  restarDiasHabiles(fecha, diasAv),
-          nota:         document.getElementById('inp-nota').value.trim() || null,
-        }),
-      });
+      const res = await fetch(
+        editId ? `/api/causas/pendientes/${editId}` : '/api/causas/pendientes',
+        {
+          method: editId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      );
       if (!res.ok) throw new Error(await res.text());
-      e.target.reset();
-      document.getElementById('aviso-calc').textContent = '';
-      // Limpiar hidden fields y URL
-      document.getElementById('inp-notif-id').value   = '';
-      document.getElementById('inp-notif-tipo').value = '';
-      history.replaceState(null, '', location.pathname);
-      toast('Pendiente guardado');
+      cancelarEdicion();
+      toast(editId ? 'Pendiente actualizado' : 'Pendiente guardado');
       await cargarPendientes();
     } catch (err) {
       toast('Error al guardar: ' + err.message, 'error');
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Guardar pendiente';
+      btn.textContent = editId ? 'Guardar cambios' : 'Guardar pendiente';
     }
+  }
+
+  // ── Editar pendiente ──────────────────────────────
+  function editarPendiente(id) {
+    const p = PENDIENTES.find(x => x.id === id);
+    if (!p) return;
+
+    document.getElementById('inp-expediente').value = p.numero_expediente || '';
+    document.getElementById('inp-caratula').value   = p.caratula || '';
+    document.getElementById('inp-origen').value     = p.origen || '';
+    document.getElementById('inp-desc').value       = p.descripcion || '';
+    document.getElementById('inp-fecha').value      = p.fecha_limite || '';
+    document.getElementById('inp-aviso').value      = p.dias_aviso ?? 3;
+    document.getElementById('inp-nota').value       = p.nota || '';
+    document.getElementById('inp-edit-id').value    = p.id;
+
+    document.getElementById('form-title').textContent = 'Editar pendiente';
+    const btnSubmit = document.getElementById('btn-submit-pendiente');
+    btnSubmit.textContent = 'Guardar cambios';
+    document.getElementById('btn-cancelar-edicion').style.display = '';
+
+    actualizarCalcAviso();
+    document.getElementById('form-pendiente').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cancelarEdicion() {
+    document.getElementById('form-pendiente').reset();
+    document.getElementById('aviso-calc').textContent = '';
+    document.getElementById('inp-notif-id').value   = '';
+    document.getElementById('inp-notif-tipo').value = '';
+    document.getElementById('inp-edit-id').value    = '';
+    document.getElementById('form-title').textContent = 'Nuevo pendiente';
+    document.getElementById('btn-submit-pendiente').textContent = 'Guardar pendiente';
+    document.getElementById('btn-cancelar-edicion').style.display = 'none';
+    history.replaceState(null, '', location.pathname);
   }
 
   // ── Origen badge ─────────────────────────────────
@@ -297,6 +337,7 @@
               ? `<button class="btn btn-success btn-sm" onclick="toggleCompletado(${p.id})">Completar</button>`
               : `<button class="btn btn-ghost btn-sm" onclick="toggleCompletado(${p.id})">Desmarcar</button>`
             }
+            <button class="btn btn-ghost btn-sm btn-icon" onclick="editarPendiente(${p.id})" title="Editar">✎</button>
             <button class="btn btn-ghost btn-sm btn-icon" onclick="eliminarPendiente(${p.id})" title="Eliminar">✕</button>
           </div>
         </div>`;
