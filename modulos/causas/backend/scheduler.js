@@ -10,6 +10,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'
 const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
 const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
 const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
+const { main: repararDuplicadosTAD }  = require('./scrapers/reparar-tad-duplicados');
 const { notificarNotificacionesDiarias, notificarAvisoPendientes } = require('./notificaciones');
 const { inferirTodos, autoCrearCausas, vincularNotificacionesPendientes } = require('./inferirCliente');
 
@@ -108,10 +109,19 @@ function programarAvisoDiario() {
 
 console.log(`[causas-scheduler] Iniciado. Intervalo PJN+TAD: cada ${INTERVALO_MIN} min. SICNEA: solo sábados al iniciar.`);
 
-const primerCiclo = ejecutarCiclo();
-ejecutarSICNEA();
+const primerCiclo  = ejecutarCiclo();
+const primerSICNEA = ejecutarSICNEA();
 programarResumenDiario();
 programarAvisoDiario();
+
+// Una vez que terminaron todos los scrapers del arranque, repara notificaciones
+// TAD cuyo archivo haya quedado pisado por otra del mismo trámite/día (bug ya
+// corregido hacia adelante en tad.js). Si no hay nada para reparar, no hace nada.
+Promise.all([primerCiclo, primerSICNEA]).then(() =>
+  repararDuplicadosTAD({ headless: true })
+).catch(err =>
+  console.error(`[${new Date().toISOString()}] [causas/reparar-tad] Error:`, err.message)
+);
 
 setInterval(ejecutarCiclo, INTERVALO_MIN * 60 * 1000);
 
