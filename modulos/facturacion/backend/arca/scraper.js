@@ -197,14 +197,19 @@ function yaImportada(numero) {
   return !!db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero);
 }
 
+/** Comprobantes que no discriminan IVA: tipo C y exportación. El total es el neto. */
+const TIPOS_SIN_IVA = new Set(['C', 'NC C', 'ND C', 'E']);
+
 /**
  * Inserta o actualiza una factura en la DB.
  * Si `forzar` es true y la factura ya existe, la actualiza (útil para reimportar).
- * El monto_neto se calcula asumiendo IVA 21% sobre el monto_total.
+ * El monto_neto se calcula asumiendo IVA 21% sobre el monto_total, salvo para
+ * los TIPOS_SIN_IVA, donde neto = total e iva = 0.
  * @param {{ clienteId, numero, fecha, montoTotal, pdfPath, tipo?, facturaAsociadaNumero?, moneda?, tipoCambio?, forzar? }} opts
  */
 function guardarFactura({ clienteId, numero, fecha, montoTotal, pdfPath, tipo = null, facturaAsociadaNumero = null, moneda = 'ARS', tipoCambio = null, forzar = false }) {
-  const montoNeto = Math.round((montoTotal / 1.21) * 100) / 100;
+  const sinIva    = TIPOS_SIN_IVA.has(tipo);
+  const montoNeto = sinIva ? montoTotal : Math.round((montoTotal / 1.21) * 100) / 100;
   const iva       = Math.round((montoTotal - montoNeto) * 100) / 100;
 
   if (forzar && db.prepare('SELECT id FROM facturas WHERE numero = ?').get(numero)) {
