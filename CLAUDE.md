@@ -16,7 +16,7 @@ Frontend HTML vanilla servido como static files por Express (sin framework JS). 
 - **Scrapers**: Playwright (Chromium headless)
 - **PDF**: pdfkit (generar), pdf-parse (leer texto)
 - **Mail**: nodemailer (Gmail SMTP, App Password)
-- **Scheduler**: node-cron para tareas de hora fija (mails); setInterval para el ciclo de scrapers de causas
+- **Scheduler**: facturación usa node-cron para sus mails de hora fija; causas chequea sus mails dentro de su propio ciclo (setInterval) para tolerar reinicios — ver sección Mails
 - **Frontend**: HTML + CSS + JS vanilla
 
 ## Estructura de carpetas
@@ -124,8 +124,7 @@ Al iniciar el servidor:
    - `vincularNotificacionesPendientes()` → actualiza `causa_id` en notificaciones donde el expediente ya tiene causa
    - `inferirTodos()` → para causas sin cliente: parsea carátula (PJN), mensaje/PDF (TAD), razon_social (SICNEA) e intenta vincular/crear cliente
 4. Repite PJN + TAD cada 30 minutos (configurable con CAUSAS_INTERVALO_MIN)
-5. Resumen diario de notificaciones se envía a las 18:00hs
-6. Aviso de pendientes del día se envía a las 9:00hs
+5. Al final de cada ciclo (al iniciar y en cada repetición) chequea si corresponde mandar los mails de aviso — ver sección Mails
 
 ## Inferencia de clientes (inferirCliente.js)
 
@@ -137,9 +136,20 @@ Cuando una causa no tiene cliente vinculado, el sistema intenta inferirlo:
 
 ## Mails
 
-Hay dos tipos de mails enviados por el módulo de causas:
-1. **Resumen diario a las 18hs**: todas las notificaciones que llegaron durante el día (filtra por `date(created_at, '-3 hours') = date('now', '-3 hours')` para hora argentina)
-2. **Aviso pendientes a las 9hs**: pendientes cuya `fecha_aviso` es hoy y no están completados
+Hay dos tipos de mails enviados por el módulo de causas. Ninguno usa cron: la
+plataforma no corre 24/7 (depende de que la computadora esté prendida), así
+que un cron de hora fija se pierde el aviso entero si el proceso no está vivo
+en ese minuto exacto. En cambio, `chequearMailsHorarios()` (scheduler.js) se
+llama al final de cada ciclo de scrapers (al iniciar y cada
+CAUSAS_INTERVALO_MIN minutos) y manda el mail la primera vez del día que la
+hora ya pasó — así, si estuvo apagada a esa hora, sale apenas se prende de
+nuevo. Se registra en `scraper_meta` (`pendientes_ultimo_envio`,
+`notificaciones_ultimo_envio`) para no reenviar el mismo día, pero solo
+cuando efectivamente hubo algo que mandar (si dio 0, se reintenta en el
+próximo ciclo por si aparece algo más tarde ese mismo día).
+
+1. **Pendientes, desde las 8hs**: pendientes con `fecha_aviso` de hoy **o vencida** y no completados — incluye vencidos para no perder el aviso de un día en que la plataforma no llegó a prenderse.
+2. **Notificaciones sin leer, desde las 18hs**: todas las notificaciones PJN/TAD/SICNEA con `leida = 0`, sin filtrar por fecha — es un recordatorio de lo que falta revisar, no un resumen del día.
 
 ## Configuración (.env)
 
