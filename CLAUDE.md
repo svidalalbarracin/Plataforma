@@ -16,7 +16,7 @@ Frontend HTML vanilla servido como static files por Express (sin framework JS). 
 - **Scrapers**: Playwright (Chromium headless)
 - **PDF**: pdfkit (generar), pdf-parse (leer texto)
 - **Mail**: nodemailer (Gmail SMTP, App Password)
-- **Scheduler**: setTimeout/setInterval manual (sin node-cron)
+- **Scheduler**: causas usa setTimeout/setInterval manual; facturación usa node-cron
 - **Frontend**: HTML + CSS + JS vanilla
 
 ## Estructura de carpetas
@@ -138,10 +138,9 @@ Cuando una causa no tiene cliente vinculado, el sistema intenta inferirlo:
 
 ## Mails
 
-Hay tres tipos de mails enviados por el módulo de causas:
-1. **Inmediato** (al terminar cada ciclo de scrapers): lista de notificaciones nuevas encontradas en ese ciclo, agrupadas por PJN/TAD/SICNEA
-2. **Resumen diario a las 18hs**: todas las notificaciones que llegaron durante el día (filtra por `date(created_at, '-3 hours') = date('now', '-3 hours')` para hora argentina)
-3. **Aviso pendientes a las 9hs**: pendientes cuya `fecha_aviso` es hoy y no están completados
+Hay dos tipos de mails enviados por el módulo de causas:
+1. **Resumen diario a las 18hs**: todas las notificaciones que llegaron durante el día (filtra por `date(created_at, '-3 hours') = date('now', '-3 hours')` para hora argentina)
+2. **Aviso pendientes a las 9hs**: pendientes cuya `fecha_aviso` es hoy y no están completados
 
 ## Configuración (.env)
 
