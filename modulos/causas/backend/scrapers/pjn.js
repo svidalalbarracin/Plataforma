@@ -163,7 +163,7 @@ async function cambiarResultadosPorPagina(page, cantidad = 30) {
  * Estructura de columnas PJN: [0] icono | [1] número | [2] expediente | [3] autor | [4] destinatario | [5] fecha | [6][7] acciones
  *
  * @param {import('playwright').Page} page
- * @returns {Promise<Array<{ rowIndex: number, numero: string, expediente: string, autor: string, destinatario: string, fecha_envio: string }>>}
+ * @returns {Promise<Array<{ rowIndex: number, numero: string, expediente: string, autor: string, fecha_envio: string }>>}
  */
 async function extraerFilas(page) {
   await page.waitForFunction(
@@ -182,7 +182,6 @@ async function extraerFilas(page) {
           numero:       celdas[1].replace(/\s/g, ''),
           expediente:   celdas[2],
           autor:        celdas[3],
-          destinatario: celdas[4],
           fecha_envio:  celdas[5],
         });
       }

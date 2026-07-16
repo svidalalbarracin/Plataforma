@@ -75,7 +75,7 @@ plataforma/
 - **facturacion_recurrente** (id, cliente_id UNIQUE, honorario_usd, activo, created_at)
 
 ### Causas - Notificaciones (las tres tablas tienen `causa_id` y `leida`)
-- **notificaciones_pjn** (numero UNIQUE, numero_expediente, caratula, autor, destinatario, fecha_envio, archivo_path, leida, causa_id)
+- **notificaciones_pjn** (numero UNIQUE, numero_expediente, caratula, autor, fecha_envio, archivo_path, leida, causa_id)
 - **notificaciones_tad** (fecha, nombre, mensaje, numero_tramite, archivo_path, leida, causa_id)
 - **documentos_externos_tad** (fecha_envio, nombre, numero_tramite, motivo, archivos_paths (JSON), leida)
 - **notificaciones_sicnea** (numero UNIQUE, dependencia, cuit_cliente, razon_social, aduana, motivo, documento_ref, fecha_alta, estado, archivos_paths (JSON), leida, causa_id)

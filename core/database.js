@@ -150,7 +150,6 @@ db.exec(`
     numero_expediente TEXT,
     caratula          TEXT,
     autor             TEXT,
-    destinatario      TEXT,
     fecha_envio       TEXT,
     archivo_path      TEXT,
     leida             INTEGER NOT NULL DEFAULT 0,
@@ -265,5 +264,14 @@ for (const tabla of ['notificaciones_pjn', 'notificaciones_tad', 'notificaciones
 // _pagos_old es el residuo de una migración manual vieja de pagos (renombrar,
 // recrear, copiar) a la que le faltó el drop final.
 db.exec('DROP TABLE IF EXISTS _pagos_old');
+
+// notificaciones_pjn.destinatario se descartó: el portal trae ahí al abogado
+// que recibe la cédula (siempre el mismo), no aporta información.
+{
+  const cols = db.prepare('PRAGMA table_info(notificaciones_pjn)').all().map(c => c.name);
+  if (cols.includes('destinatario')) {
+    db.exec('ALTER TABLE notificaciones_pjn DROP COLUMN destinatario');
+  }
+}
 
 module.exports = db;
