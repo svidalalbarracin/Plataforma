@@ -274,4 +274,11 @@ db.exec('DROP TABLE IF EXISTS _pagos_old');
   }
 }
 
+// Las notas de débito importadas antes de que mapearTipo() las reconociera
+// quedaron con el texto largo de ARCA como tipo.
+for (const letra of ['A', 'B', 'C']) {
+  db.prepare('UPDATE facturas SET tipo = ? WHERE tipo = ?')
+    .run(`ND ${letra}`, `Nota de Débito ${letra}`);
+}
+
 module.exports = db;

@@ -49,6 +49,10 @@ function mapearTipo(tipoComp) {
   if (/Nota\s+de\s+Cr[eé]dito\s+B\b/i.test(t))              return 'NC B';
   if (/Nota\s+de\s+Cr[eé]dito\s+C\b/i.test(t))              return 'NC C';
   if (/Nota\s+de\s+Cr[eé]dito/i.test(t))                    return 'NC';
+  if (/Nota\s+de\s+D[eé]bito\s+A\b/i.test(t))               return 'ND A';
+  if (/Nota\s+de\s+D[eé]bito\s+B\b/i.test(t))               return 'ND B';
+  if (/Nota\s+de\s+D[eé]bito\s+C\b/i.test(t))               return 'ND C';
+  if (/Nota\s+de\s+D[eé]bito/i.test(t))                     return 'ND';
   if (/FCE|Factura\s+de\s+Cr[eé]dito/i.test(t))             return 'FCE';
   if (/Factura\s+de\s+Exportaci[oó]n|Exportaci[oó]n/i.test(t)) return 'E';
   return t || null;
