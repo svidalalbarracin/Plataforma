@@ -111,16 +111,6 @@ db.exec(`
     FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE CASCADE
   );
 
-  CREATE TABLE IF NOT EXISTS carpetas (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    causa_id    INTEGER,
-    numero      TEXT,
-    ubicacion   TEXT,
-    descripcion TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE SET NULL
-  );
-
   CREATE TABLE IF NOT EXISTS pendientes (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     descripcion       TEXT    NOT NULL,
@@ -280,5 +270,9 @@ for (const letra of ['A', 'B', 'C']) {
   db.prepare('UPDATE facturas SET tipo = ? WHERE tipo = ?')
     .run(`ND ${letra}`, `Nota de Débito ${letra}`);
 }
+
+// La funcionalidad de carpetas físicas se retiró (2026-07); se reconstruirá
+// desde cero cuando se arme la vista Carpetas.
+db.exec('DROP TABLE IF EXISTS carpetas');
 
 module.exports = db;

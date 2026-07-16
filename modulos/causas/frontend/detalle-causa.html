@@ -251,17 +251,6 @@
           }
         </div>
       </div>
-
-      <!-- Carpetas físicas -->
-      <div class="card">
-        <div class="flex justify-between items-center" style="margin-bottom:1.25rem">
-          <div class="card-title" style="margin-bottom:0">Carpetas físicas</div>
-          <button class="btn btn-ghost btn-sm" onclick="abrirModalCarpeta()">+ Agregar</button>
-        </div>
-        <div id="carpetas-lista">
-          ${renderCarpetas(causa.carpetas ?? [])}
-        </div>
-      </div>
     `;
 
     document.getElementById('contenido').innerHTML = html;
@@ -379,19 +368,6 @@
           ${item.docUrl ? `<div class="tl-acciones"><a href="${item.docUrl}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Ver doc</a></div>` : ''}
         </div>
       </div>`;
-  }
-
-  function renderCarpetas(carpetas) {
-    if (!carpetas.length) return '<div class="empty" style="padding:1.5rem 0">Sin carpetas físicas vinculadas</div>';
-    return carpetas.map(c => `
-      <div class="flex justify-between items-center" style="padding:.6rem 0;border-bottom:1px solid var(--border)">
-        <div>
-          ${c.numero   ? `<div style="font-weight:500">Carpeta ${escHtml(c.numero)}</div>` : ''}
-          ${c.ubicacion ? `<div class="text-muted" style="font-size:.875rem">${escHtml(c.ubicacion)}</div>` : ''}
-          ${c.descripcion ? `<div class="text-muted" style="font-size:.8125rem;font-style:italic">${escHtml(c.descripcion)}</div>` : ''}
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="eliminarCarpeta(${c.id})" title="Eliminar">&#x2715;</button>
-      </div>`).join('');
   }
 
   // ── Editar causa ───────────────────────────────────
@@ -667,31 +643,6 @@
       if (total) cargarCausa();
     } catch (e) {
       toast('Error: ' + e.message, 'error');
-    }
-  }
-
-  // ── Carpetas ───────────────────────────────────────
-  function abrirModalCarpeta() {
-    const numero    = prompt('Número de carpeta (opcional):') ?? '';
-    const ubicacion = prompt('Ubicación (ej: Estante A / Caja 3):') ?? '';
-    if (!numero && !ubicacion) return;
-    fetch('/api/causas/biblioteca/carpetas', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ causa_id: CAUSA_ID, numero: numero || null, ubicacion: ubicacion || null }),
-    })
-      .then(r => r.ok ? (toast('Carpeta agregada'), cargarCausa()) : Promise.reject())
-      .catch(() => toast('Error al agregar carpeta', 'error'));
-  }
-
-  async function eliminarCarpeta(carpetaId) {
-    if (!confirm('¿Eliminar esta carpeta?')) return;
-    try {
-      await fetch(`/api/causas/biblioteca/carpetas/${carpetaId}`, { method: 'DELETE' });
-      toast('Carpeta eliminada');
-      cargarCausa();
-    } catch {
-      toast('Error al eliminar', 'error');
     }
   }
 

@@ -85,7 +85,6 @@ plataforma/
 - **causas** (id, numero_expediente, caratula, tipo: 'pjn'|'tad'|'sicnea'|'aduanero'|'papel', estado: 'en_tramite'|'archivada'|'cerrada', juzgado, fecha_inicio, notas)
 - **causa_cliente** (causa_id, cliente_id) ← relación N:M
 - **causa_notas** (causa_id, texto, fecha) ← notas manuales con timeline
-- **carpetas** (causa_id, numero, ubicacion, descripcion)
 - **pendientes** (descripcion, causa_id, fecha_limite, dias_aviso, fecha_aviso, nota, completado, numero_expediente, caratula, origen, notificacion_id, notificacion_tipo, completado_at)
 
 ## Scrapers — cómo funcionan

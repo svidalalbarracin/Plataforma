@@ -10,7 +10,6 @@
   const MODULOS = [
     { slug: 'facturacion', label: 'Facturación', href: '/facturacion/' },
     { slug: 'causas',      label: 'Causas',      href: '/causas/' },
-    { slug: 'carpetas',    label: 'Carpetas',     href: '#', pronto: true },
   ];
 
   const path = window.location.pathname;
