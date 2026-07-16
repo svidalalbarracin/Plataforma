@@ -191,7 +191,6 @@ async function extraerFilas(ctx) {
           razon_social: celdas[2],
           motivo:       celdas[3],
           fecha_envio:  celdas[4],
-          vencimiento:  celdas[5],
           tieneVer,
         });
       }

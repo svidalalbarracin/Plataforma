@@ -359,4 +359,4 @@ function vincularNotificacionesPendientes() {
   return { pjn, tad, sicnea };
 }
 
-module.exports = { inferirParaCausa, inferirTodos, autoCrearCausas, vincularNotificacionesPendientes, extraerDePJN, extraerDeTAD, extraerDeTADTextoPDF };
+module.exports = { inferirTodos, autoCrearCausas, vincularNotificacionesPendientes };

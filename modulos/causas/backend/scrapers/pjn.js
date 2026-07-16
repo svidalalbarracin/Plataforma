@@ -163,7 +163,7 @@ async function cambiarResultadosPorPagina(page, cantidad = 30) {
  * Estructura de columnas PJN: [0] icono | [1] número | [2] expediente | [3] autor | [4] destinatario | [5] fecha | [6][7] acciones
  *
  * @param {import('playwright').Page} page
- * @returns {Promise<Array<{ rowIndex: number, numero: string, expediente: string, autor: string, destinatario: string, fecha_envio: string }>>}
+ * @returns {Promise<Array<{ rowIndex: number, numero: string, expediente: string, autor: string, fecha_envio: string }>>}
  */
 async function extraerFilas(page) {
   await page.waitForFunction(
@@ -182,7 +182,6 @@ async function extraerFilas(page) {
           numero:       celdas[1].replace(/\s/g, ''),
           expediente:   celdas[2],
           autor:        celdas[3],
-          destinatario: celdas[4],
           fecha_envio:  celdas[5],
         });
       }
@@ -300,7 +299,7 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
     ok();
 
     ok = paso('Procesando...');
-    let pagina = 1, nuevas = 0, examinadas = 0, duplicadosConsecutivos = 0, detener = false;
+    let nuevas = 0, examinadas = 0, duplicadosConsecutivos = 0, detener = false;
 
     while (!detener) {
       const filas = await extraerFilas(page);
@@ -344,7 +343,6 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
       if (detener) break;
       if (!(await hayPaginaSiguiente(page))) break;
       await irAPaginaSiguiente(page);
-      pagina++;
     }
     ok();
 
@@ -393,7 +391,6 @@ async function backfillAdjuntosPJN({ headless = true } = {}) {
     await page.waitForSelector('table tbody tr', { timeout: 30000 });
     await cambiarResultadosPorPagina(page, 30);
 
-    let pagina = 1;
     while (pendientes.size > 0) {
       const filas = await extraerFilas(page);
       for (const fila of filas) {
@@ -405,7 +402,6 @@ async function backfillAdjuntosPJN({ headless = true } = {}) {
       if (pendientes.size === 0) break;
       if (!(await hayPaginaSiguiente(page))) break;
       await irAPaginaSiguiente(page);
-      pagina++;
     }
     ok();
     console.log(`  [PJN] Backfill: ${descargados} PDF(s) descargado(s)`);

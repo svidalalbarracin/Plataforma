@@ -1,25 +1,15 @@
 /**
  * Notificaciones por email del módulo de causas.
  *
- * Exporta notificarNuevasCausas(desde), que consulta las tres tablas de
- * notificaciones (PJN, TAD, SICNEA) para registros insertados a partir de
- * `desde` y envía un mail resumen si hay novedades.
+ * Exporta notificarNotificacionesSinLeer() (todo lo sin revisar, desde 18hs) y
+ * notificarAvisoPendientes() (pendientes de hoy o vencidos, desde 8hs). El
+ * scheduler decide cuándo llamarlas — ver modulos/causas/backend/scheduler.js.
  *
  * @module causas/notificaciones
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'), quiet: true });
 const nodemailer = require('nodemailer');
 const db = require('../../../core/database');
-
-/**
- * Devuelve la fecha/hora actual en formato SQLite ('YYYY-MM-DD HH:MM:SS', UTC).
- * Usar esta función para generar el timestamp `desde` antes de correr los scrapers,
- * ya que SQLite almacena created_at con datetime('now') en ese mismo formato.
- * @returns {string}
- */
-function ahoraSQL() {
-  return new Date().toISOString().replace('T', ' ').slice(0, 19);
-}
 
 function crearTransporter() {
   return nodemailer.createTransport({
@@ -121,74 +111,20 @@ function seccionSICNEA(notifs) {
 }
 
 /**
- * Consulta PJN, TAD y SICNEA para notificaciones insertadas desde `desde`
- * y envía un mail resumen si hay novedades. No lanza errores — los loguea.
- *
- * @param {string} desde - Timestamp en formato SQLite ('YYYY-MM-DD HH:MM:SS', UTC).
- *                         Usar ahoraSQL() antes de correr los scrapers.
- * @returns {Promise<number>} Total de notificaciones nuevas enviadas por mail (0 si ninguna).
- */
-async function notificarNuevasCausas(desde) {
-  const pjn    = db.prepare('SELECT * FROM notificaciones_pjn    WHERE created_at >= ?').all(desde);
-  const tad    = db.prepare('SELECT * FROM notificaciones_tad    WHERE created_at >= ?').all(desde);
-  const sicnea = db.prepare('SELECT * FROM notificaciones_sicnea WHERE created_at >= ?').all(desde);
-
-  const total = pjn.length + tad.length + sicnea.length;
-  if (total === 0) return 0;
-
-  const partes = [];
-  if (pjn.length)    partes.push(`PJN: ${pjn.length}`);
-  if (tad.length)    partes.push(`TAD: ${tad.length}`);
-  if (sicnea.length) partes.push(`SICNEA: ${sicnea.length}`);
-
-  console.log(`  [causas/mail] ${total} nueva(s) (${partes.join(', ')}) — enviando...`);
-
-  const hoy = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-  const html = `<!DOCTYPE html>
-<html lang="es">
-<body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a">
-  <div style="max-width:720px;margin:0 auto;background:#ffffff;border-radius:12px;padding:36px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
-    <h1 style="margin:0 0 6px;font-size:20px;font-weight:700">Nuevas notificaciones</h1>
-    <p style="margin:0 0 24px;color:#64748b;font-size:14px">${hoy} &nbsp;·&nbsp; ${partes.join(' &nbsp;·&nbsp; ')}</p>
-    <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 4px">
-    ${seccionPJN(pjn)}
-    ${seccionTAD(tad)}
-    ${seccionSICNEA(sicnea)}
-    <p style="margin-top:36px;font-size:12px;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:16px">
-      Generado automáticamente &nbsp;·&nbsp; Sistema de Causas
-    </p>
-  </div>
-</body>
-</html>`;
-
-  const transporter = crearTransporter();
-  await transporter.sendMail({
-    from:    `"Causas" <${process.env.MAIL_USER}>`,
-    to:      process.env.MAIL_TO,
-    subject: `Nuevas notificaciones (${total}) — ${partes.join(', ')}`,
-    html,
-  });
-  transporter.close();
-
-  console.log(`  [causas/mail] Enviado → ${process.env.MAIL_TO}`);
-  return total;
-}
-
-/**
- * Busca pendientes cuya fecha_aviso es hoy y envía un mail resumen.
- * Se llama desde el scheduler a las 9:00hs cada día.
+ * Busca pendientes con fecha_aviso hoy o vencida (y no completados) y envía
+ * un mail resumen. El scheduler la llama desde las 8hs — incluye vencidos
+ * para que un aviso perdido por la plataforma apagada no se pierda del todo.
  *
  * @returns {Promise<number>} Cantidad de pendientes notificados (0 si ninguno).
  */
 async function notificarAvisoPendientes() {
   const hoy  = new Date().toISOString().slice(0, 10);
   const rows = db.prepare(
-    'SELECT * FROM pendientes WHERE fecha_aviso = ? AND completado = 0'
+    'SELECT * FROM pendientes WHERE fecha_aviso <= ? AND completado = 0'
   ).all(hoy);
 
   if (!rows.length) {
-    console.log('  [causas/aviso-pendientes] Sin pendientes para hoy');
+    console.log('  [causas/aviso-pendientes] Sin pendientes para avisar');
     return 0;
   }
 
@@ -208,8 +144,8 @@ async function notificarAvisoPendientes() {
 <html lang="es">
 <body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a">
   <div style="max-width:720px;margin:0 auto;background:#ffffff;border-radius:12px;padding:36px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
-    <h1 style="margin:0 0 6px;font-size:20px;font-weight:700">Pendientes del día</h1>
-    <p style="margin:0 0 24px;color:#64748b;font-size:14px">${fechaLarga} &nbsp;·&nbsp; ${rows.length} pendiente(s)</p>
+    <h1 style="margin:0 0 6px;font-size:20px;font-weight:700">Pendientes</h1>
+    <p style="margin:0 0 24px;color:#64748b;font-size:14px">${fechaLarga} &nbsp;·&nbsp; ${rows.length} pendiente(s) de hoy o vencidos</p>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 16px">
     <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
       <thead>
@@ -233,7 +169,7 @@ async function notificarAvisoPendientes() {
   await transporter.sendMail({
     from:    `"Causas" <${process.env.MAIL_USER}>`,
     to:      process.env.MAIL_TO,
-    subject: `Pendientes del día - ${fechaLarga}`,
+    subject: `Pendientes (${rows.length}) - ${fechaLarga}`,
     html,
   });
   transporter.close();
@@ -243,21 +179,21 @@ async function notificarAvisoPendientes() {
 }
 
 /**
- * Consulta PJN, TAD y SICNEA para notificaciones del día (hora Argentina, UTC-3)
- * y envía un único mail resumen. Pensado para correr a las 18hs.
+ * Consulta PJN, TAD y SICNEA para notificaciones sin leer, sin importar la
+ * fecha, y envía un único mail resumen si hay alguna. Es un recordatorio de
+ * lo que falta revisar, no un resumen del día — el scheduler la llama desde
+ * las 18hs.
  *
  * @returns {Promise<number>} Total de notificaciones enviadas (0 si ninguna).
  */
-async function notificarNotificacionesDiarias() {
-  const hoy = `date(created_at, '-3 hours') = date('now', '-3 hours')`;
-
-  const pjn    = db.prepare(`SELECT * FROM notificaciones_pjn    WHERE ${hoy}`).all();
-  const tad    = db.prepare(`SELECT * FROM notificaciones_tad    WHERE ${hoy}`).all();
-  const sicnea = db.prepare(`SELECT * FROM notificaciones_sicnea WHERE ${hoy}`).all();
+async function notificarNotificacionesSinLeer() {
+  const pjn    = db.prepare('SELECT * FROM notificaciones_pjn    WHERE leida = 0').all();
+  const tad    = db.prepare('SELECT * FROM notificaciones_tad    WHERE leida = 0').all();
+  const sicnea = db.prepare('SELECT * FROM notificaciones_sicnea WHERE leida = 0').all();
 
   const total = pjn.length + tad.length + sicnea.length;
   if (total === 0) {
-    console.log('  [causas/mail-diario] Sin notificaciones hoy');
+    console.log('  [causas/mail-sin-leer] Sin notificaciones pendientes de revisión');
     return 0;
   }
 
@@ -266,7 +202,7 @@ async function notificarNotificacionesDiarias() {
   if (tad.length)    partes.push(`TAD: ${tad.length}`);
   if (sicnea.length) partes.push(`SICNEA: ${sicnea.length}`);
 
-  console.log(`  [causas/mail-diario] ${total} notificación(es) hoy (${partes.join(', ')}) — enviando...`);
+  console.log(`  [causas/mail-sin-leer] ${total} sin leer (${partes.join(', ')}) — enviando...`);
 
   const hoyStr = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -274,7 +210,7 @@ async function notificarNotificacionesDiarias() {
 <html lang="es">
 <body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a">
   <div style="max-width:720px;margin:0 auto;background:#ffffff;border-radius:12px;padding:36px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
-    <h1 style="margin:0 0 6px;font-size:20px;font-weight:700">Notificaciones del día</h1>
+    <h1 style="margin:0 0 6px;font-size:20px;font-weight:700">Notificaciones sin leer</h1>
     <p style="margin:0 0 24px;color:#64748b;font-size:14px">${hoyStr} &nbsp;·&nbsp; ${partes.join(' &nbsp;·&nbsp; ')}</p>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 4px">
     ${seccionPJN(pjn)}
@@ -291,13 +227,13 @@ async function notificarNotificacionesDiarias() {
   await transporter.sendMail({
     from:    `"Causas" <${process.env.MAIL_USER}>`,
     to:      process.env.MAIL_TO,
-    subject: `Notificaciones del día - ${hoyStr} (${partes.join(', ')})`,
+    subject: `Notificaciones sin leer (${total}) — ${partes.join(', ')}`,
     html,
   });
   transporter.close();
 
-  console.log(`  [causas/mail-diario] Enviado → ${process.env.MAIL_TO}`);
+  console.log(`  [causas/mail-sin-leer] Enviado → ${process.env.MAIL_TO}`);
   return total;
 }
 
-module.exports = { notificarNuevasCausas, notificarNotificacionesDiarias, notificarAvisoPendientes, ahoraSQL };
+module.exports = { notificarNotificacionesSinLeer, notificarAvisoPendientes };

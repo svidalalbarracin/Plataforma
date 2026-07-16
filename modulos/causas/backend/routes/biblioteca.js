@@ -17,11 +17,6 @@
  * POST   /api/causas/biblioteca/:id/vincular-notif       → auto-vincular notificaciones por expediente
  * PATCH  /api/causas/biblioteca/notif/:origen/:nId/causa → asignar causa_id a una notificación
  *
- * GET    /api/causas/biblioteca/carpetas                 → lista carpetas (con causa vinculada)
- * POST   /api/causas/biblioteca/carpetas                 → crear carpeta
- * PUT    /api/causas/biblioteca/carpetas/:id             → actualizar carpeta
- * DELETE /api/causas/biblioteca/carpetas/:id             → eliminar carpeta
- *
  * @module causas/routes/biblioteca
  */
 const path            = require('path');
@@ -87,8 +82,7 @@ router.get('/', (req, res) => {
       c.juzgado, c.fecha_inicio, c.notas, c.created_at,
       (SELECT COUNT(*) FROM notificaciones_pjn    WHERE causa_id = c.id) AS notif_pjn,
       (SELECT COUNT(*) FROM notificaciones_tad    WHERE causa_id = c.id) AS notif_tad,
-      (SELECT COUNT(*) FROM notificaciones_sicnea WHERE causa_id = c.id) AS notif_sicnea,
-      (SELECT COUNT(*) FROM carpetas              WHERE causa_id = c.id) AS carpetas_count
+      (SELECT COUNT(*) FROM notificaciones_sicnea WHERE causa_id = c.id) AS notif_sicnea
     FROM causas c
     ${where}
     ORDER BY c.created_at DESC
@@ -277,7 +271,7 @@ router.get('/notif-doc/:origen/:id', (req, res) => {
 
 /**
  * GET /api/causas/biblioteca/:id
- * Detalle completo: causa + clientes + notificaciones vinculadas + carpetas.
+ * Detalle completo: causa + clientes + notificaciones vinculadas + pendientes + notas.
  */
 router.get('/:id', (req, res) => {
   const causa = getCausa(req.params.id);
@@ -305,11 +299,6 @@ router.get('/:id', (req, res) => {
     FROM notificaciones_sicnea WHERE causa_id = ? ORDER BY fecha_alta DESC
   `).all(causa.id);
 
-  const carpetas = db.prepare(`
-    SELECT id, numero, ubicacion, descripcion, created_at
-    FROM carpetas WHERE causa_id = ? ORDER BY created_at DESC
-  `).all(causa.id);
-
   const pendientes = db.prepare(`
     SELECT id, descripcion, fecha_limite, completado, origen, nota, created_at
     FROM pendientes WHERE causa_id = ? ORDER BY completado ASC, fecha_limite ASC
@@ -320,7 +309,7 @@ router.get('/:id', (req, res) => {
     FROM causa_notas WHERE causa_id = ? ORDER BY fecha DESC, created_at DESC
   `).all(causa.id);
 
-  res.json({ ...causa, clientes, notif_pjn, notif_tad, notif_sicnea, carpetas, pendientes, causa_notas });
+  res.json({ ...causa, clientes, notif_pjn, notif_tad, notif_sicnea, pendientes, causa_notas });
 });
 
 // ── Causas — CRUD ─────────────────────────────────────────────────────────────
@@ -530,69 +519,6 @@ router.patch('/notas/:notaId', (req, res) => {
 router.delete('/notas/:notaId', (req, res) => {
   const r = db.prepare('DELETE FROM causa_notas WHERE id = ?').run(req.params.notaId);
   if (r.changes === 0) return res.status(404).json({ error: 'Nota no encontrada' });
-  res.json({ ok: true });
-});
-
-// ── Carpetas ──────────────────────────────────────────────────────────────────
-
-/**
- * GET /api/causas/carpetas
- * Lista todas las carpetas con la causa vinculada (si tiene).
- */
-router.get('/carpetas', (req, res) => {
-  const carpetas = db.prepare(`
-    SELECT
-      ca.id, ca.numero, ca.ubicacion, ca.descripcion, ca.created_at,
-      c.id AS causa_id, c.numero_expediente, c.caratula, c.estado
-    FROM carpetas ca
-    LEFT JOIN causas c ON c.id = ca.causa_id
-    ORDER BY ca.created_at DESC
-  `).all();
-  res.json(carpetas);
-});
-
-/**
- * POST /api/causas/carpetas
- * Crea una carpeta física. Body: { causa_id?, numero?, ubicacion?, descripcion? }
- */
-router.post('/carpetas', (req, res) => {
-  const { causa_id, numero, ubicacion, descripcion } = req.body;
-  const result = db.prepare(`
-    INSERT INTO carpetas (causa_id, numero, ubicacion, descripcion)
-    VALUES (?, ?, ?, ?)
-  `).run(causa_id ?? null, numero ?? null, ubicacion ?? null, descripcion ?? null);
-  res.status(201).json(
-    db.prepare('SELECT * FROM carpetas WHERE id = ?').get(result.lastInsertRowid)
-  );
-});
-
-/**
- * PUT /api/causas/carpetas/:id
- * Actualiza una carpeta.
- */
-router.put('/carpetas/:id', (req, res) => {
-  const carpeta = db.prepare('SELECT id FROM carpetas WHERE id = ?').get(req.params.id);
-  if (!carpeta) return res.status(404).json({ error: 'Carpeta no encontrada' });
-
-  const campos = ['causa_id', 'numero', 'ubicacion', 'descripcion'];
-  const sets   = [];
-  const vals   = [];
-  for (const campo of campos) {
-    if (campo in req.body) { sets.push(`${campo} = ?`); vals.push(req.body[campo]); }
-  }
-  if (sets.length) {
-    db.prepare(`UPDATE carpetas SET ${sets.join(', ')} WHERE id = ?`).run(...vals, carpeta.id);
-  }
-  res.json(db.prepare('SELECT * FROM carpetas WHERE id = ?').get(carpeta.id));
-});
-
-/**
- * DELETE /api/causas/carpetas/:id
- * Elimina una carpeta.
- */
-router.delete('/carpetas/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM carpetas WHERE id = ?').run(req.params.id);
-  if (result.changes === 0) return res.status(404).json({ error: 'Carpeta no encontrada' });
   res.json({ ok: true });
 });
 

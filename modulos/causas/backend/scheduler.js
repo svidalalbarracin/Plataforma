@@ -2,19 +2,73 @@
  * Scheduler del módulo de causas.
  *
  * Al iniciar la plataforma ejecuta PJN + TAD en paralelo (y SICNEA si es sábado),
- * luego envía un mail con las novedades encontradas. Repite PJN + TAD cada
- * CAUSAS_INTERVALO_MIN minutos. SICNEA solo corre cuando la plataforma arranca
- * un sábado — no tiene intervalo periódico.
+ * luego repite PJN + TAD cada CAUSAS_INTERVALO_MIN minutos. SICNEA solo corre
+ * cuando la plataforma arranca un sábado — no tiene intervalo periódico.
+ *
+ * Los mails de aviso (pendientes desde las 8hs, notificaciones sin leer desde
+ * las 18hs) no usan cron: se chequean al final de cada ciclo (al iniciar y
+ * cada CAUSAS_INTERVALO_MIN minutos) y se envían la primera vez del día que
+ * la hora ya pasó. Como esta plataforma no corre 24/7 (depende de que la
+ * computadora esté prendida), un cron con hora fija se pierde el aviso entero
+ * si el proceso no está vivo en ese minuto exacto; este chequeo lo manda apenas
+ * la plataforma vuelve a arrancar.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'), quiet: true });
+const db = require('../../../core/database');
 const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
 const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
 const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
-const { notificarNotificacionesDiarias, notificarAvisoPendientes } = require('./notificaciones');
+const { notificarNotificacionesSinLeer, notificarAvisoPendientes } = require('./notificaciones');
 const { inferirTodos, autoCrearCausas, vincularNotificacionesPendientes } = require('./inferirCliente');
 
 /** Intervalo de polling para PJN y TAD, en minutos (default 30). */
 const INTERVALO_MIN = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
+
+/** Fecha ('YYYY-MM-DD') y hora (0-23) actuales en Argentina. */
+function fechaHoraArg() {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false,
+  }).formatToParts(new Date());
+  const valor = tipo => partes.find(p => p.type === tipo).value;
+  return { fecha: `${valor('year')}-${valor('month')}-${valor('day')}`, hora: parseInt(valor('hour'), 10) % 24 };
+}
+
+function ultimoEnvio(key) {
+  return db.prepare('SELECT value FROM scraper_meta WHERE key = ?').get(key)?.value ?? null;
+}
+
+function marcarEnviado(key, fecha) {
+  db.prepare('INSERT OR REPLACE INTO scraper_meta (key, value) VALUES (?, ?)').run(key, fecha);
+}
+
+/**
+ * Envía el mail de pendientes (desde las 8hs) y el de notificaciones sin leer
+ * (desde las 18hs) si todavía no se enviaron hoy. Marca "enviado" solo cuando
+ * efectivamente hubo algo que mandar, para que un chequeo en 0 no bloquee un
+ * envío más tarde si aparece algo nuevo ese mismo día.
+ */
+async function chequearMailsHorarios() {
+  const { fecha, hora } = fechaHoraArg();
+
+  if (hora >= 8 && ultimoEnvio('pendientes_ultimo_envio') !== fecha) {
+    try {
+      const n = await notificarAvisoPendientes();
+      if (n > 0) marcarEnviado('pendientes_ultimo_envio', fecha);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] [causas/aviso-pendientes] Error:`, err.message);
+    }
+  }
+
+  if (hora >= 18 && ultimoEnvio('notificaciones_ultimo_envio') !== fecha) {
+    try {
+      const n = await notificarNotificacionesSinLeer();
+      if (n > 0) marcarEnviado('notificaciones_ultimo_envio', fecha);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] [causas/mail-sin-leer] Error:`, err.message);
+    }
+  }
+}
 
 /**
  * Corre PJN y luego TAD en serie, para evitar contención de recursos con
@@ -48,6 +102,8 @@ async function ejecutarCiclo() {
   } catch (err) {
     console.error(`[${new Date().toISOString()}] [causas/inferir] Error:`, err.message);
   }
+
+  await chequearMailsHorarios();
 }
 
 async function ejecutarSICNEA() {
@@ -67,51 +123,10 @@ async function ejecutarSICNEA() {
   }
 }
 
-/** Milisegundos hasta la próxima `hora`:00 en Argentina (UTC-3, sin DST). */
-function msHastaHoraArg(hora) {
-  const ahora = new Date();
-  const objetivo = new Date(ahora);
-  objetivo.setUTCHours((hora + 3) % 24, 0, 0, 0);
-  if (objetivo <= ahora) objetivo.setUTCDate(objetivo.getUTCDate() + 1);
-  return objetivo - ahora;
-}
-
-function programarResumenDiario() {
-  const delay = msHastaHoraArg(18);
-  console.log(`[causas-scheduler] Resumen diario: próximo envío a las 18:00 ARG (en ${Math.round(delay / 60000)} min)`);
-  setTimeout(() => {
-    notificarNotificacionesDiarias().catch(err =>
-      console.error(`[${new Date().toISOString()}] [causas/mail-diario] Error:`, err.message)
-    );
-    setInterval(() => {
-      notificarNotificacionesDiarias().catch(err =>
-        console.error(`[${new Date().toISOString()}] [causas/mail-diario] Error:`, err.message)
-      );
-    }, 24 * 60 * 60 * 1000);
-  }, delay);
-}
-
-function programarAvisoDiario() {
-  const delay = msHastaHoraArg(9);
-  console.log(`[causas-scheduler] Aviso pendientes: próximo envío a las 09:00 ARG (en ${Math.round(delay / 60000)} min)`);
-  setTimeout(() => {
-    notificarAvisoPendientes().catch(err =>
-      console.error(`[${new Date().toISOString()}] [causas/aviso-pendientes] Error:`, err.message)
-    );
-    setInterval(() => {
-      notificarAvisoPendientes().catch(err =>
-        console.error(`[${new Date().toISOString()}] [causas/aviso-pendientes] Error:`, err.message)
-      );
-    }, 24 * 60 * 60 * 1000);
-  }, delay);
-}
-
-console.log(`[causas-scheduler] Iniciado. Intervalo PJN+TAD: cada ${INTERVALO_MIN} min. SICNEA: solo sábados al iniciar.`);
+console.log(`[causas-scheduler] Iniciado. Intervalo PJN+TAD: cada ${INTERVALO_MIN} min. SICNEA: solo sábados al iniciar. Pendientes: desde 8hs ARG | Notificaciones sin leer: desde 18hs ARG (chequeo por ciclo).`);
 
 const primerCiclo  = ejecutarCiclo();
 const primerSICNEA = ejecutarSICNEA();
-programarResumenDiario();
-programarAvisoDiario();
 
 setInterval(ejecutarCiclo, INTERVALO_MIN * 60 * 1000);
 
