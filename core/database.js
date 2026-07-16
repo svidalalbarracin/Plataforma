@@ -262,4 +262,8 @@ for (const tabla of ['notificaciones_pjn', 'notificaciones_tad', 'notificaciones
   }
 }
 
+// _pagos_old es el residuo de una migración manual vieja de pagos (renombrar,
+// recrear, copiar) a la que le faltó el drop final.
+db.exec('DROP TABLE IF EXISTS _pagos_old');
+
 module.exports = db;
