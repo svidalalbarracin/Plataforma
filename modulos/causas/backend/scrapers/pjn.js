@@ -300,7 +300,7 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
     ok();
 
     ok = paso('Procesando...');
-    let pagina = 1, nuevas = 0, examinadas = 0, duplicadosConsecutivos = 0, detener = false;
+    let nuevas = 0, examinadas = 0, duplicadosConsecutivos = 0, detener = false;
 
     while (!detener) {
       const filas = await extraerFilas(page);
@@ -344,7 +344,6 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
       if (detener) break;
       if (!(await hayPaginaSiguiente(page))) break;
       await irAPaginaSiguiente(page);
-      pagina++;
     }
     ok();
 
@@ -393,7 +392,6 @@ async function backfillAdjuntosPJN({ headless = true } = {}) {
     await page.waitForSelector('table tbody tr', { timeout: 30000 });
     await cambiarResultadosPorPagina(page, 30);
 
-    let pagina = 1;
     while (pendientes.size > 0) {
       const filas = await extraerFilas(page);
       for (const fila of filas) {
@@ -405,7 +403,6 @@ async function backfillAdjuntosPJN({ headless = true } = {}) {
       if (pendientes.size === 0) break;
       if (!(await hayPaginaSiguiente(page))) break;
       await irAPaginaSiguiente(page);
-      pagina++;
     }
     ok();
     console.log(`  [PJN] Backfill: ${descargados} PDF(s) descargado(s)`);
