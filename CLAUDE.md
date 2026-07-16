@@ -16,7 +16,7 @@ Frontend HTML vanilla servido como static files por Express (sin framework JS). 
 - **Scrapers**: Playwright (Chromium headless)
 - **PDF**: pdfkit (generar), pdf-parse (leer texto)
 - **Mail**: nodemailer (Gmail SMTP, App Password)
-- **Scheduler**: causas usa setTimeout/setInterval manual; facturación usa node-cron
+- **Scheduler**: node-cron para tareas de hora fija (mails); setInterval para el ciclo de scrapers de causas
 - **Frontend**: HTML + CSS + JS vanilla
 
 ## Estructura de carpetas

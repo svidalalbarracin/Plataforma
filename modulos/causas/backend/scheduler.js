@@ -2,11 +2,12 @@
  * Scheduler del módulo de causas.
  *
  * Al iniciar la plataforma ejecuta PJN + TAD en paralelo (y SICNEA si es sábado),
- * luego envía un mail con las novedades encontradas. Repite PJN + TAD cada
- * CAUSAS_INTERVALO_MIN minutos. SICNEA solo corre cuando la plataforma arranca
- * un sábado — no tiene intervalo periódico.
+ * luego repite PJN + TAD cada CAUSAS_INTERVALO_MIN minutos. SICNEA solo corre
+ * cuando la plataforma arranca un sábado — no tiene intervalo periódico.
+ * Mails de hora fija (resumen diario 18hs, aviso de pendientes 9hs) vía node-cron.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'), quiet: true });
+const cron = require('node-cron');
 const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
 const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
 const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
@@ -67,51 +68,28 @@ async function ejecutarSICNEA() {
   }
 }
 
-/** Milisegundos hasta la próxima `hora`:00 en Argentina (UTC-3, sin DST). */
-function msHastaHoraArg(hora) {
-  const ahora = new Date();
-  const objetivo = new Date(ahora);
-  objetivo.setUTCHours((hora + 3) % 24, 0, 0, 0);
-  if (objetivo <= ahora) objetivo.setUTCDate(objetivo.getUTCDate() + 1);
-  return objetivo - ahora;
-}
+/** Resumen diario de notificaciones: todos los días a las 18:00 ARG. */
+cron.schedule('0 18 * * *', async () => {
+  try {
+    await notificarNotificacionesDiarias();
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] [causas/mail-diario] Error:`, err.message);
+  }
+}, { timezone: 'America/Argentina/Buenos_Aires' });
 
-function programarResumenDiario() {
-  const delay = msHastaHoraArg(18);
-  console.log(`[causas-scheduler] Resumen diario: próximo envío a las 18:00 ARG (en ${Math.round(delay / 60000)} min)`);
-  setTimeout(() => {
-    notificarNotificacionesDiarias().catch(err =>
-      console.error(`[${new Date().toISOString()}] [causas/mail-diario] Error:`, err.message)
-    );
-    setInterval(() => {
-      notificarNotificacionesDiarias().catch(err =>
-        console.error(`[${new Date().toISOString()}] [causas/mail-diario] Error:`, err.message)
-      );
-    }, 24 * 60 * 60 * 1000);
-  }, delay);
-}
+/** Aviso de pendientes del día: todos los días a las 9:00 ARG. */
+cron.schedule('0 9 * * *', async () => {
+  try {
+    await notificarAvisoPendientes();
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] [causas/aviso-pendientes] Error:`, err.message);
+  }
+}, { timezone: 'America/Argentina/Buenos_Aires' });
 
-function programarAvisoDiario() {
-  const delay = msHastaHoraArg(9);
-  console.log(`[causas-scheduler] Aviso pendientes: próximo envío a las 09:00 ARG (en ${Math.round(delay / 60000)} min)`);
-  setTimeout(() => {
-    notificarAvisoPendientes().catch(err =>
-      console.error(`[${new Date().toISOString()}] [causas/aviso-pendientes] Error:`, err.message)
-    );
-    setInterval(() => {
-      notificarAvisoPendientes().catch(err =>
-        console.error(`[${new Date().toISOString()}] [causas/aviso-pendientes] Error:`, err.message)
-      );
-    }, 24 * 60 * 60 * 1000);
-  }, delay);
-}
-
-console.log(`[causas-scheduler] Iniciado. Intervalo PJN+TAD: cada ${INTERVALO_MIN} min. SICNEA: solo sábados al iniciar.`);
+console.log(`[causas-scheduler] Iniciado. Intervalo PJN+TAD: cada ${INTERVALO_MIN} min. SICNEA: solo sábados al iniciar. Resumen diario: 18:00 ARG | Aviso pendientes: 9:00 ARG.`);
 
 const primerCiclo  = ejecutarCiclo();
 const primerSICNEA = ejecutarSICNEA();
-programarResumenDiario();
-programarAvisoDiario();
 
 setInterval(ejecutarCiclo, INTERVALO_MIN * 60 * 1000);
 
