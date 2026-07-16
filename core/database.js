@@ -5,6 +5,11 @@
  * aplica los pragmas de rendimiento y crea todas las tablas del sistema
  * (facturación + causas PJN/TAD/SICNEA).
  *
+ * Los CREATE TABLE definen el esquema final completo (una instalación nueva
+ * no necesita migraciones). Las migraciones del final del archivo actualizan
+ * bases creadas con versiones anteriores del esquema; todas están guardadas
+ * por chequeos PRAGMA, así que son idempotentes.
+ *
  * @module database
  * @returns {import('better-sqlite3').Database} Instancia sincrónica de better-sqlite3
  */
@@ -26,7 +31,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS clientes (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     nombre                TEXT    NOT NULL,
-    cuit                  TEXT    NOT NULL,
+    cuit                  TEXT,
     email                 TEXT,
     telefono              TEXT,
     anticipo_usd          REAL,
@@ -72,75 +77,8 @@ db.exec(`
   );
 `);
 
-// ── Causas — PJN ──────────────────────────────────────────────────────────────
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS notificaciones_pjn (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    numero            TEXT    NOT NULL UNIQUE,
-    numero_expediente TEXT,
-    caratula          TEXT,
-    autor             TEXT,
-    destinatario      TEXT,
-    fecha_envio       TEXT,
-    archivo_path      TEXT,
-    leida             INTEGER NOT NULL DEFAULT 0,
-    created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS scraper_meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-  );
-`);
-
-// ── Causas — TAD ──────────────────────────────────────────────────────────────
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS notificaciones_tad (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    fecha          TEXT,
-    nombre         TEXT,
-    mensaje        TEXT,
-    numero_tramite TEXT    NOT NULL,
-    archivo_path   TEXT,
-    leida          INTEGER NOT NULL DEFAULT 0,
-    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS documentos_externos_tad (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    fecha_envio    TEXT,
-    nombre         TEXT,
-    numero_tramite TEXT    NOT NULL,
-    motivo         TEXT,
-    archivos_paths TEXT,
-    leida          INTEGER NOT NULL DEFAULT 0,
-    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
-  );
-`);
-
-// ── Causas — SICNEA ───────────────────────────────────────────────────────────
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS notificaciones_sicnea (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    numero         TEXT    NOT NULL UNIQUE,
-    dependencia    TEXT,
-    cuit_cliente   TEXT,
-    razon_social   TEXT,
-    aduana         TEXT,
-    motivo         TEXT,
-    documento_ref  TEXT,
-    fecha_alta     TEXT,
-    estado         TEXT,
-    archivos_paths TEXT    NOT NULL DEFAULT '[]',
-    leida          INTEGER NOT NULL DEFAULT 0,
-    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
-  );
-`);
-
-// ── Biblioteca — Causas ───────────────────────────────────────────────────────
+// ── Biblioteca de causas ──────────────────────────────────────────────────────
+// Se crea antes que las tablas de notificaciones porque estas la referencian (causa_id).
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS causas (
@@ -164,6 +102,15 @@ db.exec(`
     FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS causa_notas (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    causa_id   INTEGER NOT NULL,
+    texto      TEXT NOT NULL,
+    fecha      TEXT NOT NULL DEFAULT (date('now', 'localtime')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS carpetas (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     causa_id    INTEGER,
@@ -175,20 +122,92 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS pendientes (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    descripcion  TEXT    NOT NULL,
-    causa_id     INTEGER,
-    fecha_limite TEXT    NOT NULL,
-    dias_aviso   INTEGER NOT NULL DEFAULT 3,
-    fecha_aviso  TEXT    NOT NULL,
-    nota         TEXT,
-    completado   INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    descripcion       TEXT    NOT NULL,
+    causa_id          INTEGER,
+    fecha_limite      TEXT    NOT NULL,
+    dias_aviso        INTEGER NOT NULL DEFAULT 3,
+    fecha_aviso       TEXT    NOT NULL,
+    nota              TEXT,
+    completado        INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    numero_expediente TEXT,
+    caratula          TEXT,
+    origen            TEXT,
+    notificacion_id   INTEGER,
+    notificacion_tipo TEXT,
+    completado_at     TEXT,
     FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE SET NULL
   );
 `);
 
-// Migración: hace clientes.cuit nullable (los clientes inferidos desde causas no tienen CUIT inicial).
+// ── Causas — Notificaciones (PJN / TAD / SICNEA) ─────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS notificaciones_pjn (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero            TEXT    NOT NULL UNIQUE,
+    numero_expediente TEXT,
+    caratula          TEXT,
+    autor             TEXT,
+    destinatario      TEXT,
+    fecha_envio       TEXT,
+    archivo_path      TEXT,
+    leida             INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    causa_id          INTEGER REFERENCES causas(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS notificaciones_tad (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha          TEXT,
+    nombre         TEXT,
+    mensaje        TEXT,
+    numero_tramite TEXT    NOT NULL,
+    archivo_path   TEXT,
+    leida          INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+    causa_id       INTEGER REFERENCES causas(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS documentos_externos_tad (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha_envio    TEXT,
+    nombre         TEXT,
+    numero_tramite TEXT    NOT NULL,
+    motivo         TEXT,
+    archivos_paths TEXT,
+    leida          INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS notificaciones_sicnea (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero         TEXT    NOT NULL UNIQUE,
+    dependencia    TEXT,
+    cuit_cliente   TEXT,
+    razon_social   TEXT,
+    aduana         TEXT,
+    motivo         TEXT,
+    documento_ref  TEXT,
+    fecha_alta     TEXT,
+    estado         TEXT,
+    archivos_paths TEXT    NOT NULL DEFAULT '[]',
+    leida          INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+    causa_id       INTEGER REFERENCES causas(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS scraper_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+  );
+`);
+
+// ── Migraciones para bases creadas con versiones anteriores del esquema ──────
+// En una instalación nueva no hacen nada (el esquema de arriba ya está completo).
+
+// clientes.cuit pasó a ser nullable (los clientes inferidos desde causas no tienen CUIT inicial).
 // SQLite no soporta ALTER COLUMN, así que se recrea la tabla solo si sigue siendo NOT NULL.
 const cuitNotnull = db.prepare('PRAGMA table_info(clientes)').all()
   .find(c => c.name === 'cuit' && c.notnull === 1);
@@ -217,7 +236,7 @@ if (cuitNotnull) {
   console.log('[db] Migración: clientes.cuit ahora es nullable');
 }
 
-// Migración: agrega nuevos campos a pendientes si no existen.
+// pendientes ganó columnas de vínculo con notificaciones y timestamp de completado.
 {
   const cols = db.prepare('PRAGMA table_info(pendientes)').all().map(c => c.name);
   const nuevos = [
@@ -235,21 +254,7 @@ if (cuitNotnull) {
   }
 }
 
-// Notas manuales por causa
-db.exec(`
-  CREATE TABLE IF NOT EXISTS causa_notas (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    causa_id   INTEGER NOT NULL,
-    texto      TEXT NOT NULL,
-    fecha      TEXT NOT NULL DEFAULT (date('now', 'localtime')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (causa_id) REFERENCES causas(id) ON DELETE CASCADE
-  );
-`);
-
-// Agrega causa_id a las tablas de notificaciones si todavía no existe.
-// SQLite no soporta ALTER TABLE ADD COLUMN IF NOT EXISTS, así que se verifica
-// con PRAGMA antes de intentar la migración.
+// Las tablas de notificaciones ganaron causa_id (vínculo con la biblioteca de causas).
 for (const tabla of ['notificaciones_pjn', 'notificaciones_tad', 'notificaciones_sicnea']) {
   const columnas = db.prepare(`PRAGMA table_info(${tabla})`).all();
   if (!columnas.find(c => c.name === 'causa_id')) {
