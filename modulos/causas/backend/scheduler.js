@@ -20,6 +20,7 @@ const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
 const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
 const { notificarNotificacionesSinLeer, notificarAvisoPendientes } = require('./notificaciones');
 const { inferirTodos, autoCrearCausas, vincularNotificacionesPendientes } = require('./inferirCliente');
+const { sincronizarBackup } = require('./sync-backup');
 
 /** Intervalo de polling para PJN y TAD, en minutos (default 30). */
 const INTERVALO_MIN = parseInt(process.env.CAUSAS_INTERVALO_MIN, 10) || 30;
@@ -51,7 +52,18 @@ function marcarEnviado(key, fecha) {
 async function chequearMailsHorarios() {
   const { fecha, hora } = fechaHoraArg();
 
-  if (hora >= 8 && ultimoEnvio('pendientes_ultimo_envio') !== fecha) {
+  // Empuja el snapshot al repo de backup y chequea si el aviso de hoy ya
+  // salió por ese lado (PC apagada a la hora que correspondía) — evita
+  // duplicar el mail cuando la plataforma se prende más tarde ese mismo día.
+  // Ver modulos/causas/backend/sync-backup.js.
+  let sync = null;
+  try {
+    sync = await sincronizarBackup(fecha);
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] [causas/sync-backup] Error:`, err.message);
+  }
+
+  if (hora >= 8 && ultimoEnvio('pendientes_ultimo_envio') !== fecha && !sync?.pendientesYaEnviado) {
     try {
       const n = await notificarAvisoPendientes();
       if (n > 0) marcarEnviado('pendientes_ultimo_envio', fecha);
@@ -60,7 +72,7 @@ async function chequearMailsHorarios() {
     }
   }
 
-  if (hora >= 18 && ultimoEnvio('notificaciones_ultimo_envio') !== fecha) {
+  if (hora >= 18 && ultimoEnvio('notificaciones_ultimo_envio') !== fecha && !sync?.notificacionesYaEnviado) {
     try {
       const n = await notificarNotificacionesSinLeer();
       if (n > 0) marcarEnviado('notificaciones_ultimo_envio', fecha);
