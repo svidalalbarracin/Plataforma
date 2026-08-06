@@ -205,6 +205,23 @@
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-title">Backup de avisos</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="cfg-SYNC_REPO_TOKEN">Token de backup</label>
+          <div class="input-wrap">
+            <input type="password" id="cfg-SYNC_REPO_TOKEN" autocomplete="new-password">
+            <button type="button" class="btn btn-ghost btn-sm btn-revelar" data-target="cfg-SYNC_REPO_TOKEN">Mostrar</button>
+          </div>
+        </div>
+      </div>
+      <p style="margin-top:.75rem;font-size:.8125rem;color:var(--text-muted)">
+        Te lo pasa quien configuró el sistema. Sin esto, los avisos por mail siguen funcionando igual —
+        solo no hay respaldo si la PC está apagada a la hora del aviso.
+      </p>
+    </div>
+
     <button type="submit" class="btn btn-primary" id="btn-guardar">Guardar</button>
 
   </form>

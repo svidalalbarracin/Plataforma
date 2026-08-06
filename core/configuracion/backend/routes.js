@@ -15,7 +15,7 @@ const ENV_PATH = path.join(__dirname, '../../../.env');
 /** Campos que se devuelven en el GET (sin valor sensible). */
 const VISIBLES  = ['CUIT', 'MAIL_TO', 'PJN_USUARIO'];
 /** Campos que se pueden actualizar pero nunca se exponen en el GET. */
-const SENSIBLES = ['CLAVE_FISCAL', 'PJN_CLAVE'];
+const SENSIBLES = ['CLAVE_FISCAL', 'PJN_CLAVE', 'SYNC_REPO_TOKEN'];
 /** Unión de todos los campos que el endpoint acepta en el POST. */
 const PERMITIDOS = [...VISIBLES, ...SENSIBLES];
 

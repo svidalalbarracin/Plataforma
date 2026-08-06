@@ -6,10 +6,10 @@
  */
 
 /** Campos que no deben mostrarse en texto plano aunque la API los devuelva. */
-const SENSIBLES = ['CLAVE_FISCAL', 'PJN_CLAVE'];
+const SENSIBLES = ['CLAVE_FISCAL', 'PJN_CLAVE', 'SYNC_REPO_TOKEN'];
 
 /** Todos los campos del formulario que se leen y envían. */
-const CAMPOS = ['CUIT', 'CLAVE_FISCAL', 'MAIL_TO', 'PJN_USUARIO', 'PJN_CLAVE'];
+const CAMPOS = ['CUIT', 'CLAVE_FISCAL', 'MAIL_TO', 'PJN_USUARIO', 'PJN_CLAVE', 'SYNC_REPO_TOKEN'];
 
 /**
  * Muestra una notificación temporaria (toast) en la esquina de la pantalla.
