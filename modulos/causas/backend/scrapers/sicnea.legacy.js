@@ -1,29 +1,9 @@
 /**
- * Scraper de SICNEA Abogados (agosto 2026).
- *
- * SICNEA II (el servicio aduanero, "SICNEA Gestión de comunicación y
- * notificaciones") se sacó de este archivo el 2026-08-10: la apertura del
- * servicio en el portal ARCA tira error ahí de forma persistente y no se
- * pudo resolver en varios intentos. Va a tener su propio scraper aparte más
- * adelante — no reintroducir un parámetro `sistema` acá hasta que exista.
- *
- * Por qué "Consulta" y no "Ver notificaciones": el scraper que corrió en
- * producción durante meses (ver sicnea.legacy.js, y el sicnea.js real de la
- * rama `development`) entra a "Consulta" — nunca a "Ver notificaciones".
- *
- * Seguridad: Consulta lista notificaciones en cualquier ESTADO, incluidas
- * las ENVIADA que todavía no pasaron a NOTIFICADA (transición automática el
- * primer lunes desde que se enviaron) — abrir el detalle de una ENVIADA
- * antes de esa transición le arrancaría el plazo antes de tiempo, igual que
- * pasaba en "Ver notificaciones". La diferencia clave (confirmada por
- * captura el 2026-08-10): la tabla de resultados de Consulta SÍ tiene una
- * columna Estado visible en la lista, sin abrir nada — extraerFilas() la
- * lee por nombre de header. obtenerNotificacionesSICNEA() usa esa columna
- * como regla máxima: nunca abre una fila que no diga exactamente
- * NOTIFICADA. Por eso esta función es segura para correr cualquier día —
- * no lleva guard de día de la semana. La distinción sábado/domingo (corrida
- * automática) vs entre semana (botón manual "poner SICNEA al día") es una
- * decisión de scheduler/rutas, no de este archivo.
+ * AUXILIAR — NO SE USA EN LA APP. Copia de referencia del scraper viejo de
+ * SICNEA (antes de la reestructuración en 3 partes, agosto 2026), para ir
+ * reutilizando el código que sirve (login, extracción de filas, descarga de
+ * adjuntos) mientras se arma el nuevo sicnea.js desde cero. Se borra cuando
+ * la reescritura esté completa. Nada debe importar este archivo.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), quiet: true });
 const { chromium } = require('playwright');
@@ -33,9 +13,6 @@ const db   = require('../../../../core/database');
 
 const STORAGE_DIR  = path.join(__dirname, '../../storage/sicnea');
 const FECHA_LIMITE = '2026-06-01'; // no importar notificaciones anteriores a esta fecha
-
-const NOMBRE_SERVICIO = 'SICNEA Abogados';
-const CLAVES_SERVICIO = ['sicnea', 'abogados'];
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -80,56 +57,19 @@ async function login(context) {
   return page;
 }
 
-// ── Apertura de SICNEA Abogados ──────────────────────────────────────────────
-//
+// ── Apertura de SICNEA ────────────────────────────────────────────────────────
+
 // Flujo:
 //   ARCA portal → click "SICNEA Abogados"
 //   → popup 1: mgenEntrada.aspx (página intermedia, se ignora)
 //   → popup 2: mgenEntradaUsuarioExterno.aspx (ventana real, tiene botón "Ingresar")
 //   → click "Ingresar" → carga el sistema principal de SICNEA
 
-async function abrirSICNEAAbogados(context, portalPage) {
+async function abrirSICNEA(context, portalPage) {
   const popups = [];
   context.on('page', p => popups.push(p));
 
-  // Busca a mano (en vez de un selector de Playwright) el elemento más chico
-  // cuyo texto, normalizado (espacios colapsados, sin tildes, minúscula),
-  // contenga todas las palabras clave — pero el click en sí lo hace
-  // Playwright (locator.click(), evento de mouse real), no JS: un
-  // elemento.click() disparado desde evaluate() es un click sintético sin
-  // gesto de usuario, y Chromium bloquea el popup que se intenta abrir
-  // desde ahí.
-  const MARCA = 'data-scraper-target';
-  const encontrado = await portalPage.evaluate(({ claves, marca }) => {
-    const normalizar = s => (s || '')
-      .normalize('NFD').replace(/[̀-ͯ]/g, '') // saca tildes
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase();
-
-    let elegido = null, textoElegido = '';
-    for (const el of document.querySelectorAll('a, button, div, td, span, h1, h2, h3, h4')) {
-      const texto = normalizar(el.innerText || el.textContent);
-      if (!texto) continue;
-      if (claves.every(clave => texto.includes(clave))) {
-        // Se queda con el más chico (menos texto propio) entre los que matchean,
-        // para no clickear un contenedor grande en vez del link específico.
-        if (!elegido || texto.length < textoElegido.length) {
-          elegido = el;
-          textoElegido = texto;
-        }
-      }
-    }
-    if (!elegido) return false;
-    elegido.setAttribute(marca, '1');
-    return true;
-  }, { claves: CLAVES_SERVICIO, marca: MARCA });
-
-  if (!encontrado) {
-    throw new Error(`No se encontró el servicio "${NOMBRE_SERVICIO}" en el portal ARCA`);
-  }
-
-  await portalPage.locator(`[${MARCA}="1"]`).click();
+  await portalPage.locator('text=SICNEA Abogados').first().click();
 
   for (let i = 0; i < 20; i++) {
     await new Promise(r => setTimeout(r, 2000));
@@ -165,40 +105,13 @@ async function abrirSICNEAAbogados(context, portalPage) {
 }
 
 // ── Navegación sidebar → Consultas → Buscar ──────────────────────────────────
-//
+
 // Flujo dentro del sistema SICNEA:
 //   Hover sobre sidebar → click "Consulta/Consultas" (no "Ver Notificaciones")
-//   → esperar que cargue el apartado → (opcional) filtrar Estado=NOTIFICADA
-//   → click "Buscar" → esperar tabla
-//
-// El filtro de Estado en la búsqueda es una capa extra de seguridad (además
-// del chequeo por fila en obtenerNotificacionesSICNEA): entre semana, ni
-// siquiera trae las ENVIADA en el resultado. Si no se pide filtro (fin de
-// semana) busca sin filtrar nada, igual que el scraper viejo probado en
-// producción.
+//   → esperar que cargue el apartado → click "Buscar"
+//   → esperar tabla de notificaciones
 
-/**
- * Selecciona "NOTIFICADA" en el <select> de Estado del formulario de
- * Consulta. Lo busca por el texto de sus <option> (no por id, que no
- * conocemos) para no depender del layout exacto del form.
- * @returns {Promise<boolean>} true si encontró y pudo seleccionar la opción
- */
-async function filtrarPorEstadoNotificada(frameConsulta) {
-  return frameConsulta.evaluate(() => {
-    const selects = [...document.querySelectorAll('select')];
-    for (const sel of selects) {
-      const opcion = [...sel.options].find(o => o.textContent.trim().toUpperCase() === 'NOTIFICADA');
-      if (opcion) {
-        sel.value = opcion.value;
-        sel.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
-      }
-    }
-    return false;
-  }).catch(() => false);
-}
-
-async function irAConsulta(mainPage, { soloNotificada = false } = {}) {
+async function irAConsulta(mainPage) {
   const selectorSidebar = 'aside, nav, [class*="sidebar"], [class*="menu"], [class*="nav"]';
   let hovereado = false;
 
@@ -238,13 +151,6 @@ async function irAConsulta(mainPage, { soloNotificada = false } = {}) {
   const frameConsulta = mainPage.frames().find(f => f.url().includes('Consulta'));
   if (!frameConsulta) throw new Error('No se encontró el frame csicneaAboConsulta');
 
-  if (soloNotificada) {
-    const filtroAplicado = await filtrarPorEstadoNotificada(frameConsulta);
-    if (!filtroAplicado) {
-      console.warn('  [SICNEA] No se pudo aplicar el filtro Estado=NOTIFICADA en la búsqueda (no se encontró el <select>) — sigue solo con el chequeo por fila.');
-    }
-  }
-
   const btnBuscar = frameConsulta.locator('input[value="Buscar"], button:has-text("Buscar")').first();
   await btnBuscar.waitFor({ timeout: 15000 });
   await btnBuscar.click();
@@ -271,50 +177,30 @@ async function irAConsulta(mainPage, { soloNotificada = false } = {}) {
 
 // ── Extracción de datos ───────────────────────────────────────────────────────
 
-// Lee las columnas por nombre de header en vez de por posición fija — la
-// columna Estado es la pieza de seguridad clave: es lo único que permite
-// saber si una fila es NOTIFICADA (segura) o ENVIADA (todavía sin
-// transicionar) sin abrir el detalle.
 async function extraerFilas(ctx) {
   return ctx.evaluate(() => {
     const limpiar = s => s?.replace(/\s+/g, ' ').trim() || null;
-    const table = document.getElementById('dgdNotificacion');
-    if (!table) return [];
-
-    const filaHeader = table.querySelector('thead tr') || table.querySelector('tr');
-    const celdasHeader = [...(filaHeader?.querySelectorAll('th, td') || [])];
-    const indice = {};
-    celdasHeader.forEach((th, i) => {
-      const texto = (limpiar(th.innerText) || '').toLowerCase();
-      if (texto.includes('numero') || texto.includes('número') || texto.includes('cedula') || texto.includes('cédula')) indice.numero = i;
-      else if (texto.includes('cuit')) indice.cuit = i;
-      else if (texto.includes('razon') || texto.includes('razón')) indice.razon_social = i;
-      else if (texto.includes('motivo')) indice.motivo = i;
-      else if (texto.includes('fecha')) indice.fecha_envio = i;
-      else if (texto.includes('estado')) indice.estado = i;
-    });
-
     const filas = [];
+    const table = document.getElementById('dgdNotificacion');
+    if (!table) return filas;
+
     table.querySelectorAll('tbody tr').forEach((tr, index) => {
       const celdas = [...tr.querySelectorAll('td')].map(td => limpiar(td.innerText));
-      const numero = indice.numero != null ? celdas[indice.numero] : celdas[0];
-      if (!numero || !/\d/.test(numero)) return;
-
-      const tieneVer = [...tr.querySelectorAll('td')].some(td =>
-        td.innerText.trim() === 'Ver' ||
-        !!td.querySelector('a, button, input[type=button], input[type=submit], input[value="Ver"]')
-      );
-
-      filas.push({
-        rowIndex:     index,
-        numero,
-        cuit:         indice.cuit         != null ? celdas[indice.cuit]         : null,
-        razon_social: indice.razon_social != null ? celdas[indice.razon_social] : null,
-        motivo:       indice.motivo       != null ? celdas[indice.motivo]       : null,
-        fecha_envio:  indice.fecha_envio  != null ? celdas[indice.fecha_envio]  : null,
-        estado:       indice.estado       != null ? celdas[indice.estado]       : null,
-        tieneVer,
-      });
+      if (celdas.length >= 5 && celdas[0] && /\d/.test(celdas[0])) {
+        const tieneVer = [...tr.querySelectorAll('td')].some(td =>
+          td.innerText.trim() === 'Ver' ||
+          !!td.querySelector('a, button, input[type=button], input[type=submit], input[value="Ver"]')
+        );
+        filas.push({
+          rowIndex:     index,
+          numero:       celdas[0],
+          cuit:         celdas[1],
+          razon_social: celdas[2],
+          motivo:       celdas[3],
+          fecha_envio:  celdas[4],
+          tieneVer,
+        });
+      }
     });
     return filas;
   });
@@ -388,6 +274,7 @@ async function descargarAdjuntos(context, ctx, numero) {
   if (archivosLista.length === 0) return archivos;
 
   for (let i = 0; i < archivosLista.length; i++) {
+    const nombreOriginal = archivosLista[i].nombre;
     const filePath = path.join(STORAGE_DIR, `${numero}_${i + 1}.pdf`);
     if (fs.existsSync(filePath)) { archivos.push(filePath); continue; }
 
@@ -406,28 +293,7 @@ async function descargarAdjuntos(context, ctx, numero) {
 
 // ── Función principal ─────────────────────────────────────────────────────────
 
-/**
- * Trae notificaciones nuevas de SICNEA Abogados vía "Consulta".
- *
- * Seguridad, distinta según el día:
- * - Sábado o domingo: abrir una notificación ENVIADA (todavía sin
- *   transicionar a NOTIFICADA) es seguro, porque al no ser días hábiles la
- *   transición automática (00:00 del lunes) no corre plazos de más. Estos
- *   días se procesa cualquier fila nueva sin filtrar por Estado, para traer
- *   las ENVIADA lo antes posible.
- * - Entre semana (corrida manual "poner SICNEA al día"): regla máxima,
- *   nunca abre una fila que no diga exactamente NOTIFICADA en la columna
- *   Estado de la lista — doble capa: se filtra Estado=NOTIFICADA en la
- *   búsqueda (filtrarPorEstadoNotificada) y además se vuelve a chequear por
- *   fila antes de abrir, por si el filtro de búsqueda no se pudo aplicar.
- *
- * @param {{ headless?: boolean, limite?: number|null }} [opts]
- * @returns {Promise<number>} cantidad de notificaciones nuevas guardadas
- */
 async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = {}) {
-  const dia = new Date().getDay();
-  const esFinDeSemana = dia === 6 || dia === 0;
-
   const modoAuto = limite === null;
 
   const paso = texto => {
@@ -446,36 +312,21 @@ async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = 
     const portalPage = await login(context);
     ok();
 
-    ok = paso(`Abriendo ${NOMBRE_SERVICIO}...`);
-    const mainPage = await abrirSICNEAAbogados(context, portalPage);
+    ok = paso('Abriendo SICNEA...');
+    const mainPage = await abrirSICNEA(context, portalPage);
     ok();
 
     ok = paso('Navegando a consultas...');
-    const consultaCtx = await irAConsulta(mainPage, { soloNotificada: !esFinDeSemana });
+    const consultaCtx = await irAConsulta(mainPage);
     ok();
 
     ok = paso('Procesando notificaciones...');
     const filas = await extraerFilas(consultaCtx);
-
-    // Si hay filas pero ninguna trajo Estado, la detección de esa columna
-    // falló (cambió el layout de la tabla) — cortar acá en vez de saltear
-    // todo en silencio para siempre (la regla máxima de arriba fallaría
-    // "cerrada" sin avisar por qué nunca hay novedades).
-    if (filas.length > 0 && filas.every(f => !f.estado)) {
-      throw new Error('No se pudo leer la columna "Estado" de la tabla de resultados — revisar el layout, puede haber cambiado.');
-    }
-
     let examinadas = 0, duplicadosConsecutivos = 0;
 
     for (const fila of filas) {
       const numero = fila.numero?.trim();
       if (!numero) continue;
-
-      // Entre semana, regla máxima: solo se abren filas NOTIFICADA. Una
-      // ENVIADA (todavía sin transicionar) se ignora sin abrir nada — no
-      // cuenta como duplicado, se reintenta sola en la próxima corrida. Fin
-      // de semana no filtra por Estado (ver doc de la función).
-      if (!esFinDeSemana && fila.estado?.trim().toUpperCase() !== 'NOTIFICADA') continue;
 
       if (yaExiste(numero)) {
         if (modoAuto) {

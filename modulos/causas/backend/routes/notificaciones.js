@@ -187,16 +187,16 @@ router.post('/ejecutar', async (req, res) => {
 
 /**
  * POST /api/causas/notificaciones/ejecutar-sicnea
- * Dispara el scraper de SICNEA manualmente.
- * Solo permitido sábado (6) o domingo (0) — el servidor rechaza cualquier otro día.
+ * Dispara SICNEA Abogados ("Poner SICNEA al día"). Sin restricción de día:
+ * el scraper se adapta solo — sábado/domingo trae todo, entre semana
+ * filtra a NOTIFICADA únicamente (ver sicnea.js).
+ *
+ * SICNEA II (aduanero) se sacó de la plataforma el 2026-08-10 — va a tener
+ * su propio scraper aparte más adelante.
  *
  * @returns {{ nuevas: number }}
  */
 router.post('/ejecutar-sicnea', async (req, res) => {
-  const dia = new Date().getDay();
-  if (dia !== 6 && dia !== 0) {
-    return res.status(403).json({ error: 'El scraper de SICNEA solo puede ejecutarse sábado o domingo.' });
-  }
   try {
     const { obtenerNotificacionesSICNEA } = require('../scrapers/sicnea');
     const limite = req.body?.limite ? parseInt(req.body.limite, 10) : null;
