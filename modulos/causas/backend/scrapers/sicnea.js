@@ -464,7 +464,7 @@ async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = 
     ok();
 
     ok = paso(`Abriendo ${servicio.nombre}...`);
-    const mainPage = await abrirServicioSICNEA(context, portalPage, servicio.patron, servicio.nombre);
+    const mainPage = await abrirServicioSICNEA(context, portalPage, servicio.claves, servicio.nombre);
     ok();
 
     ok = paso('Navegando a consultas...');
