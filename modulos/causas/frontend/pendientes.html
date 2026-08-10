@@ -310,7 +310,7 @@
       else                         estadoHtml = `<span class="badge badge-info">${diasRestantes} días hábiles</span>`;
 
       return `
-        <div class="pendiente-card ${p.completado ? 'completado' : ''} ${vencido ? 'vencido' : ''}">
+        <div class="pendiente-card ${p.completado ? 'completado' : ''} ${vencido ? 'vencido' : ''}" id="pendiente-${p.id}">
           <div class="pendiente-card-left">
             <button class="pendiente-check ${p.completado ? 'completada' : ''}"
                     onclick="toggleCompletado(${p.id})"
@@ -394,11 +394,26 @@
     setTimeout(() => el.remove(), 3000);
   }
 
+  // ── Resaltar pendiente al llegar desde el calendario ──
+  function resaltarPendiente(id) {
+    const el = document.getElementById(`pendiente-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('destacado');
+    setTimeout(() => el.classList.remove('destacado'), 2000);
+  }
+
   // ── Init ─────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
     await cargarFeriados();
     await cargarPendientes();
     actualizarCalcAviso();
+
+    const highlightId = new URLSearchParams(location.search).get('highlight');
+    if (highlightId) {
+      resaltarPendiente(parseInt(highlightId, 10));
+      history.replaceState(null, '', location.pathname);
+    }
   });
 </script>
 </body>

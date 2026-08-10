@@ -838,14 +838,23 @@ html.dark .filter-tab:hover { background: #263044; }
 .cal-wrapper { margin-bottom: 1.5rem; }
 
 /* Vista semanal */
+#cal-semanal {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--navbar-h) - 260px);
+  min-height: 420px;
+}
+
 .cal-semana {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: 1fr;
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
+  flex: 1;
 }
 
 .cal-dia-col {
@@ -901,6 +910,7 @@ html.dark .cal-dia-col.es-hoy { background: #1a2f55; }
   gap: .3rem;
   flex: 1;
   min-width: 0;
+  overflow-y: auto;
 }
 
 /* Vista mensual */
@@ -982,6 +992,7 @@ html.dark .cal-mes-celda.es-hoy   { background: #1a2f55; }
   line-height: 1.3;
   overflow: hidden;
   min-width: 0;
+  cursor: pointer;
 }
 
 .ev-pendiente {
@@ -1021,6 +1032,14 @@ html.dark .cal-mes-celda.es-hoy   { background: #1a2f55; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Vista semanal: hay lugar de sobra, mostrar el texto completo sin cortar */
+#cal-semanal .ev-desc,
+#cal-semanal .ev-causa {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 /* ── Pendientes cards ────────────────────────────── */
@@ -1077,6 +1096,15 @@ html.dark .cal-mes-celda.es-hoy   { background: #1a2f55; }
 
 .pendiente-card:last-child { border-bottom: none; }
 .pendiente-card.completado { opacity: .65; }
+
+.pendiente-card.destacado {
+  border-radius: 8px;
+  animation: destacado-flash 2s ease-out;
+}
+@keyframes destacado-flash {
+  0%   { background: var(--primary-light); }
+  100% { background: transparent; }
+}
 
 .pendiente-card-left { flex-shrink: 0; padding-top: .125rem; }
 
