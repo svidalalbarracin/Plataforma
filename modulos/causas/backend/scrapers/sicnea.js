@@ -39,17 +39,18 @@ const db   = require('../../../../core/database');
 const STORAGE_DIR  = path.join(__dirname, '../../storage/sicnea');
 const FECHA_LIMITE = '2026-06-01'; // no importar notificaciones anteriores a esta fecha
 
-// Regex en vez de texto literal: no sabemos si el portal muestra el link de
-// aduanero con tildes ("Gestión", "comunicación") o sin ellas, así que se
-// matchea por las palabras clave sin asumir acentuación exacta. Flag "s"
-// (dotAll) porque el título real es "SICNEA - GESTION DE COMUNICACION Y
-// NOTIFICACION ELECTRONICA ADUANERA." partido en varias líneas (confirmado
-// por captura el 2026-08-10) — sin esa flag, "." no cruza el salto de línea
-// y el link nunca matchea. abogados usa \s+ en vez de "." por eso no le
-// hacía falta la flag, pero se la dejamos igual por las dudas.
+// Palabras clave en vez de texto literal o regex de Playwright — dos
+// intentos con regex en el selector text= de Playwright fallaron en vivo
+// (2026-08-10) sin poder confirmar por qué exactamente (probablemente el
+// título real de la tarjeta de aduanero, "SICNEA - GESTION DE COMUNICACION
+// Y NOTIFICACION ELECTRONICA ADUANERA.", viene partido en líneas de un modo
+// que el regex no terminaba de cubrir). En vez de seguir ajustando un
+// regex a ciegas, abrirServicioSICNEA() busca el elemento a mano con JS
+// (normalizando espacios Y sacando tildes antes de comparar), que es más
+// robusto que depender del selector de texto de Playwright.
 const SERVICIOS = {
-  abogados: { nombre: 'SICNEA Abogados',                             patron: /sicnea\s+abogados/is },
-  aduanero: { nombre: 'SICNEA Gestión de comunicación y notificaciones', patron: /sicnea[\s\S]*gesti[oó]n[\s\S]*comunicaci[oó]n[\s\S]*notificaci/is },
+  abogados: { nombre: 'SICNEA Abogados',                             claves: ['sicnea', 'abogados'] },
+  aduanero: { nombre: 'SICNEA Gestión de comunicación y notificaciones', claves: ['sicnea', 'gestion', 'comunicacion', 'notificaci'] },
 };
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
@@ -103,21 +104,43 @@ async function login(context) {
 //   → popup 2: mgenEntradaUsuarioExterno.aspx (ventana real, tiene botón "Ingresar")
 //   → click "Ingresar" → carga el sistema principal de SICNEA
 
-async function abrirServicioSICNEA(context, portalPage, patronServicio, nombreServicio) {
+async function abrirServicioSICNEA(context, portalPage, clavesServicio, nombreServicio) {
   const popups = [];
   context.on('page', p => popups.push(p));
 
-  // Motor text= de Playwright (el mismo que usaba el scraper viejo con texto
-  // literal para "SICNEA Abogados", probado en producción): resuelve al
-  // elemento clickeable específico en vez de a un contenedor ancestro, cosa
-  // que sí pasó con un selector amplio genérico en el árbol interno de
-  // SICNEA (ver commit del fix de "Ver notificaciones", descartado). Acepta
-  // regex directo con la sintaxis text=/patrón/flags.
-  const link = portalPage.locator(`text=${patronServicio}`).first();
-  if (await link.count() === 0) {
+  // Busca a mano (en vez de un selector de Playwright) el elemento más chico
+  // cuyo texto, normalizado (espacios colapsados, sin tildes, minúscula),
+  // contenga TODAS las palabras clave — y lo clickea directo con JS. Evita
+  // depender del motor text= de Playwright con regex, que falló en vivo
+  // (ver commit anterior) sin poder confirmar la causa exacta.
+  const clickeado = await portalPage.evaluate((claves) => {
+    const normalizar = s => (s || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // saca tildes
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+
+    let elegido = null, textoElegido = '';
+    for (const el of document.querySelectorAll('a, button, div, td, span, h1, h2, h3, h4')) {
+      const texto = normalizar(el.innerText || el.textContent);
+      if (!texto) continue;
+      if (claves.every(clave => texto.includes(clave))) {
+        // Se queda con el más chico (menos texto propio) entre los que matchean,
+        // para no clickear un contenedor grande en vez del link específico.
+        if (!elegido || texto.length < textoElegido.length) {
+          elegido = el;
+          textoElegido = texto;
+        }
+      }
+    }
+    if (!elegido) return false;
+    elegido.click();
+    return true;
+  }, clavesServicio);
+
+  if (!clickeado) {
     throw new Error(`No se encontró el servicio "${nombreServicio}" en el portal ARCA`);
   }
-  await link.click();
 
   for (let i = 0; i < 20; i++) {
     await new Promise(r => setTimeout(r, 2000));
