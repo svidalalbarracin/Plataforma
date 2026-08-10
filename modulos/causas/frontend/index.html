@@ -108,11 +108,15 @@
       .map(p => ({ ...p, tipo: 'pendiente' }));
   }
 
+  function irADetallePendiente(id) {
+    location.href = `pendientes.html?highlight=${id}`;
+  }
+
   function htmlEvento(ev) {
     const expediente = ev.numero_expediente;
     const expLabel   = expediente ? `<span class="ev-causa">${expediente}</span>` : '';
     return `
-      <div class="cal-evento ev-${ev.tipo}">
+      <div class="cal-evento ev-${ev.tipo}" onclick="irADetallePendiente(${ev.id})">
         <span class="ev-desc">${ev.descripcion}</span>
         ${expLabel}
       </div>`;
