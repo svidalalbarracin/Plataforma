@@ -22,15 +22,22 @@ fs.mkdirSync(DIR_DOCS,  { recursive: true });
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Verifica si una notificación TAD ya existe por número de trámite y fecha.
+ * Cuenta cuántas notificaciones TAD ya están guardadas con esta misma
+ * combinación de trámite/fecha/mensaje. No es un booleano de "existe" porque
+ * un mismo trámite puede recibir dos notificaciones distintas el mismo día
+ * con el mensaje idéntico (el portal no expone ningún otro dato que las
+ * distinga) — el llamador compara este conteo contra cuántas veces aparece
+ * la misma tupla en la tanda que se está scrapeando para saber si a esta
+ * ocurrencia puntual todavía le falta guardarse.
  * @param {string} numero_tramite
  * @param {string|null} fecha
- * @returns {boolean}
+ * @param {string|null} mensaje
+ * @returns {number}
  */
-function notifExiste(numero_tramite, fecha, mensaje) {
-  return !!db.prepare(
-    'SELECT id FROM notificaciones_tad WHERE numero_tramite = ? AND fecha IS ? AND mensaje IS ?'
-  ).get(numero_tramite, fecha, mensaje);
+function contarNotifExistentes(numero_tramite, fecha, mensaje) {
+  return db.prepare(
+    'SELECT COUNT(*) AS n FROM notificaciones_tad WHERE numero_tramite = ? AND fecha IS ? AND mensaje IS ?'
+  ).get(numero_tramite, fecha, mensaje).n;
 }
 
 /**
@@ -215,7 +222,10 @@ async function extraerFilasDocs(page) {
  * un mismo trámite puede recibir más de una notificación el mismo día (ej.
  * "Alta Interviniente" y "Notificación Traslado inicial"); sin el mensaje,
  * ambas colisionan en el mismo path y la segunda descarga pisa el PDF de la
- * primera en disco.
+ * primera en disco. Si además dos notificaciones distintas comparten
+ * trámite, fecha Y mensaje (el portal no da otro dato para diferenciarlas),
+ * el nombre generado sigue siendo el mismo — en ese caso se agrega un
+ * sufijo numérico para no pisar el PDF ya descargado.
  *
  * @param {import('playwright').Page} page
  * @param {number} rowIndex       - Índice de la fila en tbody
@@ -231,7 +241,10 @@ async function descargarNotif(page, rowIndex, numero_tramite, fecha, mensaje) {
   const numLimpio     = (numero_tramite || 'sin-numero').replace(/[/\\:*?"<>|]/g, '-');
   const fechaLimpia   = (fecha          || 'sin-fecha'  ).replace(/[/\\:*?"<>|]/g, '-');
   const mensajeLimpio = mensaje ? '_' + mensaje.replace(/[/\\:*?"<>|]/g, '-').slice(0, 40) : '';
-  const destino       = path.join(DIR_NOTIF, `${numLimpio}_${fechaLimpia}${mensajeLimpio}.pdf`);
+  let destino = path.join(DIR_NOTIF, `${numLimpio}_${fechaLimpia}${mensajeLimpio}.pdf`);
+  for (let n = 2; fs.existsSync(destino); n++) {
+    destino = path.join(DIR_NOTIF, `${numLimpio}_${fechaLimpia}${mensajeLimpio}_${n}.pdf`);
+  }
 
   try {
     const [download] = await Promise.all([
@@ -332,6 +345,7 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
       .filter(f => f.numero_tramite);
 
     const tramitesNotif = new Set();
+    const vistosEnEstaCorrida = new Map(); // clave trámite|fecha|mensaje -> veces vista en esta tanda
     const MAX_DUPLICADOS = 3;
     let duplicadosConsecutivos = 0;
 
@@ -339,7 +353,14 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
       const f = filasNotif[i];
       tramitesNotif.add(f.numero_tramite);
 
-      if (notifExiste(f.numero_tramite, f.fecha, f.mensaje)) {
+      const clave = `${f.numero_tramite}|${f.fecha}|${f.mensaje}`;
+      const ocurrencia = (vistosEnEstaCorrida.get(clave) || 0) + 1;
+      vistosEnEstaCorrida.set(clave, ocurrencia);
+
+      // Ya guardada si esta ocurrencia (1ª, 2ª...) tiene su par entre las
+      // que ya existen en la base para esta misma tupla — así una segunda
+      // notificación idéntica en trámite/fecha/mensaje sí se guarda.
+      if (ocurrencia <= contarNotifExistentes(f.numero_tramite, f.fecha, f.mensaje)) {
         duplicadosConsecutivos++;
         if (duplicadosConsecutivos >= MAX_DUPLICADOS) break;
         continue;
