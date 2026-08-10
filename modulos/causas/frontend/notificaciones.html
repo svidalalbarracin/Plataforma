@@ -32,7 +32,7 @@
     <div class="flex gap-2 items-center flex-wrap">
       <button class="btn btn-ghost btn-sm" id="btn-ejecutar" onclick="ejecutarScraper()">↻ PJN + TAD</button>
       <span id="scraper-estado" class="text-muted" style="font-size:.8125rem"></span>
-      <button class="btn btn-ghost btn-sm" id="btn-ejecutar-sicnea" onclick="ejecutarSICNEA()">↻ SICNEA</button>
+      <button class="btn btn-ghost btn-sm" id="btn-ejecutar-sicnea" onclick="ejecutarSICNEA()" title="Sábado/domingo trae todo; entre semana pone SICNEA al día (solo notificaciones ya NOTIFICADA)">↻ SICNEA</button>
       <span id="scraper-estado-sicnea" class="text-muted" style="font-size:.8125rem"></span>
       <span class="text-muted" style="font-size:.8125rem">Próxima auto: <span id="ultima-auto">—</span></span>
       <button class="btn btn-ghost btn-sm" onclick="marcarTodasLeidas()">Marcar todas como leídas</button>
@@ -303,15 +303,6 @@
   }
 
   async function init() {
-    // Bloquear botón SICNEA si hoy no es sábado (6) ni domingo (0)
-    const dia = new Date().getDay();
-    const btnSicnea = document.getElementById('btn-ejecutar-sicnea');
-    if (dia !== 6 && dia !== 0) {
-      btnSicnea.disabled = true;
-      btnSicnea.title    = 'Solo disponible sábado y domingo';
-      btnSicnea.style.opacity = '0.45';
-    }
-
     document.getElementById('lista-notificaciones').innerHTML =
       '<div class="empty">Cargando…</div>';
     try {

@@ -173,6 +173,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS notificaciones_sicnea (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     numero         TEXT    NOT NULL UNIQUE,
+    sistema        TEXT    NOT NULL DEFAULT 'abogados' CHECK(sistema IN ('abogados','aduanero')),
     dependencia    TEXT,
     cuit_cliente   TEXT,
     razon_social   TEXT,
@@ -274,5 +275,16 @@ for (const letra of ['A', 'B', 'C']) {
 // La funcionalidad de carpetas físicas se retiró (2026-07); se reconstruirá
 // desde cero cuando se arme la vista Carpetas.
 db.exec('DROP TABLE IF EXISTS carpetas');
+
+// notificaciones_sicnea ganó columna sistema ('abogados'|'aduanero') para
+// distinguir SICNEA Abogados de SICNEA II (Gestión de Comunicación y
+// Notificación Electrónica Aduanera) — mismo portal, dos servicios distintos.
+// Las filas existentes son todas de SICNEA Abogados (el único que corría hasta ahora).
+{
+  const cols = db.prepare('PRAGMA table_info(notificaciones_sicnea)').all().map(c => c.name);
+  if (!cols.includes('sistema')) {
+    db.exec(`ALTER TABLE notificaciones_sicnea ADD COLUMN sistema TEXT NOT NULL DEFAULT 'abogados' CHECK(sistema IN ('abogados','aduanero'))`);
+  }
+}
 
 module.exports = db;

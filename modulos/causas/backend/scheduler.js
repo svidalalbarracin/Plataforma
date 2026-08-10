@@ -118,12 +118,26 @@ async function ejecutarCiclo() {
   await chequearMailsHorarios();
 }
 
+/**
+ * Corre SICNEA Abogados. Solo dispara automáticamente sábado o domingo:
+ * entre semana, obtenerNotificacionesSICNEA() igual puede correr (se
+ * adapta solo, filtrando a NOTIFICADA), pero ese disparo es manual vía el
+ * botón "Poner SICNEA al día" (routes/notificaciones.js), no por este
+ * scheduler.
+ *
+ * SICNEA II (aduanero) se sacó de la plataforma el 2026-08-10 — va a tener
+ * su propio scraper aparte más adelante, no se llama desde acá.
+ */
 async function ejecutarSICNEA() {
   const dia = new Date().getDay();
-  if (dia !== 6 && dia !== 0) return; // solo sábado (6) o domingo (0)
+  if (dia !== 6 && dia !== 0) return; // corrida automática: solo sábado (6) o domingo (0)
   console.log(`[causas-scheduler] ${dia === 6 ? 'Sábado' : 'Domingo'} — ejecutando SICNEA...`);
+
+  await obtenerNotificacionesSICNEA().catch(err =>
+    console.error(`[${new Date().toISOString()}] [causas/sicnea] Error:`, err.message)
+  );
+
   try {
-    await obtenerNotificacionesSICNEA();
     autoCrearCausas();
     vincularNotificacionesPendientes();
     const r = await inferirTodos();
@@ -131,7 +145,7 @@ async function ejecutarSICNEA() {
       console.log(`[causas-scheduler] Inferencia SICNEA: ${r.vinculadas} causa(s) vinculada(s) a cliente`);
     }
   } catch (err) {
-    console.error(`[${new Date().toISOString()}] [causas/sicnea] Error:`, err.message);
+    console.error(`[${new Date().toISOString()}] [causas/sicnea-inferir] Error:`, err.message);
   }
 }
 
