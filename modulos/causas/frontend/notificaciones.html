@@ -289,13 +289,9 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
 
-      estado.textContent = `${data.nuevas} nueva(s) (Abogados: ${data.nuevas_abogados}, Aduanero: ${data.nuevas_aduanero})`;
+      estado.textContent = `${data.nuevas} nueva(s)`;
       await recargarNotificaciones();
-      if (data.errores?.length) {
-        toast(`SICNEA: ${data.nuevas} nueva(s), con errores en ${data.errores.map(e => e.sistema).join(' y ')}`, 'error');
-      } else {
-        toast(`SICNEA: ${data.nuevas} notificación(es) nueva(s)`, 'success');
-      }
+      toast(`SICNEA: ${data.nuevas} notificación(es) nueva(s)`, 'success');
     } catch (e) {
       estado.textContent = 'Error';
       toast('Error al ejecutar SICNEA', 'error');

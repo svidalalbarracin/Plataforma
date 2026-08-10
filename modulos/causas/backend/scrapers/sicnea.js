@@ -1,15 +1,11 @@
 /**
- * Scraper de SICNEA — reescrito para cubrir los dos sistemas (agosto 2026).
+ * Scraper de SICNEA Abogados (agosto 2026).
  *
- * Ambos sistemas (SICNEA Abogados y SICNEA II — "SICNEA Gestión de
- * comunicación y notificaciones", el servicio aduanero) son el mismo portal
- * por dentro: mismo login AFIP, mismo flujo de apertura por popups, mismo
- * árbol de sidebar con "Consulta", y muy probablemente la misma tabla
- * `dgdNotificacion` y el mismo popup de detalle (mismos ids de campo) una
- * vez adentro. Se diferencian solo por el texto del link de servicio que se
- * clickea en el portal ARCA, y se guardan en la misma tabla
- * notificaciones_sicnea, distinguidos por la columna `sistema`
- * ('abogados' | 'aduanero').
+ * SICNEA II (el servicio aduanero, "SICNEA Gestión de comunicación y
+ * notificaciones") se sacó de este archivo el 2026-08-10: la apertura del
+ * servicio en el portal ARCA tira error ahí de forma persistente y no se
+ * pudo resolver en varios intentos. Va a tener su propio scraper aparte más
+ * adelante — no reintroducir un parámetro `sistema` acá hasta que exista.
  *
  * Por qué "Consulta" y no "Ver notificaciones": el scraper que corrió en
  * producción durante meses (ver sicnea.legacy.js, y el sicnea.js real de la
@@ -22,13 +18,12 @@
  * pasaba en "Ver notificaciones". La diferencia clave (confirmada por
  * captura el 2026-08-10): la tabla de resultados de Consulta SÍ tiene una
  * columna Estado visible en la lista, sin abrir nada — extraerFilas() la
- * lee por nombre de header (columnas por posición fija no sirven: Aduanero
- * ni siquiera tiene Cuit/Razón Social). obtenerNotificacionesSICNEA() usa
- * esa columna como regla máxima: nunca abre una fila que no diga
- * exactamente NOTIFICADA. Por eso esta función es segura para correr
- * cualquier día — no lleva guard de día de la semana. La distinción
- * sábado/domingo (corrida automática) vs entre semana (botón manual "poner
- * SICNEA al día") es una decisión de scheduler/rutas, no de este archivo.
+ * lee por nombre de header. obtenerNotificacionesSICNEA() usa esa columna
+ * como regla máxima: nunca abre una fila que no diga exactamente
+ * NOTIFICADA. Por eso esta función es segura para correr cualquier día —
+ * no lleva guard de día de la semana. La distinción sábado/domingo (corrida
+ * automática) vs entre semana (botón manual "poner SICNEA al día") es una
+ * decisión de scheduler/rutas, no de este archivo.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), quiet: true });
 const { chromium } = require('playwright');
@@ -39,19 +34,8 @@ const db   = require('../../../../core/database');
 const STORAGE_DIR  = path.join(__dirname, '../../storage/sicnea');
 const FECHA_LIMITE = '2026-06-01'; // no importar notificaciones anteriores a esta fecha
 
-// Palabras clave en vez de texto literal o regex de Playwright — dos
-// intentos con regex en el selector text= de Playwright fallaron en vivo
-// (2026-08-10) sin poder confirmar por qué exactamente (probablemente el
-// título real de la tarjeta de aduanero, "SICNEA - GESTION DE COMUNICACION
-// Y NOTIFICACION ELECTRONICA ADUANERA.", viene partido en líneas de un modo
-// que el regex no terminaba de cubrir). En vez de seguir ajustando un
-// regex a ciegas, abrirServicioSICNEA() busca el elemento a mano con JS
-// (normalizando espacios Y sacando tildes antes de comparar), que es más
-// robusto que depender del selector de texto de Playwright.
-const SERVICIOS = {
-  abogados: { nombre: 'SICNEA Abogados',                             claves: ['sicnea', 'abogados'] },
-  aduanero: { nombre: 'SICNEA Gestión de comunicación y notificaciones', claves: ['sicnea', 'gestion', 'comunicacion', 'notificaci'] },
-};
+const NOMBRE_SERVICIO = 'SICNEA Abogados';
+const CLAVES_SERVICIO = ['sicnea', 'abogados'];
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -59,14 +43,14 @@ function yaExiste(numero) {
   return !!db.prepare('SELECT id FROM notificaciones_sicnea WHERE numero = ?').get(numero);
 }
 
-function guardar(sistema, { numero, dependencia, cuit_cliente, razon_social, aduana, motivo,
-                             documento_ref, fecha_alta, estado, archivos_paths = [] }) {
+function guardar({ numero, dependencia, cuit_cliente, razon_social, aduana, motivo,
+                   documento_ref, fecha_alta, estado, archivos_paths = [] }) {
   db.prepare(`
     INSERT INTO notificaciones_sicnea
-      (numero, sistema, dependencia, cuit_cliente, razon_social, aduana, motivo,
+      (numero, dependencia, cuit_cliente, razon_social, aduana, motivo,
        documento_ref, fecha_alta, estado, archivos_paths)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(numero, sistema, dependencia, cuit_cliente, razon_social, aduana, motivo,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(numero, dependencia, cuit_cliente, razon_social, aduana, motivo,
          documento_ref, fecha_alta, estado, JSON.stringify(archivos_paths));
 }
 
@@ -96,30 +80,29 @@ async function login(context) {
   return page;
 }
 
-// ── Apertura del servicio SICNEA (Abogados o Aduanero) ────────────────────────
+// ── Apertura de SICNEA Abogados ──────────────────────────────────────────────
 //
-// Flujo (igual para los dos servicios, solo cambia el texto del link):
-//   ARCA portal → click en el servicio ("SICNEA Abogados" o el de aduanero)
+// Flujo:
+//   ARCA portal → click "SICNEA Abogados"
 //   → popup 1: mgenEntrada.aspx (página intermedia, se ignora)
 //   → popup 2: mgenEntradaUsuarioExterno.aspx (ventana real, tiene botón "Ingresar")
 //   → click "Ingresar" → carga el sistema principal de SICNEA
 
-async function abrirServicioSICNEA(context, portalPage, clavesServicio, nombreServicio) {
+async function abrirSICNEAAbogados(context, portalPage) {
   const popups = [];
   context.on('page', p => popups.push(p));
 
   // Busca a mano (en vez de un selector de Playwright) el elemento más chico
   // cuyo texto, normalizado (espacios colapsados, sin tildes, minúscula),
-  // contenga TODAS las palabras clave — pero el click en sí lo hace
-  // Playwright (locator.click(), evento de mouse real), no JS. Un
+  // contenga todas las palabras clave — pero el click en sí lo hace
+  // Playwright (locator.click(), evento de mouse real), no JS: un
   // elemento.click() disparado desde evaluate() es un click sintético sin
   // gesto de usuario, y Chromium bloquea el popup que se intenta abrir
-  // desde ahí — eso rompió la apertura de la ventana de SICNEA en el
-  // intento anterior (commit descartado).
+  // desde ahí.
   const MARCA = 'data-scraper-target';
   const encontrado = await portalPage.evaluate(({ claves, marca }) => {
     const normalizar = s => (s || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // saca tildes
+      .normalize('NFD').replace(/[̀-ͯ]/g, '') // saca tildes
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase();
@@ -140,10 +123,10 @@ async function abrirServicioSICNEA(context, portalPage, clavesServicio, nombreSe
     if (!elegido) return false;
     elegido.setAttribute(marca, '1');
     return true;
-  }, { claves: clavesServicio, marca: MARCA });
+  }, { claves: CLAVES_SERVICIO, marca: MARCA });
 
   if (!encontrado) {
-    throw new Error(`No se encontró el servicio "${nombreServicio}" en el portal ARCA`);
+    throw new Error(`No se encontró el servicio "${NOMBRE_SERVICIO}" en el portal ARCA`);
   }
 
   await portalPage.locator(`[${MARCA}="1"]`).click();
@@ -288,12 +271,10 @@ async function irAConsulta(mainPage, { soloNotificada = false } = {}) {
 
 // ── Extracción de datos ───────────────────────────────────────────────────────
 
-// Lee las columnas por nombre de header en vez de por posición fija: Abogados
-// y Aduanero pueden no tener el mismo layout (la tabla de Aduanero, por
-// ejemplo, no tiene columnas de Cuit ni Razón Social, pero sí Estado —
-// confirmado por captura el 2026-08-10). La columna Estado es la pieza de
-// seguridad clave: es lo único que permite saber si una fila es NOTIFICADA
-// (segura) o ENVIADA (todavía sin transicionar) sin abrir el detalle.
+// Lee las columnas por nombre de header en vez de por posición fija — la
+// columna Estado es la pieza de seguridad clave: es lo único que permite
+// saber si una fila es NOTIFICADA (segura) o ENVIADA (todavía sin
+// transicionar) sin abrir el detalle.
 async function extraerFilas(ctx) {
   return ctx.evaluate(() => {
     const limpiar = s => s?.replace(/\s+/g, ' ').trim() || null;
@@ -426,35 +407,31 @@ async function descargarAdjuntos(context, ctx, numero) {
 // ── Función principal ─────────────────────────────────────────────────────────
 
 /**
- * Trae notificaciones nuevas de un sistema SICNEA vía "Consulta".
+ * Trae notificaciones nuevas de SICNEA Abogados vía "Consulta".
  *
  * Seguridad, distinta según el día:
  * - Sábado o domingo: abrir una notificación ENVIADA (todavía sin
  *   transicionar a NOTIFICADA) es seguro, porque al no ser días hábiles la
- *   transición automática (00:00 del lunes) no corre plazos de más — mismo
- *   motivo por el que el diseño viejo de "Ver notificaciones" limitaba todo
- *   a fin de semana. Estos días se procesa cualquier fila nueva sin
- *   filtrar por Estado, para traer las ENVIADA lo antes posible.
+ *   transición automática (00:00 del lunes) no corre plazos de más. Estos
+ *   días se procesa cualquier fila nueva sin filtrar por Estado, para traer
+ *   las ENVIADA lo antes posible.
  * - Entre semana (corrida manual "poner SICNEA al día"): regla máxima,
  *   nunca abre una fila que no diga exactamente NOTIFICADA en la columna
  *   Estado de la lista — doble capa: se filtra Estado=NOTIFICADA en la
  *   búsqueda (filtrarPorEstadoNotificada) y además se vuelve a chequear por
  *   fila antes de abrir, por si el filtro de búsqueda no se pudo aplicar.
  *
- * @param {{ sistema: 'abogados'|'aduanero', headless?: boolean, limite?: number|null }} opts
+ * @param {{ headless?: boolean, limite?: number|null }} [opts]
  * @returns {Promise<number>} cantidad de notificaciones nuevas guardadas
  */
-async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = null }) {
-  const servicio = SERVICIOS[sistema];
-  if (!servicio) throw new Error(`sistema inválido: "${sistema}" (esperado "abogados" o "aduanero")`);
-
+async function obtenerNotificacionesSICNEA({ headless = true, limite = null } = {}) {
   const dia = new Date().getDay();
   const esFinDeSemana = dia === 6 || dia === 0;
 
   const modoAuto = limite === null;
 
   const paso = texto => {
-    process.stdout.write(`  [SICNEA/${sistema}] ${texto}`.padEnd(55) + ' ');
+    process.stdout.write(`  [SICNEA] ${texto}`.padEnd(55) + ' ');
     return () => process.stdout.write('OK!\n');
   };
 
@@ -469,8 +446,8 @@ async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = 
     const portalPage = await login(context);
     ok();
 
-    ok = paso(`Abriendo ${servicio.nombre}...`);
-    const mainPage = await abrirServicioSICNEA(context, portalPage, servicio.claves, servicio.nombre);
+    ok = paso(`Abriendo ${NOMBRE_SERVICIO}...`);
+    const mainPage = await abrirSICNEAAbogados(context, portalPage);
     ok();
 
     ok = paso('Navegando a consultas...');
@@ -530,7 +507,7 @@ async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = 
         }
       }
 
-      guardar(sistema, {
+      guardar({
         numero,
         dependencia:    detalleDatos.dependencia   || null,
         cuit_cliente:   detalleDatos.cuit_cliente  || fila.cuit || null,
@@ -549,8 +526,8 @@ async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = 
     }
     ok();
 
-    if (modoAuto) guardarMeta(`sicnea_${sistema}_ultima_auto`, new Date().toISOString());
-    console.log(`  [SICNEA/${sistema}] ${nuevas > 0 ? `${nuevas} nueva(s)` : 'Sin novedades'}`);
+    if (modoAuto) guardarMeta('sicnea_ultima_auto', new Date().toISOString());
+    console.log(`  [SICNEA] ${nuevas > 0 ? `${nuevas} nueva(s)` : 'Sin novedades'}`);
     return nuevas;
 
   } finally {
@@ -558,35 +535,19 @@ async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = 
   }
 }
 
-module.exports = {
-  obtenerNotificacionesSICNEA,
-  obtenerNotificacionesAbogados: opts => obtenerNotificacionesSICNEA({ ...opts, sistema: 'abogados' }),
-  obtenerNotificacionesAduanero: opts => obtenerNotificacionesSICNEA({ ...opts, sistema: 'aduanero' }),
-};
+module.exports = { obtenerNotificacionesSICNEA };
 
-// node sicnea.js [--visible] [--limite=3] [--sistema=abogados|aduanero|ambos]
+// node sicnea.js [--visible] [--limite=3]
 if (require.main === module) {
   const args     = process.argv.slice(2);
   const headless = !args.includes('--visible');
   const limiteA  = args.find(a => a.startsWith('--limite='))?.split('=')[1];
-  const sistemaA = args.find(a => a.startsWith('--sistema='))?.split('=')[1] || 'abogados';
 
-  const opts = {
+  obtenerNotificacionesSICNEA({
     headless,
     limite: limiteA ? parseInt(limiteA, 10) : null,
-  };
-
-  const correr = sistema => obtenerNotificacionesSICNEA({ ...opts, sistema }).catch(e => {
-    console.error(`\nError fatal (${sistema}):`, e.message);
-    process.exitCode = 1;
+  }).catch(e => {
+    console.error('\nError fatal:', e.message);
+    process.exit(1);
   });
-
-  (async () => {
-    if (sistemaA === 'ambos') {
-      await correr('abogados');
-      await correr('aduanero');
-    } else {
-      await correr(sistemaA);
-    }
-  })();
 }
