@@ -110,10 +110,14 @@ async function abrirServicioSICNEA(context, portalPage, clavesServicio, nombreSe
 
   // Busca a mano (en vez de un selector de Playwright) el elemento más chico
   // cuyo texto, normalizado (espacios colapsados, sin tildes, minúscula),
-  // contenga TODAS las palabras clave — y lo clickea directo con JS. Evita
-  // depender del motor text= de Playwright con regex, que falló en vivo
-  // (ver commit anterior) sin poder confirmar la causa exacta.
-  const clickeado = await portalPage.evaluate((claves) => {
+  // contenga TODAS las palabras clave — pero el click en sí lo hace
+  // Playwright (locator.click(), evento de mouse real), no JS. Un
+  // elemento.click() disparado desde evaluate() es un click sintético sin
+  // gesto de usuario, y Chromium bloquea el popup que se intenta abrir
+  // desde ahí — eso rompió la apertura de la ventana de SICNEA en el
+  // intento anterior (commit descartado).
+  const MARCA = 'data-scraper-target';
+  const encontrado = await portalPage.evaluate(({ claves, marca }) => {
     const normalizar = s => (s || '')
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // saca tildes
       .replace(/\s+/g, ' ')
@@ -134,13 +138,15 @@ async function abrirServicioSICNEA(context, portalPage, clavesServicio, nombreSe
       }
     }
     if (!elegido) return false;
-    elegido.click();
+    elegido.setAttribute(marca, '1');
     return true;
-  }, clavesServicio);
+  }, { claves: clavesServicio, marca: MARCA });
 
-  if (!clickeado) {
+  if (!encontrado) {
     throw new Error(`No se encontró el servicio "${nombreServicio}" en el portal ARCA`);
   }
+
+  await portalPage.locator(`[${MARCA}="1"]`).click();
 
   for (let i = 0; i < 20; i++) {
     await new Promise(r => setTimeout(r, 2000));
