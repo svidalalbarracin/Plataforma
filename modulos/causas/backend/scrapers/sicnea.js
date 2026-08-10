@@ -41,10 +41,15 @@ const FECHA_LIMITE = '2026-06-01'; // no importar notificaciones anteriores a es
 
 // Regex en vez de texto literal: no sabemos si el portal muestra el link de
 // aduanero con tildes ("Gestión", "comunicación") o sin ellas, así que se
-// matchea por las palabras clave sin asumir acentuación exacta.
+// matchea por las palabras clave sin asumir acentuación exacta. Flag "s"
+// (dotAll) porque el título real es "SICNEA - GESTION DE COMUNICACION Y
+// NOTIFICACION ELECTRONICA ADUANERA." partido en varias líneas (confirmado
+// por captura el 2026-08-10) — sin esa flag, "." no cruza el salto de línea
+// y el link nunca matchea. abogados usa \s+ en vez de "." por eso no le
+// hacía falta la flag, pero se la dejamos igual por las dudas.
 const SERVICIOS = {
-  abogados: { nombre: 'SICNEA Abogados',                             patron: /sicnea\s+abogados/i },
-  aduanero: { nombre: 'SICNEA Gestión de comunicación y notificaciones', patron: /sicnea.*gesti[oó]n.*comunicaci[oó]n.*notificaci/i },
+  abogados: { nombre: 'SICNEA Abogados',                             patron: /sicnea\s+abogados/is },
+  aduanero: { nombre: 'SICNEA Gestión de comunicación y notificaciones', patron: /sicnea[\s\S]*gesti[oó]n[\s\S]*comunicaci[oó]n[\s\S]*notificaci/is },
 };
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
