@@ -17,7 +17,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../../.env'
 const db = require('../../../core/database');
 const { obtenerNotificacionesPJN }    = require('./scrapers/pjn');
 const { obtenerNotificacionesTAD }    = require('./scrapers/tad');
-const { obtenerNotificacionesSICNEA } = require('./scrapers/sicnea');
+const { obtenerNotificacionesAbogados, obtenerNotificacionesAduanero } = require('./scrapers/sicnea');
 const { notificarNotificacionesSinLeer, notificarAvisoPendientes } = require('./notificaciones');
 const { inferirTodos, autoCrearCausas, vincularNotificacionesPendientes } = require('./inferirCliente');
 const { sincronizarBackup } = require('./sync-backup');
@@ -119,22 +119,24 @@ async function ejecutarCiclo() {
 }
 
 /**
- * Corre SICNEA Abogados. Solo dispara automáticamente sábado o domingo:
- * entre semana, obtenerNotificacionesSICNEA() igual puede correr (se
- * adapta solo, filtrando a NOTIFICADA), pero ese disparo es manual vía el
- * botón "Poner SICNEA al día" (routes/notificaciones.js), no por este
- * scheduler.
- *
- * SICNEA II (aduanero) se sacó de la plataforma el 2026-08-10 — va a tener
- * su propio scraper aparte más adelante, no se llama desde acá.
+ * Corre SICNEA Abogados y luego SICNEA Aduanero en serie (nunca en
+ * paralelo — dos Chromium simultáneos contra el mismo portal AFIP es
+ * innecesario y más frágil). Solo dispara automáticamente sábado o
+ * domingo: entre semana, obtenerNotificaciones{Abogados,Aduanero}() igual
+ * puede correr (se adapta solo, filtrando a NOTIFICADA), pero ese disparo
+ * es manual vía el botón "Poner SICNEA al día" (routes/notificaciones.js),
+ * no por este scheduler.
  */
 async function ejecutarSICNEA() {
   const dia = new Date().getDay();
   if (dia !== 6 && dia !== 0) return; // corrida automática: solo sábado (6) o domingo (0)
-  console.log(`[causas-scheduler] ${dia === 6 ? 'Sábado' : 'Domingo'} — ejecutando SICNEA...`);
+  console.log(`[causas-scheduler] ${dia === 6 ? 'Sábado' : 'Domingo'} — ejecutando SICNEA (Abogados y Aduanero)...`);
 
-  await obtenerNotificacionesSICNEA().catch(err =>
-    console.error(`[${new Date().toISOString()}] [causas/sicnea] Error:`, err.message)
+  await obtenerNotificacionesAbogados().catch(err =>
+    console.error(`[${new Date().toISOString()}] [causas/sicnea-abogados] Error:`, err.message)
+  );
+  await obtenerNotificacionesAduanero().catch(err =>
+    console.error(`[${new Date().toISOString()}] [causas/sicnea-aduanero] Error:`, err.message)
   );
 
   try {

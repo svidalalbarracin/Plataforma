@@ -49,7 +49,7 @@ plataforma/
 │       │   ├── scrapers/
 │       │   │   ├── pjn.js    ← Portal Judicial (notif.pjn.gov.ar)
 │       │   │   ├── tad.js    ← Trámites a Distancia (tramitesadistancia.gob.ar)
-│       │   │   └── sicnea.js ← SICNEA Abogados (vía portal ARCA/AFIP)
+│       │   │   └── sicnea.js ← SICNEA Abogados + Aduanero (vía portal ARCA/AFIP)
 │       │   ├── inferirCliente.js   ← parsea carátulas/PDFs para encontrar cliente
 │       │   ├── notificaciones.js   ← mails de causas (resumen diario + pendientes)
 │       │   ├── scheduler.js        ← scheduler causas
@@ -107,12 +107,27 @@ plataforma/
 - Fecha límite: 2026-06-01
 
 ### SICNEA (sicnea.js)
+Cubre **dos** sistemas, que son el mismo portal por dentro y se distinguen solo
+por la tarjeta que se clickea en ARCA: `abogados` (SICNEA Abogados) y `aduanero`
+(SICNEA - Gestión de comunicación y notificación electrónica aduanera). Se
+guardan en la misma tabla `notificaciones_sicnea`, separados por la columna
+`sistema`. Se corren **en serie, nunca en paralelo**.
+
 - Login en `auth.afip.gob.ar` con CUIT / CLAVE_FISCAL
-- Desde el portal ARCA hace click en "SICNEA Abogados" → abre 2 popups
+- Navega a `portalcf.cloud.afip.gob.ar/portal/app/mis-servicios` y clickea la
+  tarjeta del servicio → abre 2 popups. **Importante**: la home del portal ARCA
+  ya no lista los servicios (solo muestra "Más utilizados" + un link "Ver
+  todos"), por eso hay que ir a `/mis-servicios` — buscar la tarjeta en la home
+  da 0 resultados y ese fue el bug que rompió el scraper.
 - El segundo popup tiene botón "Ingresar" para entrar al sistema real
 - Navega sidebar → "Consulta/Consultas" → click "Buscar" → espera tabla `dgdNotificacion`
+- **Regla de seguridad**: entre semana solo abre filas con Estado `NOTIFICADA`
+  (la lista de Consulta muestra Estado sin abrir nada). Abrir una `ENVIADA`
+  antes de que transicione le arrancaría el plazo antes de tiempo. Sábado y
+  domingo no filtra, porque la transición automática no corre en días inhábiles.
 - Por cada fila: abre detalle con botón "Ver" (abre otro popup), extrae campos del form, descarga PDF de "Imprimir" + adjuntos de `dgdArchivoAdjuntos`
-- Solo corre sábados o domingos al iniciar la plataforma
+- Corrida automática: solo sábados o domingos al iniciar la plataforma. Entre
+  semana se dispara a mano con el botón "Poner SICNEA al día".
 
 ## Scheduler de causas
 
