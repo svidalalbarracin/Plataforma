@@ -187,25 +187,44 @@ router.post('/ejecutar', async (req, res) => {
 
 /**
  * POST /api/causas/notificaciones/ejecutar-sicnea
- * Dispara SICNEA Abogados ("Poner SICNEA al día"). Sin restricción de día:
- * el scraper se adapta solo — sábado/domingo trae todo, entre semana
- * filtra a NOTIFICADA únicamente (ver sicnea.js).
+ * Dispara SICNEA Abogados y luego Aduanero, en serie ("Poner SICNEA al
+ * día"). Sin restricción de día: el scraper se adapta solo — sábado/domingo
+ * trae todo, entre semana filtra a NOTIFICADA únicamente (ver sicnea.js).
+ * Cada sistema se corre con su propio try/catch para que un fallo en uno no
+ * le impida correr al otro; la respuesta siempre es 200 con el desglose,
+ * incluidos los errores parciales si los hubo.
  *
- * SICNEA II (aduanero) se sacó de la plataforma el 2026-08-10 — va a tener
- * su propio scraper aparte más adelante.
- *
- * @returns {{ nuevas: number }}
+ * @returns {{ nuevas_abogados: number, nuevas_aduanero: number, nuevas: number, errores: Array<{sistema: string, error: string}> }}
  */
 router.post('/ejecutar-sicnea', async (req, res) => {
+  const { obtenerNotificacionesAbogados, obtenerNotificacionesAduanero } = require('../scrapers/sicnea');
+  const limite = req.body?.limite ? parseInt(req.body.limite, 10) : null;
+
+  const resultado = { nuevas_abogados: 0, nuevas_aduanero: 0, errores: [] };
+
   try {
-    const { obtenerNotificacionesSICNEA } = require('../scrapers/sicnea');
-    const limite = req.body?.limite ? parseInt(req.body.limite, 10) : null;
-    const nuevas = await obtenerNotificacionesSICNEA({ limite });
-    res.json({ nuevas });
+    resultado.nuevas_abogados = await obtenerNotificacionesAbogados({ limite });
   } catch (e) {
-    console.error('[causas/ejecutar-sicnea]', e.message);
-    res.status(500).json({ error: e.message });
+    // Si el lock está tomado ya en el primer sistema no se hizo nada todavía,
+    // así que se corta acá con 409 en vez de devolver un resultado en cero que
+    // parece un scraper roto. No se intenta aduanero: el lock es de SICNEA
+    // entero, no por sistema.
+    if (e.code === 'SICNEA_EN_CURSO') return res.status(409).json({ error: e.message });
+    console.error('[causas/ejecutar-sicnea] Error en abogados:', e.message);
+    resultado.errores.push({ sistema: 'abogados', error: e.message });
   }
+
+  try {
+    resultado.nuevas_aduanero = await obtenerNotificacionesAduanero({ limite });
+  } catch (e) {
+    // Acá sí se sigue de largo aunque sea el lock: abogados ya corrió y su
+    // resultado no se tira. Alguien pudo tomar el lock en el medio.
+    console.error('[causas/ejecutar-sicnea] Error en aduanero:', e.message);
+    resultado.errores.push({ sistema: 'aduanero', error: e.message });
+  }
+
+  resultado.nuevas = resultado.nuevas_abogados + resultado.nuevas_aduanero;
+  res.json(resultado);
 });
 
 /**
