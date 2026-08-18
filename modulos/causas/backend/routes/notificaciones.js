@@ -205,6 +205,11 @@ router.post('/ejecutar-sicnea', async (req, res) => {
   try {
     resultado.nuevas_abogados = await obtenerNotificacionesAbogados({ limite });
   } catch (e) {
+    // Si el lock está tomado ya en el primer sistema no se hizo nada todavía,
+    // así que se corta acá con 409 en vez de devolver un resultado en cero que
+    // parece un scraper roto. No se intenta aduanero: el lock es de SICNEA
+    // entero, no por sistema.
+    if (e.code === 'SICNEA_EN_CURSO') return res.status(409).json({ error: e.message });
     console.error('[causas/ejecutar-sicnea] Error en abogados:', e.message);
     resultado.errores.push({ sistema: 'abogados', error: e.message });
   }
@@ -212,6 +217,8 @@ router.post('/ejecutar-sicnea', async (req, res) => {
   try {
     resultado.nuevas_aduanero = await obtenerNotificacionesAduanero({ limite });
   } catch (e) {
+    // Acá sí se sigue de largo aunque sea el lock: abogados ya corrió y su
+    // resultado no se tira. Alguien pudo tomar el lock en el medio.
     console.error('[causas/ejecutar-sicnea] Error en aduanero:', e.message);
     resultado.errores.push({ sistema: 'aduanero', error: e.message });
   }

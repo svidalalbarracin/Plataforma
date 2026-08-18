@@ -132,12 +132,16 @@ async function ejecutarSICNEA() {
   if (dia !== 6 && dia !== 0) return; // corrida automática: solo sábado (6) o domingo (0)
   console.log(`[causas-scheduler] ${dia === 6 ? 'Sábado' : 'Domingo'} — ejecutando SICNEA (Abogados y Aduanero)...`);
 
-  await obtenerNotificacionesAbogados().catch(err =>
-    console.error(`[${new Date().toISOString()}] [causas/sicnea-abogados] Error:`, err.message)
-  );
-  await obtenerNotificacionesAduanero().catch(err =>
-    console.error(`[${new Date().toISOString()}] [causas/sicnea-aduanero] Error:`, err.message)
-  );
+  // Encontrar el lock tomado no es un error: significa que alguien apretó
+  // "Poner SICNEA al día" y esa corrida ya está haciendo el trabajo. Se loguea
+  // como información para no ensuciar los errores reales.
+  const avisar = origen => err =>
+    err.code === 'SICNEA_EN_CURSO'
+      ? console.log(`[${new Date().toISOString()}] [causas/${origen}] ${err.message}`)
+      : console.error(`[${new Date().toISOString()}] [causas/${origen}] Error:`, err.message);
+
+  await obtenerNotificacionesAbogados().catch(avisar('sicnea-abogados'));
+  await obtenerNotificacionesAduanero().catch(avisar('sicnea-aduanero'));
 
   try {
     autoCrearCausas();

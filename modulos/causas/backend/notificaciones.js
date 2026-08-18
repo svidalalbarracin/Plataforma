@@ -81,7 +81,11 @@ function seccionTAD(notifs) {
     </table>`;
 }
 
-function seccionSICNEA(notifs) {
+// `titulo` es parámetro porque la tabla notificaciones_sicnea guarda los dos
+// sistemas (columna `sistema`): antes el encabezado decía "SICNEA Abogados"
+// fijo, así que al reincorporarse el aduanero sus notificaciones aparecían
+// listadas bajo el cartel equivocado. Se llama una vez por sistema.
+function seccionSICNEA(notifs, titulo) {
   if (!notifs.length) return '';
   const filas = notifs.map(n => `
     <tr>
@@ -94,7 +98,7 @@ function seccionSICNEA(notifs) {
 
   return `
     <h2 style="margin:24px 0 10px;font-size:15px;font-weight:700;color:#1e293b">
-      SICNEA Abogados &nbsp;·&nbsp; <span style="color:#2563eb">${notifs.length} nueva(s)</span>
+      ${titulo} &nbsp;·&nbsp; <span style="color:#2563eb">${notifs.length} nueva(s)</span>
     </h2>
     <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
       <thead>
@@ -191,6 +195,14 @@ async function notificarNotificacionesSinLeer() {
   const tad    = db.prepare('SELECT * FROM notificaciones_tad    WHERE leida = 0').all();
   const sicnea = db.prepare('SELECT * FROM notificaciones_sicnea WHERE leida = 0').all();
 
+  // Se reparte por sistema para que cada uno vaya bajo su propio encabezado.
+  // El corte es por 'aduanero' y no por 'abogados' a propósito: así cualquier
+  // fila con `sistema` inesperado cae en abogados (que es el DEFAULT de la
+  // columna, y lo que tienen todas las filas viejas) en vez de desaparecer
+  // del mail sin que nadie se entere.
+  const sicneaAduanero = sicnea.filter(n => n.sistema === 'aduanero');
+  const sicneaAbogados = sicnea.filter(n => n.sistema !== 'aduanero');
+
   const total = pjn.length + tad.length + sicnea.length;
   if (total === 0) {
     console.log('  [causas/mail-sin-leer] Sin notificaciones pendientes de revisión');
@@ -215,7 +227,8 @@ async function notificarNotificacionesSinLeer() {
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 4px">
     ${seccionPJN(pjn)}
     ${seccionTAD(tad)}
-    ${seccionSICNEA(sicnea)}
+    ${seccionSICNEA(sicneaAbogados, 'SICNEA Abogados')}
+    ${seccionSICNEA(sicneaAduanero, 'SICNEA Aduanero')}
     <p style="margin-top:36px;font-size:12px;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:16px">
       Generado automáticamente &nbsp;·&nbsp; Sistema de Causas
     </p>

@@ -69,19 +69,88 @@ function yaExiste(numero) {
   return !!db.prepare('SELECT id FROM notificaciones_sicnea WHERE numero = ?').get(numero);
 }
 
+/**
+ * Inserta la notificación y devuelve true solo si realmente se guardó.
+ *
+ * `ON CONFLICT(numero) DO NOTHING` en vez de un INSERT pelado: `numero` es
+ * UNIQUE, así que si otra corrida en paralelo ya guardó esta fila entre
+ * nuestro yaExiste() y este INSERT, el INSERT pelado tiraba "UNIQUE
+ * constraint failed" y abortaba la corrida entera a mitad de la lista —
+ * dejando sin procesar todo lo que venía después. Se apunta al conflicto de
+ * `numero` y no un INSERT OR IGNORE genérico a propósito: un error del CHECK
+ * de `sistema` sí tiene que explotar.
+ *
+ * El booleano es lo que hace que el contador de "nuevas" diga la verdad: si
+ * la fila ya estaba, no se cuenta.
+ */
 function guardar(sistema, { numero, dependencia, cuit_cliente, razon_social, aduana, motivo,
                              documento_ref, fecha_alta, estado, archivos_paths = [] }) {
-  db.prepare(`
+  const info = db.prepare(`
     INSERT INTO notificaciones_sicnea
       (numero, sistema, dependencia, cuit_cliente, razon_social, aduana, motivo,
        documento_ref, fecha_alta, estado, archivos_paths)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(numero) DO NOTHING
   `).run(numero, sistema, dependencia, cuit_cliente, razon_social, aduana, motivo,
          documento_ref, fecha_alta, estado, JSON.stringify(archivos_paths));
+  return info.changes === 1;
 }
 
 function guardarMeta(key, value) {
   db.prepare('INSERT OR REPLACE INTO scraper_meta (key, value) VALUES (?, ?)').run(key, value);
+}
+
+// ── Lock de corrida ───────────────────────────────────────────────────────────
+//
+// Impide que dos corridas de SICNEA se pisen. El botón "Poner SICNEA al día"
+// deshabilita el suyo en el frontend, pero eso es solo del lado del cliente:
+// refrescar la página a mitad de corrida, abrirla en otra pestaña, que el
+// scheduler del sábado arranque mientras alguien apretó el botón, o correr el
+// CLI con la plataforma levantada, todos esquivan ese guard.
+//
+// Dos corridas en paralelo son un problema real, no cosmético: dos Chromium
+// logueándose a AFIP con la misma clave fiscal se pisan la sesión, y la
+// carrera entre yaExiste() y el INSERT podía abortar una corrida a mitad de
+// lista (ver guardar()). Peor todavía en combinación con el corte de "2
+// duplicados consecutivos": una fila que quedó sin procesar por ese aborto
+// puede no volver a alcanzarse nunca, porque la próxima corrida automática
+// arranca desde arriba y corta antes de llegar.
+//
+// Va en scraper_meta y no en una variable de módulo porque tiene que cruzar
+// procesos (CLI vs. servidor). better-sqlite3 es síncrono, así que el
+// chequear-y-tomar entra entero en una transacción y es atómico de verdad.
+const LOCK_KEY    = 'sicnea_lock';
+const LOCK_TTL_MS = 30 * 60 * 1000; // una corrida tarda 2-10 min; pasado esto, se asume caída
+
+function lockVigente() {
+  const row = db.prepare('SELECT value FROM scraper_meta WHERE key = ?').get(LOCK_KEY);
+  if (!row) return null;
+  try {
+    const info = JSON.parse(row.value);
+    if (Date.now() - new Date(info.inicio).getTime() >= LOCK_TTL_MS) return null; // vencido
+    return info;
+  } catch (_) {
+    return null; // valor corrupto: se trata como libre
+  }
+}
+
+// Devuelve null si lo tomó, o los datos del lock vigente si está ocupado.
+const tomarLock = db.transaction(() => {
+  const vigente = lockVigente();
+  if (vigente) return vigente;
+  guardarMeta(LOCK_KEY, JSON.stringify({ pid: process.pid, inicio: new Date().toISOString() }));
+  return null;
+});
+
+// Solo libera si el lock sigue siendo nuestro: si el nuestro venció y otro
+// proceso lo tomó, borrarlo dejaría correr a un tercero en paralelo.
+function liberarLock() {
+  const row = db.prepare('SELECT value FROM scraper_meta WHERE key = ?').get(LOCK_KEY);
+  if (!row) return;
+  try {
+    if (JSON.parse(row.value).pid !== process.pid) return;
+  } catch (_) { /* corrupto: lo limpiamos igual */ }
+  db.prepare('DELETE FROM scraper_meta WHERE key = ?').run(LOCK_KEY);
 }
 
 function isoFecha(str) {
@@ -489,13 +558,26 @@ async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = 
     return () => process.stdout.write('OK!\n');
   };
 
-  const browser = await chromium.launch({ headless });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  context.setDefaultTimeout(120000);
+  const ocupado = tomarLock();
+  if (ocupado) {
+    const e = new Error(
+      `Ya hay una corrida de SICNEA en curso (pid ${ocupado.pid}, desde ${ocupado.inicio}) — no se lanza otra en paralelo.`
+    );
+    e.code = 'SICNEA_EN_CURSO';
+    throw e;
+  }
 
   let nuevas = 0;
+  let browser = null;
 
   try {
+    // El launch va adentro del try para que un fallo acá igual libere el lock.
+    browser = await chromium.launch({ headless });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    context.setDefaultTimeout(120000);
+
+    console.log(`  [SICNEA/${sistema}] inicio pid=${process.pid} ${new Date().toISOString()}`);
+
     let ok = paso('Login AFIP...');
     const portalPage = await login(context);
     ok();
@@ -561,7 +643,7 @@ async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = 
         }
       }
 
-      guardar(sistema, {
+      const guardada = guardar(sistema, {
         numero,
         dependencia:    detalleDatos.dependencia   || null,
         cuit_cliente:   detalleDatos.cuit_cliente  || fila.cuit || null,
@@ -574,18 +656,19 @@ async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = 
         archivos_paths: archivosPaths,
       });
 
-      nuevas++;
+      if (guardada) nuevas++;
       examinadas++;
       if (limite && examinadas >= limite) break;
     }
     ok();
 
     if (modoAuto) guardarMeta(`sicnea_${sistema}_ultima_auto`, new Date().toISOString());
-    console.log(`  [SICNEA/${sistema}] ${nuevas > 0 ? `${nuevas} nueva(s)` : 'Sin novedades'}`);
+    console.log(`  [SICNEA/${sistema}] fin pid=${process.pid} — ${nuevas > 0 ? `${nuevas} nueva(s)` : 'Sin novedades'}`);
     return nuevas;
 
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
+    liberarLock();
   }
 }
 
