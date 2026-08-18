@@ -41,7 +41,15 @@ const fs   = require('fs');
 const db   = require('../../../../core/database');
 
 const STORAGE_DIR  = path.join(__dirname, '../../storage/sicnea');
-const FECHA_LIMITE = '2026-01-01'; // no importar notificaciones anteriores a esta fecha
+const FECHA_LIMITE = '2026-06-01'; // no importar notificaciones anteriores a esta fecha
+
+// Cuántos duplicados consecutivos tolera el modo automático antes de cortar el
+// recorrido. La lista viene de más nueva a más vieja, así que encontrar varias
+// seguidas ya guardadas significa que se llegó a lo conocido y no hace falta
+// seguir bajando. Está en 5 y no en 2 porque con 2 alcanzaba un hueco chico en
+// el medio para que el corte tapara todo lo que venía después, y eso mantuvo
+// notificaciones invisibles durante meses (recuperadas a mano el 2026-08-18).
+const MAX_DUPLICADOS_CONSECUTIVOS = 5;
 
 // Página donde el portal ARCA lista TODOS los servicios contratados. La
 // home del portal (portalcf.../portal/app/) ya no los lista: solo muestra
@@ -111,10 +119,11 @@ function guardarMeta(key, value) {
 // Dos corridas en paralelo son un problema real, no cosmético: dos Chromium
 // logueándose a AFIP con la misma clave fiscal se pisan la sesión, y la
 // carrera entre yaExiste() y el INSERT podía abortar una corrida a mitad de
-// lista (ver guardar()). Peor todavía en combinación con el corte de "2
-// duplicados consecutivos": una fila que quedó sin procesar por ese aborto
+// lista (ver guardar()). Peor todavía en combinación con el corte por
+// duplicados consecutivos: una fila que quedó sin procesar por ese aborto
 // puede no volver a alcanzarse nunca, porque la próxima corrida automática
-// arranca desde arriba y corta antes de llegar.
+// arranca desde arriba y corta antes de llegar (ver
+// MAX_DUPLICADOS_CONSECUTIVOS).
 //
 // Va en scraper_meta y no en una variable de módulo porque tiene que cruzar
 // procesos (CLI vs. servidor). better-sqlite3 es síncrono, así que el
@@ -616,7 +625,7 @@ async function obtenerNotificacionesSICNEA({ sistema, headless = true, limite = 
       if (yaExiste(numero)) {
         if (modoAuto) {
           duplicadosConsecutivos++;
-          if (duplicadosConsecutivos >= 2) break;
+          if (duplicadosConsecutivos >= MAX_DUPLICADOS_CONSECUTIVOS) break;
           examinadas++;
           continue;
         }
