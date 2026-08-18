@@ -41,7 +41,7 @@ const fs   = require('fs');
 const db   = require('../../../../core/database');
 
 const STORAGE_DIR  = path.join(__dirname, '../../storage/sicnea');
-const FECHA_LIMITE = '2026-06-01'; // no importar notificaciones anteriores a esta fecha
+const FECHA_LIMITE = '2026-01-01'; // no importar notificaciones anteriores a esta fecha
 
 // Página donde el portal ARCA lista TODOS los servicios contratados. La
 // home del portal (portalcf.../portal/app/) ya no los lista: solo muestra
