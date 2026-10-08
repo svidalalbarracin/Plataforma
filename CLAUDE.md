@@ -93,16 +93,17 @@ plataforma/
 - Navega a `notif.pjn.gov.ar/recibidas`
 - SSO login automático con PJN_USUARIO / PJN_CLAVE del .env
 - Recorre tabla Material UI paginada (30 filas/página)
-- Modo automático: para con 3 duplicados consecutivos
+- Modo automático: recorre hasta la primera fila anterior a la fecha límite, sin corte por duplicados (las ya guardadas solo se buscan en la base), así que cualquier hueco se recupera solo. El portal muestra solo las ~120 notificaciones más recientes (4 páginas)
 - Modo manual (limite > 0): procesa N filas exactas
 - Descarga PDFs con click en botón por fila
 - Fecha límite: no importa notificaciones anteriores a 2026-06-01
+- Fechas: el portal muestra "HH:MM" (hoy), "dd mmm" sin año (el mes puede venir con 4 letras: "sept") o dd/mm/aaaa. `isoFecha()` las pasa a ISO; nunca guardar el texto crudo — además de romper el frontend, compararlo como texto contra FECHA_LIMITE cortaba el scraper antes de tiempo
 
 ### TAD (tad.js)
 - Navega a `tramitesadistancia.gob.ar`
 - Login vía modal → selecciona ARCA → completa con CUIT / CLAVE_FISCAL
-- Extrae las últimas 10 notificaciones de la pestaña "Notificaciones"
-- Luego cambia a pestaña "Documentos Externos" y descarga solo los docs de trámites que tuvieron notificación nueva
+- Pone el listado en 50 filas por página y lo recorre paginado (`ng2-pagination`, botón "Siguiente") hasta la primera fila anterior a la fecha límite. No corta por duplicados (las ya guardadas solo se comparan contra la base, no se descargan), así que cualquier hueco desde la fecha límite se recupera solo
+- Luego cambia a pestaña "Documentos Externos" y descarga solo los docs de trámites que aparecieron en las notificaciones recorridas; también pagina, y corta cuando una página entera es más vieja que la notificación más vieja recorrida
 - Para documentos externos: abre el ojo (modal), descarga todos los PDFs del modal
 - Fecha límite: 2026-06-01
 

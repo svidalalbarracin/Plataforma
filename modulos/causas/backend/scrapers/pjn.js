@@ -5,7 +5,7 @@
  * de notificaciones recibidas, descarga los PDFs y persiste en la base de datos.
  *
  * Modos de operación:
- * - Automático (limite = null): recorre páginas hasta encontrar 3 duplicados consecutivos.
+ * - Automático (limite = null): recorre páginas hasta la primera fila anterior a FECHA_LIMITE (sin corte por duplicados).
  * - Manual (limite > 0): procesa exactamente `limite` filas sin importar duplicados.
  *
  * @module causas/scrapers/pjn
@@ -24,7 +24,7 @@ const FECHA_LIMITE       = '2026-06-01';
 const SELECTOR_SIGUIENTE = 'button[aria-label="Ir a la siguiente página del listado"]';
 
 /** Mapa de abreviaturas de meses en español → número de mes. */
-const MESES_CORTO = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12 };
+const MESES_CORTO = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,set:9,oct:10,nov:11,dic:12 };
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -70,34 +70,78 @@ function actualizarArchivo(numero, archivo_path) {
 
 // ── Helpers de fecha ──────────────────────────────────────────────────────────
 
+/** Fecha de hoy ('YYYY-MM-DD') en Argentina — no UTC, que después de las 21hs ya es mañana. */
+function hoyArg() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+}
+
 /**
  * Convierte los formatos de fecha del portal PJN a ISO (YYYY-MM-DD).
- * Soporta: dd/mm/aaaa, "03 jun", "HH:MM" (hoy).
+ * Soporta: dd/mm/aaaa, "03 jun" / "30 sept" (día + mes abreviado, sin año),
+ * "HH:MM" (hoy).
+ *
+ * El mes abreviado puede venir con 4 letras: el portal usa "sept" para
+ * septiembre (formato es-AR). Con el regex anterior, de 3 letras exactas, no
+ * matcheaba y se guardaba el texto crudo ("30 sept"), que el frontend
+ * mostraba como "undefined".
+ *
+ * Como "día + mes" no trae año, se asume el actual — salvo que la fecha quede
+ * en el futuro, que entonces es del año anterior (ej. "28 dic" leído en enero).
+ *
  * @param {string|null} str
- * @returns {string|null}
+ * @returns {string|null} null si el formato no se reconoce (nunca el texto crudo)
  */
 function isoFecha(str) {
   if (!str) return null;
   const s = str.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 
   // dd/mm/aaaa
   const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (m1) return `${m1[3]}-${m1[2]}-${m1[1]}`;
 
-  // "03 jun", "28 may" — día + mes abreviado en español
-  const m2 = s.match(/^(\d{1,2})\s+([a-záéíóú]{3})$/i);
+  // "03 jun", "28 may", "30 sept", "5 sep." — día + mes abreviado en español
+  const m2 = s.match(/^(\d{1,2})\s+([a-záéíóú]{3,4})\.?$/i);
   if (m2) {
-    const mes = MESES_CORTO[m2[2].toLowerCase()];
+    const mes = MESES_CORTO[m2[2].toLowerCase().slice(0, 3)];
     if (mes) {
-      const anio = new Date().getFullYear();
-      return `${anio}-${String(mes).padStart(2,'0')}-${m2[1].padStart(2,'0')}`;
+      const hoy = hoyArg();
+      const resto = `${String(mes).padStart(2, '0')}-${m2[1].padStart(2, '0')}`;
+      let anio = Number(hoy.slice(0, 4));
+      if (`${anio}-${resto}` > hoy) anio--;
+      return `${anio}-${resto}`;
     }
   }
 
   // Solo hora "14:05" → la notificación es de hoy
-  if (/^\d{1,2}:\d{2}$/.test(s)) return new Date().toISOString().slice(0, 10);
+  if (/^\d{1,2}:\d{2}$/.test(s)) return hoyArg();
 
-  return s;
+  console.warn(`  [PJN] Formato de fecha no reconocido: "${s}"`);
+  return null;
+}
+
+/**
+ * Reescribe en ISO las fechas que quedaron guardadas como texto crudo del
+ * portal (ej. "30 sept") antes de que isoFecha() reconociera los meses de 4
+ * letras. Idempotente: solo toca filas que no están en ISO. Corre al cargar el
+ * módulo (o sea, al iniciar la plataforma), así la PC del estudio se repara
+ * sola en el primer arranque con este código.
+ *
+ * El año se infiere respecto de hoy (ver isoFecha), lo cual es correcto
+ * mientras la reparación corra dentro del año de la notificación — las filas
+ * afectadas son de septiembre de 2026.
+ */
+function repararFechasGuardadas() {
+  const malas = db.prepare(
+    "SELECT id, fecha_envio FROM notificaciones_pjn WHERE fecha_envio IS NOT NULL AND fecha_envio NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+  ).all();
+  const actualizar = db.prepare('UPDATE notificaciones_pjn SET fecha_envio = ? WHERE id = ?');
+  let reparadas = 0;
+  for (const r of malas) {
+    const iso = isoFecha(r.fecha_envio);
+    if (iso) { actualizar.run(iso, r.id); reparadas++; }
+  }
+  if (reparadas) console.log(`  [PJN] Fechas reparadas a formato ISO: ${reparadas}`);
 }
 
 /**
@@ -260,7 +304,7 @@ async function irAPaginaSiguiente(page) {
 /**
  * Obtiene las notificaciones nuevas del portal PJN y las persiste en la base de datos.
  *
- * - Modo automático (limite = null): para al encontrar 3 duplicados consecutivos.
+ * - Modo automático (limite = null): recorre hasta la primera fila anterior a FECHA_LIMITE, sin cortar por duplicados.
  * - Modo manual (limite > 0): procesa hasta `limite` filas sin parar por duplicados.
  *
  * @param {{ headless?: boolean, limite?: number|null }} [opts]
@@ -268,7 +312,6 @@ async function irAPaginaSiguiente(page) {
  */
 async function obtenerNotificacionesPJN({ headless = true, limite = null } = {}) {
   const modoAuto = limite === null;
-  const MAX_DUPLICADOS_CONSECUTIVOS = 3;
 
   const paso = texto => {
     process.stdout.write(`  [PJN] ${texto}`.padEnd(55) + ' ');
@@ -299,7 +342,7 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
     ok();
 
     ok = paso('Procesando...');
-    let nuevas = 0, examinadas = 0, duplicadosConsecutivos = 0, detener = false;
+    let nuevas = 0, examinadas = 0, detener = false;
 
     while (!detener) {
       const filas = await extraerFilas(page);
@@ -307,21 +350,22 @@ async function obtenerNotificacionesPJN({ headless = true, limite = null } = {})
       for (const fila of filas) {
         if (!fila.numero) continue;
 
+        // El corte por fecha va antes que el chequeo de duplicados: en modo
+        // automático no se corta por duplicados, se recorre siempre hasta
+        // FECHA_LIMITE. Las ya guardadas solo se buscan en la base (no se
+        // descargan), así que cuesta poco, y cualquier hueco se recupera solo.
+        // Con el corte por 3 duplicados, las 62 notificaciones que se perdieron
+        // cuando "18 sept" se comparaba como texto contra FECHA_LIMITE (ver
+        // isoFecha) no se recuperaban nunca: cortaba en las primeras filas.
+        const fechaIso = isoFecha(fila.fecha_envio);
+        if (fechaIso && fechaIso < FECHA_LIMITE) { detener = true; break; }
+
         if (yaExiste(fila.numero)) {
-          if (modoAuto) {
-            duplicadosConsecutivos++;
-            if (duplicadosConsecutivos >= MAX_DUPLICADOS_CONSECUTIVOS) { detener = true; break; }
-            continue;
-          }
+          if (modoAuto) continue;
           examinadas++;
           if (examinadas >= limite) { detener = true; break; }
           continue;
         }
-
-        duplicadosConsecutivos = 0;
-
-        const fechaIso = isoFecha(fila.fecha_envio);
-        if (fechaIso && fechaIso < FECHA_LIMITE) { detener = true; break; }
 
         const { numero_expediente, caratula } = parsearExpediente(fila.expediente);
         const archivo_path = await descargarAdjunto(page, fila.rowIndex, fila.numero);
@@ -413,7 +457,9 @@ async function backfillAdjuntosPJN({ headless = true } = {}) {
   return descargados;
 }
 
-module.exports = { obtenerNotificacionesPJN, backfillAdjuntosPJN };
+try { repararFechasGuardadas(); } catch (e) { console.error('  [PJN] Error reparando fechas:', e.message); }
+
+module.exports = { obtenerNotificacionesPJN, backfillAdjuntosPJN, isoFecha };
 
 // node pjn.js [--visible]
 if (require.main === module) {
