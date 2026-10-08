@@ -93,10 +93,11 @@ plataforma/
 - Navega a `notif.pjn.gov.ar/recibidas`
 - SSO login automático con PJN_USUARIO / PJN_CLAVE del .env
 - Recorre tabla Material UI paginada (30 filas/página)
-- Modo automático: para con 3 duplicados consecutivos
+- Modo automático: recorre hasta la primera fila anterior a la fecha límite, sin corte por duplicados (las ya guardadas solo se buscan en la base), así que cualquier hueco se recupera solo. El portal muestra solo las ~120 notificaciones más recientes (4 páginas)
 - Modo manual (limite > 0): procesa N filas exactas
 - Descarga PDFs con click en botón por fila
 - Fecha límite: no importa notificaciones anteriores a 2026-06-01
+- Fechas: el portal muestra "HH:MM" (hoy), "dd mmm" sin año (el mes puede venir con 4 letras: "sept") o dd/mm/aaaa. `isoFecha()` las pasa a ISO; nunca guardar el texto crudo — además de romper el frontend, compararlo como texto contra FECHA_LIMITE cortaba el scraper antes de tiempo
 
 ### TAD (tad.js)
 - Navega a `tramitesadistancia.gob.ar`
