@@ -2,8 +2,9 @@
  * Scraper de Trámites a Distancia (TAD).
  *
  * Hace login en tramitesadistancia.gob.ar vía ARCA (clave fiscal), navega a la
- * sección de Notificaciones, descarga las últimas 10 notificaciones y los
- * documentos externos asociados a trámites que tengan notificación.
+ * sección de Notificaciones, recorre el listado paginado descargando las
+ * notificaciones nuevas y los documentos externos asociados a trámites que
+ * tengan notificación.
  *
  * @module causas/scrapers/tad
  */
@@ -16,6 +17,8 @@ const db   = require('../../../../core/database');
 const DIR_NOTIF    = path.join(__dirname, '../../storage/tad/notificaciones');
 const DIR_DOCS     = path.join(__dirname, '../../storage/tad/documentos_externos');
 const FECHA_LIMITE = '2026-06-01';
+// Tope de seguridad del recorrido paginado (50 filas por página → 1000 filas)
+const MAX_PAGINAS  = 20;
 fs.mkdirSync(DIR_NOTIF, { recursive: true });
 fs.mkdirSync(DIR_DOCS,  { recursive: true });
 
@@ -147,18 +150,58 @@ async function irAPestanaInterna(page, nombre) {
 }
 
 /**
- * Intenta configurar 10 resultados por página en el paginador del listado.
- * Si no encuentra el selector, continúa con el default.
+ * Elige cuántas filas mostrar por página en el `<select>` del listado activo
+ * (el portal ofrece 5, 10, 50 y "Todos"; arranca en 5). Si no encuentra el
+ * selector, continúa con el default — la paginación con irAPaginaSiguiente()
+ * cubre el resto igual, solo que con más clicks.
  * @param {import('playwright').Page} page
+ * @param {number} [cantidad=50]
  */
-async function mostrar10(page) {
+async function mostrarPorPagina(page, cantidad = 50) {
   try {
-    const btn = page.locator('a:has-text("10"), button:has-text("10")').filter({ hasText: /^10$/ }).first();
-    if (await btn.isVisible({ timeout: 5000 })) {
-      await btn.click();
+    const select = page.locator(`select:visible:has(option[value="${cantidad}"])`).first();
+    if (await select.isVisible({ timeout: 5000 })) {
+      await select.selectOption(String(cantidad));
       await new Promise(r => setTimeout(r, 2000));
+      // Cambiar el tamaño no vuelve a la página 1 (si estaba en la 3, queda
+      // en la 3 con el nuevo tamaño) — se fuerza para no saltear filas.
+      const pagina1 = page.locator('ul.ng2-pagination:visible li:not(.current) a').filter({ hasText: /^\s*page\s+1\s*$/ });
+      if (await pagina1.count()) {
+        await pagina1.first().click();
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      await page.waitForSelector('table tbody tr', { timeout: 20000 });
     }
   } catch { /* default pagination */ }
+}
+
+/**
+ * Avanza a la página siguiente del paginador del listado activo
+ * (`ng2-pagination`). Espera a que cambie el número de página actual antes de
+ * volver, para no leer la tabla vieja.
+ * @param {import('playwright').Page} page
+ * @returns {Promise<boolean>} false si ya estaba en la última página
+ */
+async function irAPaginaSiguiente(page) {
+  const paginador = page.locator('ul.ng2-pagination:visible').first();
+  if (!(await paginador.count())) return false;
+
+  const siguiente = paginador.locator('li.pagination-next:not(.disabled) a');
+  if (!(await siguiente.count())) return false;
+
+  const actual = async () => (await paginador.locator('li.current').innerText()).replace(/\D/g, '');
+  const antes = await actual();
+  await siguiente.first().click();
+  await page.waitForFunction(
+    prev => {
+      const li = [...document.querySelectorAll('ul.ng2-pagination li.current')].find(e => e.offsetParent);
+      return li && li.innerText.replace(/\D/g, '') !== prev;
+    },
+    antes, { timeout: 20000 }
+  );
+  await new Promise(r => setTimeout(r, 1500));
+  await page.waitForSelector('table tbody tr', { timeout: 20000 });
+  return true;
 }
 
 // ── Extracción de datos ───────────────────────────────────────────────────────
@@ -308,8 +351,8 @@ async function descargarDocsDelOjo(page, rowIndex, numero_tramite, fecha_envio) 
 // ── Función principal exportable ──────────────────────────────────────────────
 
 /**
- * Obtiene las últimas 10 notificaciones y documentos externos de TAD
- * y persiste los nuevos en la base de datos.
+ * Recorre las notificaciones y documentos externos de TAD (todas las páginas
+ * que haga falta) y persiste los nuevos en la base de datos.
  *
  * Solo descarga documentos externos si el número de trámite tiene
  * una notificación asociada en la misma ejecución.
@@ -336,64 +379,80 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
 
     ok = paso('Navegando a notificaciones...');
     await irANotificaciones(page);
-    await mostrar10(page);
+    await mostrarPorPagina(page);
     ok();
 
+    // El listado está paginado (y ordenado de más nuevo a más viejo): se
+    // recorre página por página hasta la primera fila anterior a FECHA_LIMITE.
+    // No hay corte por duplicados a propósito: las ya guardadas solo se
+    // comparan contra la base (no se descargan), así que recorrerlas cuesta
+    // casi nada — y cualquier hueco de más abajo se recupera solo. Con el corte
+    // por duplicados, las notificaciones perdidas cuando el scraper no
+    // paginaba (solo leía la primera página) no se recuperaban nunca: cortaba
+    // en las primeras filas, que ya estaban en la base.
     ok = paso('Procesando notificaciones...');
-    const filasNotif = (await extraerFilasNotif(page))
-      .map(f => ({ ...f, fecha: isoFecha(f.fecha), numero_tramite: f.numero_tramite?.trim() }))
-      .filter(f => f.numero_tramite);
-
     const tramitesNotif = new Set();
     const vistosEnEstaCorrida = new Map(); // clave trámite|fecha|mensaje -> veces vista en esta tanda
-    const MAX_DUPLICADOS = 3;
-    let duplicadosConsecutivos = 0;
+    let fechaMasVieja = null;              // la más vieja recorrida — acota la búsqueda de documentos externos
+    let cortar = false;
 
-    for (let i = 0; i < filasNotif.length; i++) {
-      const f = filasNotif[i];
-      tramitesNotif.add(f.numero_tramite);
+    for (let pagina = 1; pagina <= MAX_PAGINAS && !cortar; pagina++) {
+      if (pagina > 1 && !(await irAPaginaSiguiente(page))) break;
 
-      const clave = `${f.numero_tramite}|${f.fecha}|${f.mensaje}`;
-      const ocurrencia = (vistosEnEstaCorrida.get(clave) || 0) + 1;
-      vistosEnEstaCorrida.set(clave, ocurrencia);
+      // `i` es el índice dentro de la página actual: es el que usa descargarNotif()
+      const filasNotif = (await extraerFilasNotif(page))
+        .map((f, i) => ({ ...f, i, fecha: isoFecha(f.fecha), numero_tramite: f.numero_tramite?.trim() }))
+        .filter(f => f.numero_tramite);
 
-      // Ya guardada si esta ocurrencia (1ª, 2ª...) tiene su par entre las
-      // que ya existen en la base para esta misma tupla — así una segunda
-      // notificación idéntica en trámite/fecha/mensaje sí se guarda.
-      if (ocurrencia <= contarNotifExistentes(f.numero_tramite, f.fecha, f.mensaje)) {
-        duplicadosConsecutivos++;
-        if (duplicadosConsecutivos >= MAX_DUPLICADOS) break;
-        continue;
+      for (const f of filasNotif) {
+        if (f.fecha && f.fecha < FECHA_LIMITE) { cortar = true; break; }
+
+        tramitesNotif.add(f.numero_tramite);
+        if (f.fecha && (!fechaMasVieja || f.fecha < fechaMasVieja)) fechaMasVieja = f.fecha;
+
+        const clave = `${f.numero_tramite}|${f.fecha}|${f.mensaje}`;
+        const ocurrencia = (vistosEnEstaCorrida.get(clave) || 0) + 1;
+        vistosEnEstaCorrida.set(clave, ocurrencia);
+
+        // Ya guardada si esta ocurrencia (1ª, 2ª...) tiene su par entre las
+        // que ya existen en la base para esta misma tupla — así una segunda
+        // notificación idéntica en trámite/fecha/mensaje sí se guarda.
+        if (ocurrencia <= contarNotifExistentes(f.numero_tramite, f.fecha, f.mensaje)) continue;
+
+        const archivePath = await descargarNotif(page, f.i, f.numero_tramite, f.fecha, f.mensaje);
+        guardarNotif({ ...f, archivo_path: archivePath });
+        nuevasNotif++;
       }
-
-      duplicadosConsecutivos = 0;
-      if (f.fecha && f.fecha < FECHA_LIMITE) break;
-
-      const archivePath = await descargarNotif(page, i, f.numero_tramite, f.fecha, f.mensaje);
-      guardarNotif({ ...f, archivo_path: archivePath });
-      nuevasNotif++;
     }
     ok();
 
+    // Mismo recorrido paginado. Corta cuando una página entera ya es más vieja
+    // que la notificación más vieja recorrida arriba (o que FECHA_LIMITE):
+    // de ahí para atrás no puede haber documentos de los trámites que importan.
     ok = paso('Procesando documentos externos...');
     await irAPestanaInterna(page, 'Documentos Externos');
-    await mostrar10(page);
+    await mostrarPorPagina(page);
 
-    const todasFilasDocs = await extraerFilasDocs(page);
-    const filasDocs = todasFilasDocs
-      .map(f => ({ ...f, fecha_envio: isoFecha(f.fecha_envio), numero_tramite: f.numero_tramite?.trim() }))
-      .filter(f => f.numero_tramite && tramitesNotif.has(f.numero_tramite));
+    const corteDocs = fechaMasVieja && fechaMasVieja > FECHA_LIMITE ? fechaMasVieja : FECHA_LIMITE;
 
-    for (const f of filasDocs) {
-      if (docExiste(f.numero_tramite, f.fecha_envio)) continue;
-      if (f.fecha_envio && f.fecha_envio < FECHA_LIMITE) break;
+    for (let pagina = 1; pagina <= MAX_PAGINAS && tramitesNotif.size; pagina++) {
+      if (pagina > 1 && !(await irAPaginaSiguiente(page))) break;
 
-      const idx = todasFilasDocs.findIndex(
-        r => r.numero_tramite?.trim() === f.numero_tramite && isoFecha(r.fecha_envio) === f.fecha_envio
-      );
-      const rutas = await descargarDocsDelOjo(page, idx, f.numero_tramite, f.fecha_envio);
-      guardarDoc({ fecha_envio: f.fecha_envio, nombre: f.nombre, numero_tramite: f.numero_tramite, motivo: f.motivo, archivos_paths: rutas });
-      nuevosDocs++;
+      const todasFilasDocs = (await extraerFilasDocs(page))
+        .map((f, i) => ({ ...f, i, fecha_envio: isoFecha(f.fecha_envio), numero_tramite: f.numero_tramite?.trim() }));
+
+      for (const f of todasFilasDocs) {
+        if (!f.numero_tramite || !tramitesNotif.has(f.numero_tramite)) continue;
+        if (f.fecha_envio && f.fecha_envio < FECHA_LIMITE) continue;
+        if (docExiste(f.numero_tramite, f.fecha_envio)) continue;
+
+        const rutas = await descargarDocsDelOjo(page, f.i, f.numero_tramite, f.fecha_envio);
+        guardarDoc({ fecha_envio: f.fecha_envio, nombre: f.nombre, numero_tramite: f.numero_tramite, motivo: f.motivo, archivos_paths: rutas });
+        nuevosDocs++;
+      }
+
+      const fechas = todasFilasDocs.map(f => f.fecha_envio).filter(Boolean);
+      if (fechas.length && fechas.every(fe => fe < corteDocs)) break;
     }
     ok();
 
@@ -411,7 +470,7 @@ async function obtenerNotificacionesTAD({ headless = true } = {}) {
 module.exports = {
   obtenerNotificacionesTAD,
   // Exportadas para reuso desde scripts puntuales de mantenimiento (ver reparar-tad-duplicados.js)
-  login, irANotificaciones, mostrar10, extraerFilasNotif, descargarNotif, isoFecha,
+  login, irANotificaciones, mostrarPorPagina, irAPaginaSiguiente, extraerFilasNotif, descargarNotif, isoFecha,
 };
 
 // node tad.js [--visible]

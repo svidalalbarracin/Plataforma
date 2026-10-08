@@ -101,8 +101,8 @@ plataforma/
 ### TAD (tad.js)
 - Navega a `tramitesadistancia.gob.ar`
 - Login vía modal → selecciona ARCA → completa con CUIT / CLAVE_FISCAL
-- Extrae las últimas 10 notificaciones de la pestaña "Notificaciones"
-- Luego cambia a pestaña "Documentos Externos" y descarga solo los docs de trámites que tuvieron notificación nueva
+- Pone el listado en 50 filas por página y lo recorre paginado (`ng2-pagination`, botón "Siguiente") hasta la primera fila anterior a la fecha límite. No corta por duplicados (las ya guardadas solo se comparan contra la base, no se descargan), así que cualquier hueco desde la fecha límite se recupera solo
+- Luego cambia a pestaña "Documentos Externos" y descarga solo los docs de trámites que aparecieron en las notificaciones recorridas; también pagina, y corta cuando una página entera es más vieja que la notificación más vieja recorrida
 - Para documentos externos: abre el ojo (modal), descarga todos los PDFs del modal
 - Fecha límite: 2026-06-01
 

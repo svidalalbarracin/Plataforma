@@ -16,7 +16,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../../../.e
 const { chromium } = require('playwright');
 const db = require('../../../../core/database');
 const {
-  login, irANotificaciones, mostrar10, extraerFilasNotif, descargarNotif, isoFecha,
+  login, irANotificaciones, mostrarPorPagina, irAPaginaSiguiente, extraerFilasNotif, descargarNotif, isoFecha,
 } = require('./tad');
 
 /**
@@ -38,32 +38,6 @@ function buscarDuplicados() {
 
 function actualizarArchivoPath(id, archivo_path) {
   db.prepare('UPDATE notificaciones_tad SET archivo_path = ? WHERE id = ?').run(archivo_path, id);
-}
-
-/**
- * Intenta avanzar a la página siguiente del listado, probando varios
- * selectores comunes de paginador (no se conoce de antemano cuál usa TAD).
- * @param {import('playwright').Page} page
- * @returns {Promise<boolean>} true si pudo avanzar, false si no hay más páginas
- */
-async function siguientePagina(page) {
-  const candidatos = [
-    '.pagination .page-item:not(.disabled) a[aria-label*="Next" i]',
-    '.pagination li:not(.disabled) a:has-text(">")',
-    'a:has-text("Siguiente")',
-    'a:has-text("»")',
-  ];
-  for (const sel of candidatos) {
-    try {
-      const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 1000 })) {
-        await btn.click();
-        await new Promise(r => setTimeout(r, 2500));
-        return true;
-      }
-    } catch { /* probar siguiente selector */ }
-  }
-  return false;
 }
 
 /**
@@ -101,7 +75,7 @@ async function main({ headless = true } = {}) {
 
     ok = paso('Navegando a notificaciones...');
     await irANotificaciones(page);
-    await mostrar10(page);
+    await mostrarPorPagina(page);
     ok();
 
     let paginasRecorridas = 0;
@@ -135,7 +109,7 @@ async function main({ headless = true } = {}) {
       if (!restantes.length) break;
       paginasRecorridas++;
       console.log(`  [REPARAR-TAD] Pasando a la página siguiente (quedan ${restantes.length})...`);
-      const avanzo = await siguientePagina(page);
+      const avanzo = await irAPaginaSiguiente(page);
       if (!avanzo) break;
     }
 
