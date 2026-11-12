@@ -36,6 +36,7 @@ plataforma/
 │   ├── facturacion/
 │   │   ├── backend/
 │   │   │   ├── arca/scraper.js     ← scraper RCEL para importar facturas emitidas
+│   │   │   ├── arca/limpieza.js    ← borra facturas de otro emisor (CUIT del PDF ≠ CUIT del .env)
 │   │   │   ├── notificaciones.js   ← mails de facturas vencidas
 │   │   │   ├── scheduler.js        ← scheduler facturación
 │   │   │   └── routes/
@@ -187,7 +188,7 @@ GET      /api/facturas
 GET      /api/pagos
 GET      /api/recurrentes
 GET      /api/estadisticas
-POST     /api/importar               ← dispara scraper ARCA manualmente
+POST     /api/importar               ← dispara scraper ARCA manualmente + limpieza de otro emisor
 GET      /api/causas/notificaciones
 GET      /api/causas/biblioteca
 GET      /api/causas/pendientes

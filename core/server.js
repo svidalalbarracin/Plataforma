@@ -32,17 +32,22 @@ app.use('/api/causas/pendientes',    require('../modulos/causas/backend/routes/p
  * POST /api/importar
  * Ejecuta el scraper de ARCA para importar facturas emitidas.
  * Acepta `fechaDesde` en el body (ISO string); si no se provee, usa los últimos 30 días.
- * Tras la importación, envía mail de alerta para facturas que ya estén vencidas.
+ * Tras la importación, borra las facturas de otro emisor (ver arca/limpieza.js) y
+ * envía mail de alerta para las importadas que ya estén vencidas.
  */
 app.post('/api/importar', async (req, res) => {
   try {
     const { importarFacturas }            = require('../modulos/facturacion/backend/arca/scraper');
+    const { limpiarFacturasOtroEmisor }   = require('../modulos/facturacion/backend/arca/limpieza');
     const { notificarImportadasVencidas } = require('../modulos/facturacion/backend/notificaciones');
     const { fechaDesde } = req.body;
     const resultado = await importarFacturas({
       fechaDesde: fechaDesde ? new Date(fechaDesde) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
       fechaHasta: new Date(),
     });
+    resultado.limpieza = await limpiarFacturasOtroEmisor({ aplicar: true });
+    resultado.numerosImportados = resultado.numerosImportados.filter(n => !resultado.limpieza.borradas.includes(n));
+    resultado.importadas        = resultado.numerosImportados.length;
     res.json(resultado);
     if (resultado.numerosImportados?.length) {
       notificarImportadasVencidas(resultado.numerosImportados).catch(e =>

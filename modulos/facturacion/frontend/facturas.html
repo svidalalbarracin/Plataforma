@@ -329,9 +329,13 @@
       const msg = r.importadas > 0
         ? `${r.importadas} factura${r.importadas !== 1 ? 's' : ''} nueva${r.importadas !== 1 ? 's' : ''} importada${r.importadas !== 1 ? 's' : ''}.`
         : 'No hay facturas nuevas.';
+      const borradas = r.limpieza?.borradas.length ?? 0;
+      const limpieza = borradas > 0
+        ? ` Se ${borradas !== 1 ? 'eliminaron' : 'eliminó'} ${borradas} comprobante${borradas !== 1 ? 's' : ''} de otro emisor.`
+        : '';
       status.style.cssText = 'display:block;padding:12px 16px;border-radius:8px;font-size:14px;margin-bottom:16px;background:rgba(22,163,74,0.08);color:#16a34a;border:1px solid rgba(22,163,74,0.2)';
-      status.textContent = msg + (r.errores > 0 ? ` (${r.errores} con error)` : '');
-      if (r.importadas > 0) await init();
+      status.textContent = msg + limpieza + (r.errores > 0 ? ` (${r.errores} con error)` : '');
+      if (r.importadas > 0 || borradas > 0) await init();
     } catch (e) {
       status.style.cssText = 'display:block;padding:12px 16px;border-radius:8px;font-size:14px;margin-bottom:16px;background:rgba(220,38,38,0.08);color:#dc2626;border:1px solid rgba(220,38,38,0.2)';
       status.textContent = 'Error al importar: ' + e.message;
