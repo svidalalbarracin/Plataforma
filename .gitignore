@@ -16,3 +16,5 @@ instalar.bat
 instalar.sh
 # Logs del servidor
 logs/*.log
+# Backups de la DB generados por scripts de limpieza
+database/backups/
