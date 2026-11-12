@@ -4,7 +4,7 @@
  * Flujo de navegación:
  * 1. Login en afip.gob.ar con CUIT + clave fiscal (abre nueva pestaña).
  * 2. Desde el portal, hace clic en "Comprobantes en línea" (abre RCEL en otra pestaña).
- * 3. Selecciona el representado (el primer btn_empresa, que es el estudio).
+ * 3. Selecciona el representado a nombre del titular (puede tener otras representaciones).
  * 4. Navega a la sección "Consultas" y completa el formulario de fechas/tipo.
  * 5. Extrae las filas de resultados, descarga el PDF de cada una y guarda en DB.
  *
@@ -320,7 +320,21 @@ async function abrirRCEL(context, portalPage) {
 }
 
 /**
- * Selecciona el representado en RCEL (el primer botón `input.btn_empresa`).
+ * Normaliza un texto para comparar nombres: sin acentos, mayúsculas, espacios simples.
+ * @param {string} s
+ * @returns {string}
+ */
+function normalizarTexto(s) {
+  return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Selecciona en RCEL el representado que corresponde al titular de la clave fiscal.
+ * El usuario puede tener varias representaciones (ej. el Instituto Argentino de Estudios
+ * Aduaneros) y el orden de los botones no es fijo. RCEL muestra arriba
+ * "Usuario: <CUIT> - <NOMBRE>": se verifica que el CUIT sea el del .env y se elige
+ * el botón `.btn_empresa` con ese mismo nombre. Si no lo encuentra, falla en vez de
+ * importar comprobantes de otro emisor.
  * @param {import('playwright').Page} rcelPage
  * @returns {Promise<import('playwright').Page>} La misma página tras el submit.
  */
@@ -328,7 +342,23 @@ async function seleccionarRepresentado(rcelPage) {
   await rcelPage.waitForLoadState('networkidle', { timeout: 30000 });
   const SELECTOR = 'input.btn_empresa, a.btn_empresa, button.btn_empresa';
   await rcelPage.waitForSelector(SELECTOR, { timeout: 20000 });
-  await rcelPage.locator(SELECTOR).first().click();
+
+  const texto = await rcelPage.innerText('body');
+  const m = texto.match(/Usuario:\s*(\d{11})\s*-\s*([^\n\t]+)/);
+  const cuit = String(process.env.CUIT || '').replace(/\D/g, '');
+  if (!m || m[1] !== cuit) {
+    throw new Error(`No se pudo verificar el usuario de RCEL (esperado CUIT ${cuit}, encontrado: ${m ? m[1] : 'nada'})`);
+  }
+  const titular = normalizarTexto(m[2]);
+
+  const botones = rcelPage.locator(SELECTOR);
+  const nombres = await botones.evaluateAll(els => els.map(el => el.value || el.innerText || ''));
+  const indice  = nombres.findIndex(n => normalizarTexto(n) === titular);
+  if (indice === -1) {
+    throw new Error(`No hay representado a nombre de "${m[2].trim()}" en RCEL. Opciones: ${nombres.map(n => `"${n}"`).join(', ')}`);
+  }
+
+  await botones.nth(indice).click();
   await rcelPage.waitForLoadState('networkidle');
   return rcelPage;
 }
